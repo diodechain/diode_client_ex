@@ -31,8 +31,8 @@ defmodule DiodeClient do
   end
 
   @spec port_connect(binary(), integer(), String.t()) :: {:ok, pid()} | {:error, any()}
-  def port_connect(destination, port, access \\ "rw") do
-    Port.connect(destination, port, access)
+  def port_connect(destination, port, options \\ []) do
+    Port.connect(destination, port, options)
   end
 
   def port_listen(portnum, opts \\ []) do

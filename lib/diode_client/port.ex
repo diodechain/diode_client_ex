@@ -1,5 +1,5 @@
 defmodule DiodeClient.Port do
-  alias DiodeClient.{Acceptor, Port, Certs, Connection, Wallet}
+  alias DiodeClient.{Acceptor, Control, Port, Certs, Connection, Wallet}
   use GenServer
   use DiodeClient.Log
 
@@ -279,7 +279,7 @@ defmodule DiodeClient.Port do
 
   def tls_handshake(pid) do
     opts = transport_option(pid)
-    :ssl.handshake(pid, opts, @tls_timeout)
+    :ok = :ssl.handshake(pid, opts, @tls_timeout)
   end
 
   def check_remote(cert, event, remote) do
@@ -328,7 +328,23 @@ defmodule DiodeClient.Port do
     end
   end
 
-  def connect(destination, port, access \\ "rw") when is_integer(port) do
+  def connect(destination, port, options \\ []) when is_integer(port) do
+    access = Keyword.get(options, :access, "rw")
+    local = Keyword.get(options, :local, true)
+
+    if access == "rw" and local do
+      case Control.resolve_local(destination, port) do
+        nil -> do_connect(destination, port, options)
+        pid -> pid
+      end
+    else
+      do_connect(destination, port, options)
+    end
+  end
+
+  defp do_connect(destination, port, options) do
+    access = Keyword.get(options, :access, "rw")
+
     DiodeClient.default_conn()
     |> DiodeClient.Connection.rpc([
       "portopen",
