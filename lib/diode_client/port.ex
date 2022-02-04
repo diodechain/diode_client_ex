@@ -90,6 +90,15 @@ defmodule DiodeClient.Port do
     GenServer.cast(pid, :stop)
   end
 
+  def peer(pid) when is_pid(pid) do
+    {:ok, {:undefined, peer}} = peername(pid)
+    peer
+  end
+
+  def peer(ssl) when is_tuple(ssl) do
+    Certs.extract(ssl)
+  end
+
   def controlling_process(pid, cpid) do
     # log("Port.controlling_process: ~p ~p", [pid, cpid])
     GenServer.call(pid, {:controlling_process, cpid})
@@ -279,7 +288,7 @@ defmodule DiodeClient.Port do
 
   def tls_handshake(pid) do
     opts = transport_option(pid)
-    :ok = :ssl.handshake(pid, opts, @tls_timeout)
+    {:ok, _ssl} = :ssl.handshake(pid, opts, @tls_timeout)
   end
 
   def check_remote(cert, event, remote) do

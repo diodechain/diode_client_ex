@@ -43,6 +43,7 @@ defmodule DiodeClient.LocalAcceptor do
 
   def loop(socket, portnum) do
     {:ok, client} = :ssl.transport_accept(socket)
+    IO.puts("pushing local socket #{inspect(client)}")
     GenServer.call(Acceptor, {:inject, portnum, client})
     loop(socket, portnum)
   end

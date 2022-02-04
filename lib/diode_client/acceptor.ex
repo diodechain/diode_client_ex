@@ -172,7 +172,15 @@ defmodule DiodeClient.Acceptor do
       callback when is_function(callback, 1) ->
         spawn(fn ->
           Process.link(request)
-          callback.(request)
+
+          case Port.tls_handshake(request) do
+            {:ok, socket} ->
+              callback.(socket)
+
+            {:error, reason} ->
+              log("accepted port closed during handshake (~p)", [reason])
+              Port.close(request)
+          end
         end)
 
         {:reply, :ok, state}

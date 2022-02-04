@@ -1,7 +1,7 @@
 defmodule DiodeClient.Control do
   use GenServer
   use DiodeClient.Log
-  alias DiodeClient.{Acceptor, Control, Port, Rlp, Rlpx}
+  alias DiodeClient.{Acceptor, Connection, Control, Port, Rlp, Rlpx}
   @control_port 320_922
   defstruct [:tried, :peer, :resolved_address, :waiting, :socket, :resolved_ports]
 
@@ -10,11 +10,21 @@ defmodule DiodeClient.Control do
     GenServer.start_link(__MODULE__, state, hibernate_after: 5_000)
   end
 
+  def whereis(peer) do
+    case :global.whereis_name({__MODULE__, peer}) do
+      :undefined -> nil
+      pid -> pid
+    end
+  end
+
   def resolve_local(peer, portnum) do
     pid =
-      case :global.whereis_name({__MODULE__, peer}) do
+      case whereis(peer) do
         nil ->
-          case Supervisor.start_child(DiodeClient.Sup, {Control, peer}) do
+          case Supervisor.start_child(DiodeClient, %{
+                 id: peer,
+                 start: {Control, :start_link, [peer]}
+               }) do
             {:ok, pid} ->
               pid
 
@@ -28,16 +38,16 @@ defmodule DiodeClient.Control do
       end
 
     if pid == nil do
-      pid
+      nil
     else
       case GenServer.call(pid, {:resolve_local, portnum}, :infinity) do
         nil ->
           nil
 
         {address, port} ->
-          case :ssl.connect(address, port) do
-            {:ok, pid} ->
-              pid
+          case :ssl.connect(address, port, Connection.ssl_options()) do
+            {:ok, ssl} ->
+              ssl
 
             {:error, reason} ->
               log("local connect failed for #{inspect(reason)}")
@@ -54,12 +64,13 @@ defmodule DiodeClient.Control do
     {:ok, state}
   end
 
-  defp accept_socket(pid) do
-    {:ok, {:undefined, peer}} = :ssl.peername(pid)
+  defp accept_socket(ssl) do
+    IO.puts("got accept_socket #{inspect(ssl)}")
+    peer = Port.peer(ssl)
 
-    case :global.whereis_name({__MODULE__, peer}) do
-      nil -> :ssl.close(pid)
-      other -> GenServer.call(other, {:accept, pid})
+    case whereis(peer) do
+      nil -> :ssl.close(ssl)
+      other -> GenServer.call(other, {:accept, ssl})
     end
   end
 
@@ -67,11 +78,12 @@ defmodule DiodeClient.Control do
   def handle_call({:accept, socket}, _from, state) do
     if state.socket == nil do
       :ssl.controlling_process(socket, self())
-      {:noreply, %Control{state | socket: socket}}
+      :ssl.setopts(socket, active: true, packet: 2)
+      {:reply, :ok, %Control{state | socket: socket}}
     else
       log("ignoring socket on control plane since i'm open already")
       :ssl.close(socket)
-      {:noreply, state}
+      {:reply, :ok, state}
     end
   end
 
@@ -95,6 +107,7 @@ defmodule DiodeClient.Control do
 
     case Port.connect(peer, @control_port, local: false) do
       {:ok, pid} ->
+        :ssl.setopts(pid, active: true, packet: 2)
         %Control{state | socket: pid}
 
       {:error, reason} ->
@@ -150,7 +163,7 @@ defmodule DiodeClient.Control do
   end
 
   @impl true
-  def handle_info({:ssl_closed, closed_socket, _reason}, state = %Control{socket: socket}) do
+  def handle_info({:ssl_closed, closed_socket}, state = %Control{socket: socket}) do
     if socket == closed_socket do
       {:noreply, %Control{state | socket: nil}}
     else
