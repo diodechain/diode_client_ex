@@ -30,7 +30,7 @@ defmodule DiodeClient do
     Connection.rpc(conn, ["ping"])
   end
 
-  @spec port_connect(binary(), integer(), String.t()) :: {:ok, pid()} | {:error, any()}
+  @spec port_connect(binary(), integer(), Keyword.t()) :: {:ok, any()} | {:error, any()}
   def port_connect(destination, port, options \\ []) do
     Port.connect(destination, port, options)
   end
