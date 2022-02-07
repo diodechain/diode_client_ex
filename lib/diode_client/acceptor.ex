@@ -56,19 +56,28 @@ defmodule DiodeClient.Acceptor do
       {:error, :timeout} ->
         {:error, :timeout}
 
-      pid when is_pid(pid) ->
-        Process.link(pid)
-
-        case Port.tls_handshake(pid) do
-          {:ok, socket} ->
-            socket
-
-          {:error, reason} ->
-            log("port closed during handshake (~p)", [reason])
-            Port.close(pid)
-            {:error, reason}
-        end
+      ssl ->
+        init_socket(ssl)
     end
+  end
+
+  defp init_socket(pid) when is_pid(pid) do
+    Process.link(pid)
+
+    case Port.tls_handshake(pid) do
+      {:ok, socket} ->
+        socket
+
+      {:error, reason} ->
+        log("port closed during handshake (~p)", [reason])
+        Port.close(pid)
+        {:error, reason}
+    end
+  end
+
+  defp init_socket(ssl) do
+    # local ssl sockets already have gotten their tls handshake done
+    ssl
   end
 
   @impl true
@@ -149,8 +158,7 @@ defmodule DiodeClient.Acceptor do
         {:inject, portnum, request},
         _from,
         %Acceptor{backlog: backlog, ports: ports} = state
-      )
-      when is_pid(request) do
+      ) do
     case Map.get(ports, portnum) do
       [client | rest] ->
         ports = Map.put(ports, portnum, rest)
@@ -171,15 +179,9 @@ defmodule DiodeClient.Acceptor do
 
       callback when is_function(callback, 1) ->
         spawn(fn ->
-          Process.link(request)
-
-          case Port.tls_handshake(request) do
-            {:ok, socket} ->
-              callback.(socket)
-
-            {:error, reason} ->
-              log("accepted port closed during handshake (~p)", [reason])
-              Port.close(request)
+          case init_socket(request) do
+            {:error, _} -> :nop
+            socket -> callback.(socket)
           end
         end)
 

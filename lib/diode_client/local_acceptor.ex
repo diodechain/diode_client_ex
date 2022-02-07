@@ -37,14 +37,44 @@ defmodule DiodeClient.LocalAcceptor do
 
       socket ->
         {:ok, {address, port}} = :ssl.sockname(socket)
+        address = resolve_address(address)
         {:reply, {address, port}, state}
     end
   end
 
+  defp resolve_address(address) do
+    case address do
+      {0, 0, 0, 0} -> local_address(:inet)
+      {0, 0, 0, 0, 0, 0, 0, 0} -> local_address(:inet6)
+      other -> List.to_string(:inet.ntoa(other))
+    end
+  end
+
+  def local_address(family) do
+    {:ok, ifs} = :net.getifaddrs()
+
+    Enum.filter(ifs, fn %{flags: flags, addr: %{family: addr_family}} ->
+      addr_family == family and :up in flags and :running in flags and :loopback not in flags
+    end)
+    |> case do
+      [] -> nil
+      [%{addr: %{addr: addr}} | _rest] -> List.to_string(:inet.ntoa(addr))
+    end
+  end
+
+  @tls_timeout 5_000
   def loop(socket, portnum) do
     {:ok, client} = :ssl.transport_accept(socket)
-    IO.puts("pushing local socket #{inspect(client)}")
-    GenServer.call(Acceptor, {:inject, portnum, client})
+
+    case :ssl.handshake(client, Connection.ssl_options(), @tls_timeout) do
+      {:error, reason} ->
+        log("ssl handshake failed for #{inspect(reason)}")
+        :ssl.close(socket)
+
+      {:ok, ssl} ->
+        GenServer.call(Acceptor, {:inject, portnum, ssl})
+    end
+
     loop(socket, portnum)
   end
 end

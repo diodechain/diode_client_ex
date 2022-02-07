@@ -96,7 +96,7 @@ defmodule DiodeClient.Port do
   end
 
   def peer(ssl) when is_tuple(ssl) do
-    Certs.extract(ssl)
+    Wallet.from_pubkey(Certs.extract(ssl)) |> Wallet.address!()
   end
 
   def controlling_process(pid, cpid) do
@@ -288,7 +288,7 @@ defmodule DiodeClient.Port do
 
   def tls_handshake(pid) do
     opts = transport_option(pid)
-    {:ok, _ssl} = :ssl.handshake(pid, opts, @tls_timeout)
+    :ssl.handshake(pid, opts, @tls_timeout)
   end
 
   def check_remote(cert, event, remote) do
@@ -309,6 +309,10 @@ defmodule DiodeClient.Port do
 
   def monitor({:sslsocket, {Port, port, _type, _xtra}, _pids}) when is_pid(port) do
     Process.monitor(port)
+  end
+
+  def monitor(_other) do
+    :ok
   end
 
   defp flush(state = %Port{controlling_process: cpid, queue: queue, opts: opts}) do
@@ -344,7 +348,7 @@ defmodule DiodeClient.Port do
     if access == "rw" and local do
       case Control.resolve_local(destination, port) do
         nil -> do_connect(destination, port, options)
-        pid -> pid
+        ssl -> {:ok, ssl}
       end
     else
       do_connect(destination, port, options)

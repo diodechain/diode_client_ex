@@ -17,25 +17,28 @@ defmodule DiodeClient.Control do
     end
   end
 
+  def ensure_peer(peer) do
+    case whereis(peer) do
+      nil ->
+        case Supervisor.start_child(DiodeClient, %{
+               id: peer,
+               start: {Control, :start_link, [peer]}
+             }) do
+          {:ok, pid} ->
+            pid
+
+          {:error, reason} ->
+            log("couldn't start control plane for #{inspect(reason)}")
+            nil
+        end
+
+      pid ->
+        pid
+    end
+  end
+
   def resolve_local(peer, portnum) do
-    pid =
-      case whereis(peer) do
-        nil ->
-          case Supervisor.start_child(DiodeClient, %{
-                 id: peer,
-                 start: {Control, :start_link, [peer]}
-               }) do
-            {:ok, pid} ->
-              pid
-
-            {:error, reason} ->
-              log("couldn't start control plane for #{inspect(reason)}")
-              nil
-          end
-
-        pid ->
-          pid
-      end
+    pid = ensure_peer(peer)
 
     if pid == nil do
       nil
@@ -44,9 +47,13 @@ defmodule DiodeClient.Control do
         nil ->
           nil
 
-        {address, port} ->
+        {address, port} = addr ->
+          IO.puts("resolve_local: #{inspect(addr)}")
+          address = String.to_charlist(address)
+
           case :ssl.connect(address, port, Connection.ssl_options()) do
             {:ok, ssl} ->
+              :ssl.controlling_process(ssl, self())
               ssl
 
             {:error, reason} ->
@@ -65,12 +72,16 @@ defmodule DiodeClient.Control do
   end
 
   defp accept_socket(ssl) do
-    IO.puts("got accept_socket #{inspect(ssl)}")
     peer = Port.peer(ssl)
 
-    case whereis(peer) do
-      nil -> :ssl.close(ssl)
-      other -> GenServer.call(other, {:accept, ssl})
+    # TODO: Let's think how to make this less promisious
+    # e.g. reduce to known peers or such
+    case ensure_peer(peer) do
+      nil ->
+        :ssl.close(ssl)
+
+      other ->
+        GenServer.call(other, {:accept, ssl})
     end
   end
 
@@ -136,7 +147,7 @@ defmodule DiodeClient.Control do
     :ssl.send(socket, Rlp.encode!(["RESOLVE", portnum]))
 
     receive do
-      {:ssl, _sock, data} ->
+      {:ssl, _socket, data} ->
         data = Rlp.decode!(data)
         bin_portnum = Rlpx.uint2bin(portnum)
 
@@ -148,7 +159,8 @@ defmodule DiodeClient.Control do
           ["RESOLVED", ^bin_portnum, ret_addr, ret_port] ->
             %Control{
               state
-              | resolved_ports: Map.put(ports, portnum, {ret_addr, Rlpx.bin2uint(ret_port)})
+              | resolved_ports: Map.put(ports, portnum, Rlpx.bin2uint(ret_port)),
+                resolved_address: ret_addr
             }
 
           other ->
@@ -186,7 +198,7 @@ defmodule DiodeClient.Control do
             :ssl.send(socket, Rlp.encode!(["RESOLVED", portnum]))
 
           {address, port} ->
-            :ssl.send(socket, Rlp.encode!(["RESOLVED", :inet.ntoa(address), port]))
+            :ssl.send(socket, Rlp.encode!(["RESOLVED", portnum, address, port]))
         end
 
       other ->
