@@ -51,7 +51,7 @@ defmodule DiodeClient.Control do
           IO.puts("resolve_local: #{inspect(addr)}")
           address = String.to_charlist(address)
 
-          case :ssl.connect(address, port, Connection.ssl_options()) do
+          case :ssl.connect(address, port, Connection.ssl_options(), 5_000) do
             {:ok, ssl} ->
               :ssl.controlling_process(ssl, self())
               ssl
