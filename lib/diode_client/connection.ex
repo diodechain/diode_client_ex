@@ -21,7 +21,7 @@ defmodule DiodeClient.Connection do
   @ticket_size @ticket_grace * 4
   @vsn 1000
   @ping 15_000
-  @inital_latency 100_000_000
+  @inital_latency 100_000_000_000_000
 
   defmodule Cmd do
     defstruct [:cmd, :reply, :send_reply, :port, :time, :size]
