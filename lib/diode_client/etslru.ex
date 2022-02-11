@@ -49,7 +49,7 @@ defmodule DiodeClient.ETSLru do
   end
 
   def delete(lru, key) do
-    :ets.delete(lru, key)
+    :ets.delete(lru, {:key, key})
   end
 
   def fetch(lru, key, fun) do
