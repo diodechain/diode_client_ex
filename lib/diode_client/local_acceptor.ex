@@ -51,14 +51,36 @@ defmodule DiodeClient.LocalAcceptor do
   end
 
   def local_address(family) do
-    {:ok, ifs} = :net.getifaddrs()
+    case :os.type() do
+      {:win32, _} ->
+        {ret, 0} = System.cmd("ipconfig", [])
 
-    Enum.filter(ifs, fn %{flags: flags, addr: %{family: addr_family}} ->
-      addr_family == family and :up in flags and :running in flags and :loopback not in flags
-    end)
-    |> case do
-      [] -> nil
-      [%{addr: %{addr: addr}} | _rest] -> List.to_string(:inet.ntoa(addr))
+        regex =
+          case family do
+            :inet ->
+              ~r/IPv4.+ (([0-9]{1,3}\.){3}([0-9]{1,3}))/
+
+            :inet6 ->
+              ~r/IPv4.+ (([0-9]{1,3}\.){3}([0-9]{1,3}))/
+              # TODO
+              # :inet6 -> ~r/IPv6.+ (([0-9]{1,3}\.){3}([0-9]{1,3}))/
+          end
+
+        case Regex.run(regex, ret) do
+          nil -> nil
+          [_ret, match | _rest] -> match
+        end
+
+      {:unix, _} ->
+        {:ok, ifs} = :net.getifaddrs()
+
+        Enum.filter(ifs, fn %{flags: flags, addr: %{family: addr_family}} ->
+          addr_family == family and :up in flags and :running in flags and :loopback not in flags
+        end)
+        |> case do
+          [] -> nil
+          [%{addr: %{addr: addr}} | _rest] -> List.to_string(:inet.ntoa(addr))
+        end
     end
   end
 
