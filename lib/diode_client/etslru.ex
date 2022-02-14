@@ -19,22 +19,24 @@ defmodule DiodeClient.ETSLru do
   end
 
   def put(lru, key, value) do
-    n = :ets.update_counter(lru, :meta, 1)
+    if get(lru, key) != value do
+      key = {:key, key}
+      n = :ets.update_counter(lru, :meta, 1)
 
-    key = {:key, key}
-    :ets.insert(lru, {key, value, n})
-    :ets.insert(lru, {n, key})
+      :ets.insert(lru, {key, value, n})
+      :ets.insert(lru, {n, key})
 
-    max_size = :ets.lookup_element(lru, :meta, 3)
-    del = n - max_size
+      max_size = :ets.lookup_element(lru, :meta, 3)
+      del = n - max_size
 
-    if del > 0 do
-      [{^del, key}] = :ets.lookup(lru, del)
-      :ets.delete(lru, del)
+      if del > 0 do
+        [{^del, key}] = :ets.lookup(lru, del)
+        :ets.delete(lru, del)
 
-      case :ets.lookup(lru, key) do
-        [{^key, _value, ^del}] -> :ets.delete(lru, key)
-        _ -> :ok
+        case :ets.lookup(lru, key) do
+          [{^key, _value, ^del}] -> :ets.delete(lru, key)
+          _ -> :ok
+        end
       end
     end
 
@@ -58,7 +60,7 @@ defmodule DiodeClient.ETSLru do
         value
 
       [] ->
-        case fun.() do
+        case eval(fun) do
           nil -> nil
           value -> put(lru, key, value)
         end
@@ -72,5 +74,13 @@ defmodule DiodeClient.ETSLru do
 
   def to_list(lru) do
     for {{:key, key}, value, _n} <- :ets.tab2list(lru), do: {key, value}
+  end
+
+  defp eval(fun) when is_function(fun, 0) do
+    fun.()
+  end
+
+  defp eval({m, f, a}) do
+    apply(m, f, a)
   end
 end
