@@ -307,13 +307,19 @@ defmodule DiodeClient.Port do
     end
   end
 
-  def monitor({:sslsocket, {Port, port, _type, _xtra}, _pids}) when is_pid(port) do
-    Process.monitor(port)
+  def monitor(ssl) do
+    case ssl_to_port_pid(ssl) do
+      nil -> :ok
+      port -> Process.monitor(port)
+    end
   end
 
-  def monitor(_other) do
-    :ok
+  def is_direct_connection(ssl) do
+    ssl_to_port_pid(ssl) == nil
   end
+
+  def ssl_to_port_pid({:sslsocket, {Port, port, _type, _xtra}, _pids}) when is_pid(port), do: port
+  def ssl_to_port_pid(_other), do: nil
 
   defp flush(state = %Port{controlling_process: cpid, queue: queue, opts: opts}) do
     active = opts[:active]
