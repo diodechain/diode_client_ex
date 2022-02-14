@@ -668,7 +668,7 @@ defmodule DiodeClient.Connection do
             {:error, message} ->
               Process.unlink(pid)
               Port.close(pid)
-              {state, ["error", port_ref, message]}
+              {state, ["error", port_ref, inspect(message)]}
           end
 
         msg = Rlp.encode!([ref, msg])
