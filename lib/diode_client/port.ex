@@ -28,7 +28,7 @@ defmodule DiodeClient.Port do
          mode: :binary,
          active: false,
          packet: :raw,
-         packet_size: 4096,
+         packet_size: 0,
          header: 0
        },
        controlling_process: nil,
