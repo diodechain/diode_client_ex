@@ -105,9 +105,10 @@ defmodule DiodeClient.Port do
   end
 
   @impl true
-  def handle_info({:DOWN, _ref, :process, pid, reason}, state = %Port{controlling_process: cpid}) do
-    if cpid == pid do
-      {:stop, reason, state}
+  def handle_info({:DOWN, ref, :process, pid, reason}, state = %Port{controlling_process: cpid}) do
+    if cpid == {pid, ref} do
+      log("closing port because cpid shuts down for #{inspect(reason)}")
+      {:stop, :normal, state}
     else
       {:noreply, state}
     end
@@ -132,17 +133,17 @@ defmodule DiodeClient.Port do
   end
 
   @impl true
-  def handle_call({:controlling_process, new_cpid}, _, state = %Port{controlling_process: cpid}) do
-    if cpid != nil do
-      Process.unlink(cpid)
+  def handle_call({:controlling_process, new_pid}, _, state = %Port{controlling_process: cp}) do
+    with {_pid, mon} <- cp do
+      Process.demonitor(mon, [:flush])
     end
 
-    if new_cpid != nil do
-      Process.link(new_cpid)
-      Process.monitor(new_cpid)
-    end
+    new_cp =
+      if new_pid != nil do
+        {new_pid, Process.monitor(new_pid)}
+      end
 
-    {:reply, :ok, %Port{state | controlling_process: new_cpid}}
+    {:reply, :ok, %Port{state | controlling_process: new_cp}}
   end
 
   def handle_call({:update_peer_port, peer, portnum}, _, state) do
@@ -274,9 +275,12 @@ defmodule DiodeClient.Port do
   end
 
   @impl true
-  def terminate(reason, %Port{controlling_process: cpid}) do
-    log("Port.terminate(~p, ~p)", [reason, cpid])
-    if cpid != nil, do: Kernel.send(cpid, {Port.Closed, self()})
+  def terminate(reason, %Port{controlling_process: cp}) do
+    log("Port.terminate(~p, ~p)", [reason, cp])
+
+    with {pid, _mon} <- cp do
+      Kernel.send(pid, {Port.Closed, self()})
+    end
   end
 
   @tls_timeout 60_000
@@ -315,13 +319,17 @@ defmodule DiodeClient.Port do
   end
 
   def is_direct_connection(ssl) do
-    ssl_to_port_pid(ssl) == nil
+    if is_tuple(ssl) do
+      ssl_to_port_pid(ssl) == nil
+    else
+      false
+    end
   end
 
   def ssl_to_port_pid({:sslsocket, {Port, port, _type, _xtra}, _pids}) when is_pid(port), do: port
-  def ssl_to_port_pid(_other), do: nil
+  def ssl_to_port_pid(ssl) when is_tuple(ssl), do: nil
 
-  defp flush(state = %Port{controlling_process: cpid, queue: queue, opts: opts}) do
+  defp flush(state = %Port{controlling_process: cp, queue: queue, opts: opts}) do
     active = opts[:active]
 
     if :queue.is_empty(queue) or active == false or active == 0 do
@@ -329,10 +337,13 @@ defmodule DiodeClient.Port do
       state
     else
       {{:value, msg}, queue} = :queue.out(queue)
-      Kernel.send(cpid, {Port.Msg, self(), msg})
 
-      if active == 1 do
-        Kernel.send(cpid, {Port.Msg_passive, self()})
+      with {pid, _mon} <- cp do
+        Kernel.send(pid, {Port.Msg, self(), msg})
+
+        if active == 1 do
+          Kernel.send(pid, {Port.Msg_passive, self()})
+        end
       end
 
       active =
