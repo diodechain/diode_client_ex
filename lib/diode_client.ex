@@ -4,7 +4,11 @@ defmodule DiodeClient do
 
   @impl true
   def start(_start_type, _start_args) do
-    ETSLru.new(ShellCache, 1024)
+    ETSLru.new(ShellCache, 10_000, fn
+      [:error | _] -> false
+      _other -> true
+    end)
+
     Supervisor.start_link([], strategy: :one_for_one, name: __MODULE__)
   end
 

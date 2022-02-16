@@ -195,14 +195,6 @@ defmodule DiodeClient.Shell do
     ETSLru.fetch(ShellCache, args, fn ->
       Connection.rpc(conn(), args)
     end)
-    |> case do
-      [:error | _] = ret ->
-        ETSLru.delete(ShellCache, args)
-        ret
-
-      ret ->
-        ret
-    end
   end
 
   def ether(x), do: 1000 * finney(x)
