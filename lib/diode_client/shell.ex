@@ -13,6 +13,8 @@ defmodule DiodeClient.Shell do
     Wallet
   }
 
+  require Logger
+
   @chain_id 15
   @gas_limit 10_000_000
 
@@ -93,8 +95,11 @@ defmodule DiodeClient.Shell do
   def get_account(address, peak \\ peak()) do
     peak_index = Rlpx.bin2uint(peak["number"])
     address = Hash.to_address(address)
+    state_roots = Task.async(fn -> get_state_roots(peak) end)
+    account = cached_rpc(["getaccount", peak_index, address])
+    state_roots = Task.await(state_roots)
 
-    case cached_rpc(["getaccount", peak_index, address]) do
+    case account do
       # todo this needs a proof as well...
       [:error, "account does not exist"] ->
         %Account{
@@ -117,7 +122,7 @@ defmodule DiodeClient.Shell do
         proof = proof(proofs, 0)
         # Checking that this proof connects to the root
         [prefix, pos | values] = value(proofs)
-        assert_equal(proof, Enum.at(get_state_roots(peak), pos))
+        assert_equal(proof, Enum.at(state_roots, pos))
 
         x = bit_size(prefix)
         k = Hash.sha3_256(address)
@@ -147,39 +152,51 @@ defmodule DiodeClient.Shell do
     peak_index = peak_number(peak)
     address = Hash.to_address(address)
 
-    root = get_account_root(address, peak)
+    root = Task.async(fn -> get_account_root(address, peak) end)
     [roots] = cached_rpc(["getaccountroots", peak_index, address])
-    assert_equal(root, signature(roots))
+    assert_equal(Task.await(root, :infinity), signature(roots))
     roots
   end
 
   def get_account_value(address, key = <<_::256>>, peak \\ peak())
       when is_binary(address) or is_integer(address) do
+    hd(get_account_values(address, [key], peak))
+  end
+
+  def get_account_values(address, keys, peak \\ peak())
+      when is_list(keys) and (is_binary(address) or is_integer(address)) do
     peak_index = peak_number(peak)
     address = Hash.to_address(address)
+    roots = Task.async(fn -> get_account_roots(address, peak) end)
 
-    case cached_rpc(["getaccountvalue", peak_index, address, key]) do
-      # todo this needs a proof as well...
-      [:error, "account does not exist"] ->
-        nil
+    values = cached_rpc(["getaccountvalues", peak_index, address | keys])
+    roots = Task.await(roots, :infinity)
 
-      [proofs] ->
-        proof = proof(proofs, 0)
-        # Checking that this proof connects to the root
-        [prefix, pos | values] = value(proofs)
-        assert_equal(proof, Enum.at(get_account_roots(address, peak), pos))
+    case values do
+      [:error, message] ->
+        Logger.warn("getaccountvalues #{inspect(keys)} produced error #{inspect(message)}")
+        List.duplicate(nil, length(keys))
 
-        x = bit_size(prefix)
-        k = Hash.sha3_256(key)
-        <<key_prefix::bitstring-size(x), _::bitstring>> = k
-        <<last_byte>> = binary_part(k, byte_size(k), -1)
+      [values] ->
+        Enum.zip(values, keys)
+        |> Enum.map(fn {proofs, key} ->
+          proof = proof(proofs, 0)
+          # Checking that this proof connects to the root
+          [prefix, pos | values] = value(proofs)
+          assert_equal(proof, Enum.at(roots, pos))
 
-        # Checking that the provided range is for the given keys prefix
-        assert_equal(key_prefix, prefix)
+          x = bit_size(prefix)
+          k = Hash.sha3_256(key)
+          <<key_prefix::bitstring-size(x), _::bitstring>> = k
+          <<last_byte>> = binary_part(k, byte_size(k), -1)
 
-        # Checking that the provided leaf matches the given key
-        assert_equal(pos, rem(last_byte, 16))
-        :proplists.get_value(key, values)
+          # Checking that the provided range is for the given keys prefix
+          assert_equal(key_prefix, prefix)
+
+          # Checking that the provided leaf matches the given key
+          assert_equal(pos, rem(last_byte, 16))
+          :proplists.get_value(key, values)
+        end)
     end
   end
 
@@ -193,7 +210,11 @@ defmodule DiodeClient.Shell do
 
   defp cached_rpc(args) do
     ETSLru.fetch(ShellCache, args, fn ->
-      Connection.rpc(conn(), args)
+      a = System.os_time(:millisecond)
+      ret = Connection.rpc(conn(), args)
+      b = System.os_time(:millisecond)
+      IO.puts("#{b - a}ms #{inspect(hd(args))}")
+      ret
     end)
   end
 

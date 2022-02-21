@@ -714,10 +714,7 @@ defmodule DiodeClient.Connection do
   end
 
   defp call(pid, args) do
-    Process.link(pid)
-    ret = GenServer.call(pid, args, :infinity)
-    Process.unlink(pid)
-    ret
+    GenServer.call(pid, args, :infinity)
   end
 
   def rpc_cast(pid, [cmd | _rest] = data) do
