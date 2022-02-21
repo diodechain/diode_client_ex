@@ -213,7 +213,7 @@ defmodule DiodeClient.Shell do
       a = System.os_time(:millisecond)
       ret = Connection.rpc(conn(), args)
       b = System.os_time(:millisecond)
-      IO.puts("#{b - a}ms #{inspect(hd(args))}")
+      Logger.debug("#{b - a}ms #{inspect(hd(args))}")
       ret
     end)
   end
