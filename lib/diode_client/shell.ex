@@ -210,10 +210,10 @@ defmodule DiodeClient.Shell do
 
   defp cached_rpc(args) do
     ETSLru.fetch(ShellCache, args, fn ->
-      a = System.os_time(:millisecond)
+      # a = System.os_time(:millisecond)
       ret = Connection.rpc(conn(), args)
-      b = System.os_time(:millisecond)
-      Logger.debug("#{b - a}ms #{inspect(hd(args))}")
+      # b = System.os_time(:millisecond)
+      # Logger.debug("#{b - a}ms #{inspect(hd(args))}")
       ret
     end)
   end
