@@ -48,6 +48,7 @@ defmodule DiodeClient.MixProject do
 
   defp package do
     [
+      main: "DiodeClient",
       maintainers: @maintainers,
       licenses: ["DIODE"],
       links: %{github: @url},
@@ -67,8 +68,10 @@ defmodule DiodeClient.MixProject do
   defp deps do
     [
       {:poison, "~> 3.0"},
-      {:keccakf1600, github: "diodechain/erlang-keccakf1600"},
-      {:libsecp256k1, github: "diodechain/libsecp256k1"},
+      {:keccakf1600, "~> 2.0", hex: :keccakf1600_diode_fork},
+      # {:keccakf1600, github: "diodechain/erlang-keccakf1600"},
+      {:libsecp256k1, "~> 0.1", hex: :libsecp256k1_diode_fork},
+      # {:libsecp256k1, github: "diodechain/libsecp256k1"},
       {:debouncer, "~> 0.1"},
 
       # Linting

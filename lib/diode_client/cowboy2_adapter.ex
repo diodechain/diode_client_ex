@@ -1,5 +1,6 @@
 defmodule DiodeClient.Cowboy2Adapter do
   alias DiodeClient.Rlpx
+  use DiodeClient.Log
 
   @moduledoc """
   The Cowboy2 adapter for Diode.
@@ -51,7 +52,7 @@ defmodule DiodeClient.Cowboy2Adapter do
         port = :proplists.get_value(:port, opts, port)
 
         unless port do
-          Logger.error(":port for #{scheme} config is nil, cannot start server")
+          log(":port for #{scheme} config is nil, cannot start server")
           raise "aborting due to nil port"
         end
 
@@ -95,11 +96,11 @@ defmodule DiodeClient.Cowboy2Adapter do
     # to plug.HTTP and plug.HTTPS and overridable by users.
     case apply(m, f, a) do
       {:ok, pid} ->
-        Logger.info(fn -> info(scheme, endpoint, ref) end)
+        log(fn -> info(scheme, endpoint, ref) end)
         {:ok, pid}
 
       {:error, {:shutdown, {_, _, {{_, {:error, :eaddrinuse}}, _}}}} = error ->
-        Logger.error([info(scheme, endpoint, ref), " failed, port already in use"])
+        log([info(scheme, endpoint, ref), " failed, port already in use"])
         error
 
       {:error, _} = error ->

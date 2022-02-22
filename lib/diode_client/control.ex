@@ -121,8 +121,8 @@ defmodule DiodeClient.Control do
         :ssl.setopts(pid, active: true, packet: 2)
         %Control{state | socket: pid}
 
-      {:error, reason} ->
-        log("control plane failed for #{inspect(reason)}")
+      {:error, _reason} ->
+        # log("control plane failed for #{inspect(reason)}")
         state
     end
   end

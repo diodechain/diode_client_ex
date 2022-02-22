@@ -138,6 +138,9 @@ defmodule DiodeClient.Acceptor do
       [request | rest] ->
         {request, Map.put(backlog, portnum, rest)}
 
+      [] ->
+        :wait
+
       nil ->
         :wait
     end

@@ -104,7 +104,7 @@ defmodule DiodeClient.Connection do
   end
 
   def handle_continue(:init, state = %Connection{server: server}) do
-    Logger.info("DiodeClient creating connection to #{server}")
+    log("DiodeClient creating connection to #{server}")
     {:ok, socket} = connect(state)
     server_wallet = Wallet.from_pubkey(Certs.extract(socket))
 
@@ -140,7 +140,7 @@ defmodule DiodeClient.Connection do
     backoff = fib(count) * 1_000
 
     if backoff > 0 do
-      Logger.info("DiodeClient.Connect delayed by #{backoff}ms")
+      log("DiodeClient.Connect delayed by #{backoff}ms")
       Process.sleep(backoff)
     end
 
@@ -150,7 +150,7 @@ defmodule DiodeClient.Connection do
         {:ok, socket}
 
       {:error, reason} ->
-        Logger.info("DiodeClient.Connect failed to #{server}: #{reason}")
+        log("DiodeClient.Connect failed to #{server}: #{reason}")
 
         %{state | latency: @inital_latency}
         |> update_info()
@@ -348,8 +348,6 @@ defmodule DiodeClient.Connection do
       )
       |> Ticket.device_sign(Wallet.privkey!(DiodeClient.wallet()))
 
-    # Logger.info("Got ticket: #{inspect(tck)} ")
-
     data = [
       "ticket",
       Ticket.block_number(tck),
@@ -499,17 +497,15 @@ defmodule DiodeClient.Connection do
         {:noreply, handle_msg(rlp, state)}
 
       {:ssl, wrong_socket, _rlp} ->
-        Logger.info("DiodeClient flushing ssl #{inspect(wrong_socket)} != #{inspect(socket)}")
+        log("DiodeClient flushing ssl #{inspect(wrong_socket)} != #{inspect(socket)}")
         {:noreply, state}
 
       {:ssl_closed, ^socket} ->
-        Logger.info("DiodeClient.ssl_closed() #{server}")
+        log("DiodeClient.ssl_closed() #{server}")
         {:noreply, reset(state), {:continue, :init}}
 
       {:ssl_closed, wrong_socket} ->
-        Logger.info(
-          "DiodeClient flushing ssl_close #{inspect(wrong_socket)} != #{inspect(socket)}"
-        )
+        log("DiodeClient flushing ssl_close #{inspect(wrong_socket)} != #{inspect(socket)}")
 
         {:noreply, state}
 
@@ -546,7 +542,7 @@ defmodule DiodeClient.Connection do
         {:noreply, state}
 
       msg ->
-        Logger.info("Unhandled: #{inspect(msg)}")
+        log("Unhandled: #{inspect(msg)}")
         {:stop, :unhandled, state}
     end
   end

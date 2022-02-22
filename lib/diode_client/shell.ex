@@ -13,7 +13,7 @@ defmodule DiodeClient.Shell do
     Wallet
   }
 
-  require Logger
+  use DiodeClient.Log
 
   @chain_id 15
   @gas_limit 10_000_000
@@ -174,7 +174,7 @@ defmodule DiodeClient.Shell do
 
     case values do
       [:error, message] ->
-        Logger.warn("getaccountvalues #{inspect(keys)} produced error #{inspect(message)}")
+        log("getaccountvalues #{inspect(keys)} produced error #{inspect(message)}")
         List.duplicate(nil, length(keys))
 
       [values] ->

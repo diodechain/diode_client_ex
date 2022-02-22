@@ -21,7 +21,7 @@ erl_crash.dump
 
 # Ignore package tarball (built via "mix hex.build").
 diode_client-*.tar
-
+*_interface
 
 # Temporary files for e.g. tests
 /tmp
