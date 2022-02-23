@@ -97,7 +97,7 @@ defmodule DiodeClient.Shell do
     address = Hash.to_address(address)
     state_roots = Task.async(fn -> get_state_roots(peak) end)
     account = cached_rpc(["getaccount", peak_index, address])
-    state_roots = Task.await(state_roots)
+    state_roots = Task.await(state_roots, :infinity)
 
     case account do
       # todo this needs a proof as well...
