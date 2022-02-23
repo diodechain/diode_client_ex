@@ -39,7 +39,7 @@ defmodule DiodeClient.MixProject do
 
   defp docs do
     [
-      main: @name,
+      main: "DiodeClient",
       source_ref: "v#{@version}",
       source_url: @url,
       authors: @maintainers
@@ -48,7 +48,6 @@ defmodule DiodeClient.MixProject do
 
   defp package do
     [
-      main: "DiodeClient",
       maintainers: @maintainers,
       licenses: ["DIODE"],
       links: %{github: @url},
@@ -76,7 +75,8 @@ defmodule DiodeClient.MixProject do
 
       # Linting
       {:dialyxir, "~> 1.1", only: [:dev], runtime: false},
-      {:credo, "~> 1.5", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.5", only: [:dev, :test], runtime: false},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
 end

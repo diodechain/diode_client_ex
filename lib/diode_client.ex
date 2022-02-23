@@ -7,8 +7,8 @@ defmodule DiodeClient do
   Example Usage with a simple server:
 
   ```elixir
-  DiodeClient.add_interface("example_server_interface")
-  address = DiodeClient.Wallet.printable(DiodeClient.wallet())
+  DiodeClient.interface_add("example_server_interface")
+  address = DiodeClient.Base16.encode(DiodeClient.address())
 
   {:ok, port} = DiodeClient.port_listen(5000)
   spawn_link(fn ->
@@ -35,7 +35,7 @@ defmodule DiodeClient do
   ```elixir
     # Client:
     server_address = "0x389eba94b330140579cdce1feb1a6e905ff876e6"
-    DiodeClient.add_interface("example_client_interface")
+    DiodeClient.interface_add("example_client_interface")
 
     spawn_link(fn ->
       {:ok, ssl} = DiodeClient.port_connect(server_address, 5000)
@@ -51,8 +51,6 @@ defmodule DiodeClient do
       IO.puts("closed!")
     end)
   ```
-
-
   """
   use Application
   alias DiodeClient.{ETSLru, Port, Wallet, ShellCache, Sup}
@@ -68,21 +66,23 @@ defmodule DiodeClient do
     Supervisor.start_link([], strategy: :one_for_one, name: __MODULE__)
   end
 
-  def add_interface(wallet \\ "diode_client_interface", name \\ :default) do
+  def interface_add(wallet \\ "diode_client_interface", name \\ :default) do
     set_wallet(wallet)
     Supervisor.start_child(__MODULE__, {Sup, name})
   end
 
-  def is_client_online(name \\ :default) do
+  def interface_online?(name \\ :default) do
     Supervisor.which_children(__MODULE__)
     |> Enum.any?(fn {cname, pid, _type, _mods} -> cname == name and is_pid(pid) end)
   end
 
-  def stop_client(name \\ :default) do
+  @spec interface_stop(atom()) :: :ok | {:error, :not_found}
+  def interface_stop(name \\ :default) do
     Supervisor.terminate_child(__MODULE__, name)
   end
 
-  def restart_client(name \\ :default) do
+  @spec interface_restart(atom()) :: {:error, any} | {:ok, pid} | {:ok, pid, any}
+  def interface_restart(name \\ :default) do
     Supervisor.restart_child(__MODULE__, name)
   end
 
@@ -118,6 +118,7 @@ defmodule DiodeClient do
     Port.close(pid)
   end
 
+  @doc false
   def set_wallet(mfa = {m, f, a}) when is_atom(m) and is_atom(f) and is_list(a),
     do: do_set_wallet(mfa)
 
@@ -149,6 +150,7 @@ defmodule DiodeClient do
     end
   end
 
+  @doc false
   def wallet() do
     case :persistent_term.get({__MODULE__, :wallet}) do
       {module, fun, args} -> apply(module, fun, args)
@@ -156,9 +158,10 @@ defmodule DiodeClient do
     end
   end
 
+  @doc false
   def ensure_wallet() do
     if :persistent_term.get({__MODULE__, :wallet}, nil) == nil do
-      add_interface()
+      interface_add()
     end
 
     wallet()
@@ -168,6 +171,7 @@ defmodule DiodeClient do
     Wallet.address!(wallet())
   end
 
+  @doc false
   def default_conn() do
     case Process.whereis(DiodeClient.Manager) do
       nil ->
@@ -179,6 +183,7 @@ defmodule DiodeClient do
     end
   end
 
+  @doc false
   def connections() do
     case Process.whereis(DiodeClient.Manager) do
       nil -> []
