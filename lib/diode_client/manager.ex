@@ -75,7 +75,13 @@ defmodule DiodeClient.Manager do
 
   defp restart_conn(key, %Manager{server_list: servers, conns: conns} = state) do
     info = %Info{server_url: server, port: port, key: ^key} = Map.get(servers, key)
-    {:ok, pid} = Connection.start_link(server, port, key)
+
+    pid =
+      case Connection.start_link(server, port, key) do
+        {:ok, pid} -> pid
+        {:error, {:already_started, pid}} -> pid
+      end
+
     conns = Map.put(conns, pid, %Info{info | pid: pid, start: System.os_time()})
     %Manager{state | conns: conns}
   end

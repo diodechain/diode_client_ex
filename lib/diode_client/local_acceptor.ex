@@ -72,14 +72,20 @@ defmodule DiodeClient.LocalAcceptor do
         end
 
       {:unix, _} ->
-        {:ok, ifs} = :net.getifaddrs()
+        case :net.getifaddrs() do
+          {:ok, ifs} ->
+            Enum.filter(ifs, fn %{flags: flags, addr: %{family: addr_family}} ->
+              addr_family == family and :up in flags and :running in flags and
+                :loopback not in flags
+            end)
+            |> case do
+              [] -> nil
+              [%{addr: %{addr: addr}} | _rest] -> List.to_string(:inet.ntoa(addr))
+            end
 
-        Enum.filter(ifs, fn %{flags: flags, addr: %{family: addr_family}} ->
-          addr_family == family and :up in flags and :running in flags and :loopback not in flags
-        end)
-        |> case do
-          [] -> nil
-          [%{addr: %{addr: addr}} | _rest] -> List.to_string(:inet.ntoa(addr))
+          {:error, _reason} ->
+            # mobile ios/android
+            nil
         end
     end
   end
