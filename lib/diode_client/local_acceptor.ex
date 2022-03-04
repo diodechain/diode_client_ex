@@ -97,7 +97,7 @@ defmodule DiodeClient.LocalAcceptor do
     case :ssl.handshake(client, Connection.ssl_options(), @tls_timeout) do
       {:error, reason} ->
         log("ssl handshake failed for #{inspect(reason)}")
-        :ssl.close(socket)
+        :ssl.close(client)
 
       {:ok, ssl} ->
         GenServer.call(Acceptor, {:inject, portnum, ssl})
