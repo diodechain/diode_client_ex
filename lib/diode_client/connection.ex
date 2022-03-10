@@ -744,7 +744,9 @@ defmodule DiodeClient.Connection do
       reuseaddr: true,
       key: {:ECPrivateKey, Secp256k1.der_encode_private(private, public)},
       delay_send: true,
-      reuse_sessions: true
+      reuse_sessions: true,
+      send_timeout: 30_000,
+      send_timeout_close: true
     ]
   end
 
