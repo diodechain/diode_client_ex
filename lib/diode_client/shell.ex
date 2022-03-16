@@ -201,7 +201,7 @@ defmodule DiodeClient.Shell do
   end
 
   def peak() do
-    Connection.peak(conn())
+    DiodeClient.Manager.get_peak()
   end
 
   def peak_number(peak \\ peak()) do

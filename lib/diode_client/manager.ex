@@ -2,14 +2,14 @@ defmodule DiodeClient.Manager do
   @moduledoc """
     Manages the server connections
   """
-  alias DiodeClient.{Connection, Manager}
+  alias DiodeClient.{Connection, Manager, Rlpx}
   use GenServer
-  defstruct [:conns, :server_list, :waiting, :best]
+  defstruct [:conns, :server_list, :waiting, :best, :peak]
 
   defmodule Info do
     # server_address is the diode public key
     # server_url is the url to connect
-    defstruct [:latency, :server_address, :server_url, :port, :key, :pid, :start]
+    defstruct [:latency, :server_address, :server_url, :port, :key, :pid, :start, :peak]
   end
 
   def start_link([]) do
@@ -32,8 +32,23 @@ defmodule DiodeClient.Manager do
     |> Map.new()
   end
 
+  @doc """
+    get_connection and get_peak are linked in that peak will never return a block
+    higher than any of the connections returned by get_connection has reported.
+  """
   def get_connection() do
     GenServer.call(__MODULE__, :get_connection, :infinity)
+  end
+
+  @doc """
+    get_connection and get_peak are linked in that peak will never return a block
+    higher than any of the connections returned by get_connection has reported.
+  """
+  def get_peak() do
+    case GenServer.call(__MODULE__, :get_peak, :infinity) do
+      nil -> Connection.peak(get_connection())
+      peak -> peak
+    end
   end
 
   def connections() do
@@ -91,6 +106,10 @@ defmodule DiodeClient.Manager do
     {:reply, Map.keys(conns), state}
   end
 
+  def handle_call(:get_peak, _from, %Manager{peak: peak} = state) do
+    {:reply, peak, state}
+  end
+
   def handle_call({:get_info, cpid, key}, _from, %Manager{conns: conns} = state) do
     case Map.get(conns, cpid) do
       nil -> {:reply, nil, state}
@@ -116,19 +135,39 @@ defmodule DiodeClient.Manager do
     {:reply, best, state}
   end
 
-  defp refresh_best(%Manager{conns: conns, waiting: waiting} = state) do
-    Enum.filter(Map.values(conns), fn %Info{server_address: addr} -> addr != nil end)
+  defp refresh_best(%Manager{conns: conns, waiting: waiting, peak: last_peak} = state) do
+    connected =
+      Enum.filter(Map.values(conns), fn %Info{server_address: addr, peak: peak} ->
+        addr != nil and peak != nil
+      end)
+
+    peaks =
+      Enum.map(connected, fn %Info{peak: a} -> block_number(a) end)
+      |> Enum.sort(:desc)
+
+    # IO.puts("PEAKS: #{inspect(peaks)}")
+
+    min_peak = List.last(Enum.take(peaks, floor(length(peaks) / 2) + 1)) || 0
+    # IO.puts("MIN_PEAK: #{min_peak}")
+    min_peak = max(min_peak, block_number(last_peak))
+    # IO.puts("MIN_PEAK2: #{min_peak}")
+
+    Enum.filter(connected, fn %Info{peak: peak} -> block_number(peak) >= min_peak end)
     |> Enum.sort(fn %Info{latency: a}, %Info{latency: b} -> a < b end)
-    |> Enum.take(1)
+    |> List.first()
     |> case do
-      [] ->
+      nil ->
         %Manager{state | best: nil}
 
-      [%Info{pid: pid}] ->
+      %Info{pid: pid, peak: new_peak} ->
+        peak = if block_number(new_peak) > block_number(last_peak), do: new_peak, else: last_peak
         for from <- waiting, do: GenServer.reply(from, pid)
-        %Manager{state | best: pid, waiting: []}
+        %Manager{state | best: pid, waiting: [], peak: peak}
     end
   end
+
+  defp block_number(nil), do: 0
+  defp block_number(block), do: Rlpx.bin2uint(block["number"])
 
   @impl true
   def handle_continue(:init, state) do

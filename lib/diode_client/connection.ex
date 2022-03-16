@@ -121,18 +121,9 @@ defmodule DiodeClient.Connection do
     {:noreply, state}
   end
 
-  defp update_info(state = %Connection{server_wallet: nil, latency: latency}) do
-    Manager.update_info(self(), %{latency: latency, server_address: nil})
-
-    if :persistent_term.get(DiodeClient, nil) == self() do
-      :persistent_term.put(DiodeClient, nil)
-    end
-
-    state
-  end
-
-  defp update_info(state = %Connection{server_wallet: wallet, latency: latency}) do
-    Manager.update_info(self(), %{latency: latency, server_address: Wallet.address!(wallet)})
+  defp update_info(state = %Connection{server_wallet: wallet, latency: latency, peak: peak}) do
+    address = if wallet == nil, do: nil, else: Wallet.address!(wallet)
+    Manager.update_info(self(), %{latency: latency, server_address: address, peak: peak})
     state
   end
 
@@ -229,7 +220,7 @@ defmodule DiodeClient.Connection do
     |> case do
       {id, ch = %Channel{backlog: [[req, rlp] | backlog]}} ->
         state = ssl_send!(state, rlp)
-        state = create_ticket(state)
+        state = maybe_create_ticket(state)
         %Cmd{send_reply: reply} = Map.fetch!(recv_id, req)
         if reply != nil, do: GenServer.reply(reply, :ok)
         channels = Map.put(channels, id, %Channel{ch | backlog: backlog})
@@ -283,7 +274,7 @@ defmodule DiodeClient.Connection do
     end
   end
 
-  defp create_ticket(
+  defp maybe_create_ticket(
          state = %Connection{unpaid_bytes: ub, paid_bytes: pb, ticket_count: tc},
          force \\ false
        ) do
@@ -359,7 +350,7 @@ defmodule DiodeClient.Connection do
     ]
 
     req = req_id()
-    # log("create_ticket => ~p", [data])
+    # log("maybe_create_ticket => ~p", [data])
     msg = Rlp.encode!([req, data])
 
     state = %Connection{
@@ -475,7 +466,7 @@ defmodule DiodeClient.Connection do
   end
 
   def handle_info(what, state) do
-    state = create_ticket(state)
+    state = maybe_create_ticket(state)
 
     case clientloop(what, state) do
       {:noreply, state = %Connection{socket: socket}} ->
@@ -530,11 +521,12 @@ defmodule DiodeClient.Connection do
           GenServer.reply(from, peak)
         end)
 
-        {:noreply,
-         create_ticket(
-           %Connection{state | peak: peak, blocked: []},
-           state.peak == nil
-         )}
+        state =
+          %Connection{state | peak: peak, blocked: []}
+          |> update_info()
+          |> maybe_create_ticket(state.peak == nil)
+
+        {:noreply, state}
 
       :ping ->
         pid = self()
