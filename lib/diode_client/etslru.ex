@@ -57,14 +57,18 @@ defmodule DiodeClient.ETSLru do
   end
 
   def fetch(lru, key, fun) do
-    case :ets.lookup(lru, {:key, key}) do
-      [{_key, value, _n}] ->
-        value
+    if :ets.whereis(lru) == :undefined do
+      fun.()
+    else
+      case :ets.lookup(lru, {:key, key}) do
+        [{_key, value, _n}] ->
+          value
 
-      [] ->
-        :global.trans({key, self()}, fn ->
-          fetch_nolock(lru, key, fun)
-        end)
+        [] ->
+          :global.trans({key, self()}, fn ->
+            fetch_nolock(lru, key, fun)
+          end)
+      end
     end
   end
 

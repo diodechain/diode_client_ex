@@ -53,7 +53,7 @@ defmodule DiodeClient do
   ```
   """
   use Application
-  alias DiodeClient.{ETSLru, Port, Wallet, ShellCache, Sup}
+  alias DiodeClient.{ETSLru, Port, Wallet, ShellCache, HashCache, Sup}
   require Logger
 
   @impl true
@@ -63,6 +63,7 @@ defmodule DiodeClient do
       _other -> true
     end)
 
+    ETSLru.new(HashCache, 1_000)
     Supervisor.start_link([], strategy: :one_for_one, name: __MODULE__)
   end
 
