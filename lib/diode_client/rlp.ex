@@ -41,31 +41,27 @@ defmodule DiodeClient.Rlp do
     `encode!(term, unsigned: false)`
   """
   def encode!(term, opts \\ []) do
-    encode_to_iolist!(term, opts)
+    do_encode!(term, opts)
     |> :erlang.iolist_to_binary()
   end
 
-  @doc """
-    Encode an Elixir term to RLP. Integers are converted
-    to binaries using `:binary.encode_unsigned/1`
+  def encode_to_iolist!(term, opts \\ []) do
+    do_encode!(term, opts)
+  end
 
-    If you want to encode integers as signed values pass
-    `encode_to_iolist!(term, unsigned: false)`
-  """
-  def encode_to_iolist!(term, opts \\ [])
+  def do_encode!(<<x>>, _opts) when x < 0x80, do: <<x>>
 
-  def encode_to_iolist!(<<x>>, _opts) when x < 0x80, do: <<x>>
-
-  def encode_to_iolist!(x, _opts) when is_binary(x) do
+  def do_encode!(x, _opts) when is_binary(x) do
     with_length!(0x80, x)
   end
 
-  def encode_to_iolist!(list, opts) when is_list(list) do
-    with_length!(0xC0, :lists.map(&encode!(&1, opts), list))
+  def do_encode!(list, opts) when is_list(list) do
+    with_length!(0xC0, :lists.map(&do_encode!(&1, opts), list))
   end
 
-  def encode_to_iolist!(other, opts) do
-    encode_to_iolist!(encode_other!(other, opts), opts)
+  def do_encode!(other, opts) do
+    encode_other!(other, opts)
+    |> do_encode!(opts)
   end
 
   defp with_length!(offset, data) do
