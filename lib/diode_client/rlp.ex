@@ -1,5 +1,6 @@
 defmodule DiodeClient.Rlp do
   alias DiodeClient.Rlpx
+  @compile :inline_list_funcs
   @type rlp() :: binary() | [rlp()]
   @moduledoc """
     Encoding and Decoding of Recursive Length Prefix (RLP) https://eth.wiki/fundamentals/rlp
@@ -39,20 +40,32 @@ defmodule DiodeClient.Rlp do
     If you want to encode integers as signed values pass
     `encode!(term, unsigned: false)`
   """
-  def encode!(term, opts \\ [])
+  def encode!(term, opts \\ []) do
+    encode_to_iolist!(term, opts)
+    |> :erlang.iolist_to_binary()
+  end
 
-  def encode!(<<x>>, _opts) when x < 0x80, do: <<x>>
+  @doc """
+    Encode an Elixir term to RLP. Integers are converted
+    to binaries using `:binary.encode_unsigned/1`
 
-  def encode!(x, _opts) when is_binary(x) do
+    If you want to encode integers as signed values pass
+    `encode_to_iolist!(term, unsigned: false)`
+  """
+  def encode_to_iolist!(term, opts \\ [])
+
+  def encode_to_iolist!(<<x>>, _opts) when x < 0x80, do: <<x>>
+
+  def encode_to_iolist!(x, _opts) when is_binary(x) do
     with_length!(0x80, x)
   end
 
-  def encode!(list, opts) when is_list(list) do
-    with_length!(0xC0, Enum.map(list, &encode!(&1, opts)))
+  def encode_to_iolist!(list, opts) when is_list(list) do
+    with_length!(0xC0, :lists.map(&encode!(&1, opts), list))
   end
 
-  def encode!(other, opts) do
-    encode!(do_encode!(other, opts), opts)
+  def encode_to_iolist!(other, opts) do
+    encode_to_iolist!(encode_other!(other, opts), opts)
   end
 
   defp with_length!(offset, data) do
@@ -64,7 +77,6 @@ defmodule DiodeClient.Rlp do
       bin = :binary.encode_unsigned(size)
       [byte_size(bin) + offset + 55, bin, data]
     end
-    |> :erlang.iolist_to_binary()
   end
 
   @spec decode!(binary()) :: rlp()
@@ -73,41 +85,41 @@ defmodule DiodeClient.Rlp do
     term
   end
 
-  defp do_encode!(nil, _opts) do
+  defp encode_other!(nil, _opts) do
     ""
   end
 
-  defp do_encode!(struct, _opts) when is_struct(struct) do
+  defp encode_other!(struct, _opts) when is_struct(struct) do
     Map.from_struct(struct)
     |> Enum.map(fn {key, value} -> [Atom.to_string(key), value] end)
   end
 
-  defp do_encode!(map, _opts) when is_map(map) do
+  defp encode_other!(map, _opts) when is_map(map) do
     Map.to_list(map)
     |> Enum.map(fn {key, value} ->
       [if(is_atom(key), do: Atom.to_string(key), else: key), value]
     end)
   end
 
-  defp do_encode!(tuple, _opts) when is_tuple(tuple) do
+  defp encode_other!(tuple, _opts) when is_tuple(tuple) do
     :erlang.tuple_to_list(tuple)
   end
 
-  defp do_encode!(bits, _opts) when is_bitstring(bits) do
+  defp encode_other!(bits, _opts) when is_bitstring(bits) do
     for <<x::size(1) <- bits>>, do: if(x == 1, do: "1", else: "0"), into: ""
   end
 
-  defp do_encode!(0, _opts) do
+  defp encode_other!(0, _opts) do
     # Sucks but this is the quasi standard by Go and Node.js
     # This is why we have bin2uint
     ""
   end
 
-  defp do_encode!(num, %{unsigned: false}) when is_integer(num) do
+  defp encode_other!(num, %{unsigned: false}) when is_integer(num) do
     Rlpx.int2bin(num)
   end
 
-  defp do_encode!(num, _opts) when is_integer(num) do
+  defp encode_other!(num, _opts) when is_integer(num) do
     Rlpx.uint2bin(num)
   end
 
@@ -146,5 +158,21 @@ defmodule DiodeClient.Rlp do
   defp do_decode_list!(list, rest) do
     {item, rest} = do_decode!(rest)
     do_decode_list!([item | list], rest)
+  end
+
+  def test_perf() do
+    # req_id = 1
+    size = 1
+    index = 0
+    frag = :rand.bytes(8000)
+    # data = [[<<>>, req_id], size, index, frag]
+
+    :timer.tc(fn ->
+      for req_id <- 1..1_000_000 do
+        encode_to_iolist!([[<<>>, req_id], size, index, frag])
+      end
+
+      nil
+    end)
   end
 end
