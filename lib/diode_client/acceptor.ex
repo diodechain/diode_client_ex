@@ -40,9 +40,18 @@ defmodule DiodeClient.Acceptor do
     timeout = if timeout == :infinity, do: :infinity, else: timeout - time
 
     case ret do
-      {:error, :timeout} -> {:error, :timeout}
-      {:error, _reason} -> accept(listener, timeout)
-      socket -> {:ok, socket}
+      {:error, :timeout} ->
+        if timeout == :infinity do
+          accept(listener, timeout)
+        else
+          {:error, :timeout}
+        end
+
+      {:error, _reason} ->
+        accept(listener, timeout)
+
+      socket ->
+        {:ok, socket}
     end
   end
 
@@ -235,7 +244,7 @@ defmodule DiodeClient.Acceptor do
       case Map.get(ports, portnum) do
         list when is_list(list) ->
           if from in list do
-            GenServer.reply(from, :timeout)
+            GenServer.reply(from, {:error, :timeout})
             Map.put(ports, portnum, List.delete(list, from))
           else
             ports
