@@ -33,6 +33,10 @@ defmodule DiodeClient.Hash do
     hash
   end
 
+  def to_address(hash = <<"0x", _::320>>) do
+    Base16.decode(hash)
+  end
+
   def to_address(hash = <<_::256>>) do
     binary_part(hash, 12, 20)
   end

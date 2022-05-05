@@ -8,6 +8,16 @@ defmodule DiodeClient.ABI do
     |> :erlang.iolist_to_binary()
   end
 
+  def decode_types(types, data) do
+    {ret, ""} =
+      Enum.reduce(types, {[], data}, fn type, {ret, rest} ->
+        {value, rest} = decode(type, rest)
+        {ret ++ [value], rest}
+      end)
+
+    ret
+  end
+
   def decode_revert(<<"">>) do
     {:evmc_revert, ""}
   end
@@ -139,4 +149,22 @@ defmodule DiodeClient.ABI do
     do: encode("bytes24", encode("address", address) <> encode_spec(name, types))
 
   def encode("function", value), do: encode("bytes24", value)
+
+  # next one should be cut off at bit limit
+
+  for bit <- 1..32 do
+    Module.eval_quoted(
+      __MODULE__,
+      Code.string_to_quoted("""
+        def decode("uint#{bit * 8}", <<value :: unsigned-size(256), rest :: binary>>), do: {value, rest}
+        def decode("int#{bit * 8}", <<value :: signed-size(256), rest :: binary>>), do: {value, rest}
+        def decode("bytes#{bit}", <<value :: binary-size(#{bit}), _ :: binary-size(#{32 - bit}), rest :: binary()>>), do: {value, rest}
+      """)
+    )
+  end
+
+  def decode("uint", value), do: decode("uint256", value)
+  def decode("int", value), do: decode("int256", value)
+  def decode("address", value), do: decode("bytes20", value)
+  def decode("bool", value), do: decode("uint8", value)
 end

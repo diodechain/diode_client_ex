@@ -235,7 +235,7 @@ defmodule DiodeClient.Shell do
   end
 
   defp create_transaction(data, opts) do
-    wallet = DiodeClient.wallet()
+    wallet = DiodeClient.ensure_wallet()
 
     from = Wallet.address!(wallet)
     gas = Map.get(opts, :gas, 0x15F90)
