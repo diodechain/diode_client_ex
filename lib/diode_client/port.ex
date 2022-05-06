@@ -114,7 +114,21 @@ defmodule DiodeClient.Port do
     end
   end
 
+  def handle_info(:stop, state) do
+    {:stop, :normal, state}
+  end
+
   @impl true
+  def handle_cast(:remote_close, state = %Port{controlling_process: cp}) do
+    with {pid, _mon} <- cp do
+      Kernel.send(pid, {Port.Closed, self()})
+    end
+
+    # avoiding dangling process
+    Process.send_after(self(), :stop, 60_000)
+    {:noreply, %Port{state | controlling_process: nil}}
+  end
+
   def handle_cast(:stop, state) do
     {:stop, :normal, state}
   end
@@ -358,7 +372,28 @@ defmodule DiodeClient.Port do
     end
   end
 
-  def connect(destination, port, options \\ []) when is_integer(port) do
+  def connect(destination, port, options \\ [], timeout \\ 5_000) when is_integer(port) do
+    destination =
+      if is_list(destination) do
+        List.to_string(destination)
+      else
+        destination
+      end
+
+    addr =
+      case destination do
+        <<_::binary-size(20)>> ->
+          destination
+
+        <<"0x", _::binary-size(40)>> ->
+          DiodeClient.Base16.decode(destination)
+      end
+
+    connect_address(addr, port, options, timeout)
+  end
+
+  def connect_address(destination, port, options \\ [], _timeout \\ 5_000)
+      when is_integer(port) do
     access = Keyword.get(options, :access, "rw")
     local = Keyword.get(options, :local, true)
 
@@ -375,7 +410,26 @@ defmodule DiodeClient.Port do
   defp do_connect(destination, port, options) do
     access = Keyword.get(options, :access, "rw")
 
-    DiodeClient.default_conn()
+    conn =
+      case DiodeClient.Shell.get_object(destination) do
+        nil ->
+          DiodeClient.default_conn()
+
+        ticket ->
+          all_conns = DiodeClient.connections()
+
+          DiodeClient.Ticket.preferred_server_ids(ticket)
+          |> Enum.map(fn addr ->
+            Enum.find(all_conns, fn pid ->
+              DiodeClient.Connection.server_address(pid) == addr
+            end)
+          end)
+          |> Enum.filter(fn conn -> conn != nil end)
+          |> Enum.concat([DiodeClient.default_conn()])
+          |> hd()
+      end
+
+    conn
     |> DiodeClient.Connection.rpc([
       "portopen",
       destination,

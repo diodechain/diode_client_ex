@@ -1,45 +1,10 @@
 defmodule DiodeClient.Cowboy2Adapter do
-  alias DiodeClient.Rlpx
+  alias DiodeClient.Transport
   use DiodeClient.Log
 
   @moduledoc """
   The Cowboy2 adapter for Diode.
   """
-
-  defmodule SecurePort do
-    def listen(opts) do
-      port = Keyword.fetch!(opts, :port)
-      portnum = Rlpx.bin2uint("tls:#{port}")
-      DiodeClient.Port.listen(portnum)
-    end
-
-    def accept(portnum, timeout) do
-      DiodeClient.Port.accept(portnum, timeout)
-    end
-
-    def sockname(ssl) when is_tuple(ssl), do: :ssl.sockname(ssl)
-    def sockname(port), do: DiodeClient.Port.sockname(port)
-
-    def handshake(pid, _opts, _timeout) do
-      {:ok, pid}
-    end
-
-    defdelegate controlling_process(pid, dst), to: :ssl
-    defdelegate peername(pid), to: :ssl
-    defdelegate setopts(pid, opts), to: :ssl
-    defdelegate send(pid, data), to: :ssl
-    defdelegate shutdown(pid, reason), to: :ssl
-
-    def sendfile(socket, path, offset, bytes) do
-      :ranch_transport.sendfile(name(), socket, path, offset, bytes,
-        chunk_size: DiodeClient.Port.chunk_size()
-      )
-    end
-
-    def messages(), do: {:ssl, :ssl_closed, :ssl_error, :ssl_passive}
-    def name(), do: __MODULE__
-    def secure(), do: true
-  end
 
   require Logger
 
@@ -83,7 +48,7 @@ defmodule DiodeClient.Cowboy2Adapter do
       update_in(spec.start, fn {:ranch_listener_sup, :start_link,
                                 [ref, _transport, trans_opts, protocol, proto_opts]} ->
         {:ranch_listener_sup, :start_link,
-         [ref, SecurePort, Map.put(trans_opts, :sendfile, true), protocol, proto_opts]}
+         [ref, Transport, Map.put(trans_opts, :sendfile, true), protocol, proto_opts]}
       end)
 
     spec = update_in(spec.start, &{__MODULE__, :start_link, [scheme, endpoint, &1]})

@@ -74,7 +74,27 @@ defmodule DiodeClient.Shell do
   end
 
   def get_object(key) do
-    Connection.rpc(conn(), ["getobject", key])
+    case cached_rpc(["getobject", key]) do
+      [
+        [
+          "ticket",
+          server_id,
+          block_number,
+          fleet_contract,
+          total_connections,
+          total_bytes,
+          local_address,
+          device_signature,
+          server_signature
+        ]
+      ] ->
+        {:ticket, server_id, Rlpx.bin2uint(block_number), nil, fleet_contract,
+         Rlpx.bin2uint(total_connections), Rlpx.bin2uint(total_bytes), local_address,
+         device_signature, server_signature}
+
+      _other ->
+        nil
+    end
   end
 
   def get_node(key) do

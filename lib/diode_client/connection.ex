@@ -673,7 +673,7 @@ defmodule DiodeClient.Connection do
         log("Received portclose for ~180p", [port_ref])
 
         with {pid, :up} <- ports[port_ref] do
-          Port.close(pid)
+          GenServer.cast(pid, :remote_close)
           %Connection{state | ports: Map.put(ports, port_ref, {pid, :down})}
         else
           _other -> state
