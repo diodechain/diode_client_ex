@@ -74,17 +74,25 @@ defmodule DiodeClient do
 
   def interface_online?(name \\ :default) do
     Supervisor.which_children(__MODULE__)
-    |> Enum.any?(fn {cname, pid, _type, _mods} -> cname == name and is_pid(pid) end)
+    |> Enum.any?(fn {cname, pid, _type, _mods} ->
+      cname == name and is_pid(pid) and DiodeClient.Manager.online?()
+    end)
   end
 
   @spec interface_stop(atom()) :: :ok | {:error, :not_found}
   def interface_stop(name \\ :default) do
-    Supervisor.terminate_child(__MODULE__, name)
+    case Process.whereis(DiodeClient.Manager) do
+      nil -> name
+      pid when is_pid(pid) -> DiodeClient.Manager.set_online(false)
+    end
   end
 
   @spec interface_restart(atom()) :: {:error, any} | {:ok, pid} | {:ok, pid, any}
   def interface_restart(name \\ :default) do
-    Supervisor.restart_child(__MODULE__, name)
+    case Process.whereis(DiodeClient.Manager) do
+      nil -> name
+      pid when is_pid(pid) -> DiodeClient.Manager.set_online(true)
+    end
   end
 
   @spec port_connect(binary(), integer(), Keyword.t()) :: {:ok, any()} | {:error, any()}

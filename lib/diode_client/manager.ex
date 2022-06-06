@@ -4,7 +4,7 @@ defmodule DiodeClient.Manager do
   """
   alias DiodeClient.{Connection, Manager, Rlpx}
   use GenServer
-  defstruct [:conns, :server_list, :waiting, :best, :peak]
+  defstruct [:conns, :server_list, :waiting, :best, :peak, :online]
 
   defmodule Info do
     # server_address is the diode public key
@@ -19,7 +19,7 @@ defmodule DiodeClient.Manager do
   @impl true
   def init(_arg) do
     Process.flag(:trap_exit, true)
-    state = %Manager{server_list: seed_list(), conns: %{}, waiting: []}
+    state = %Manager{server_list: seed_list(), conns: %{}, waiting: [], online: true}
     {:ok, state, {:continue, :init}}
   end
 
@@ -55,6 +55,14 @@ defmodule DiodeClient.Manager do
     GenServer.call(__MODULE__, :connections)
   end
 
+  def online?() do
+    GenServer.call(__MODULE__, :online?)
+  end
+
+  def set_online(online) do
+    GenServer.call(__MODULE__, {:set_online, online})
+  end
+
   @impl true
   def handle_info({:EXIT, pid, reason}, %Manager{conns: conns} = state) do
     if Map.has_key?(conns, pid) do
@@ -88,6 +96,16 @@ defmodule DiodeClient.Manager do
     end
   end
 
+  defp restart_all(state) do
+    Enum.reduce(seed_keys(), state, fn key, state ->
+      restart_conn(key, state)
+    end)
+  end
+
+  defp restart_conn(_key, %Manager{online: false} = state) do
+    state
+  end
+
   defp restart_conn(key, %Manager{server_list: servers, conns: conns} = state) do
     info = %Info{server_url: server, port: port, key: ^key} = Map.get(servers, key)
 
@@ -102,6 +120,34 @@ defmodule DiodeClient.Manager do
   end
 
   @impl true
+  def handle_call(:online?, _from, %Manager{online: online} = state) do
+    {:reply, online and length(connected(state)) > 0, state}
+  end
+
+  def handle_call(
+        {:set_online, new_online},
+        _from,
+        %Manager{online: online, server_list: servers} = state
+      ) do
+    state = %Manager{state | online: new_online}
+    pids = Map.keys(servers)
+
+    state =
+      cond do
+        new_online == online ->
+          state
+
+        new_online ->
+          restart_all(state)
+
+        not new_online ->
+          for pid <- pids, do: GenServer.cast(pid, :stop)
+          %Manager{state | server_list: seed_list(), conns: %{}, best: nil}
+      end
+
+    {:reply, :ok, state}
+  end
+
   def handle_call(:connections, _from, %Manager{conns: conns} = state) do
     {:reply, Map.keys(conns), state}
   end
@@ -117,11 +163,11 @@ defmodule DiodeClient.Manager do
     end
   end
 
-  def handle_call(
-        :get_connection,
-        from,
-        %Manager{best: nil, waiting: waiting} = state
-      ) do
+  def handle_call(:get_connection, from, %Manager{online: false, waiting: waiting} = state) do
+    {:noreply, %Manager{state | waiting: waiting ++ [from]}}
+  end
+
+  def handle_call(:get_connection, from, %Manager{best: nil, waiting: waiting} = state) do
     %Manager{best: best} = state = refresh_best(state)
 
     if best == nil do
@@ -135,11 +181,14 @@ defmodule DiodeClient.Manager do
     {:reply, best, state}
   end
 
-  defp refresh_best(%Manager{conns: conns, waiting: waiting, peak: last_peak} = state) do
-    connected =
-      Enum.filter(Map.values(conns), fn %Info{server_address: addr, peak: peak} ->
-        addr != nil and peak != nil
-      end)
+  defp connected(%Manager{conns: conns}) do
+    Enum.filter(Map.values(conns), fn %Info{server_address: addr, peak: peak} ->
+      addr != nil and peak != nil
+    end)
+  end
+
+  defp refresh_best(%Manager{waiting: waiting, peak: last_peak} = state) do
+    connected = connected(state)
 
     peaks =
       Enum.map(connected, fn %Info{peak: a} -> block_number(a) end)
@@ -171,12 +220,7 @@ defmodule DiodeClient.Manager do
 
   @impl true
   def handle_continue(:init, state) do
-    state =
-      Enum.reduce(seed_keys(), state, fn key, state ->
-        restart_conn(key, state)
-      end)
-
-    {:noreply, state}
+    {:noreply, restart_all(state)}
   end
 
   def get_connection_info(cpid, key) when key == :server_address or key == :latency do

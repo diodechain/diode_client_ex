@@ -73,6 +73,7 @@ defmodule DiodeClient.Connection do
     )
   end
 
+  @impl true
   def init([server, port]) do
     Process.flag(:trap_exit, true)
     {conns, bytes} = {1, 0}
@@ -103,6 +104,7 @@ defmodule DiodeClient.Connection do
     call(pid, :peak)
   end
 
+  @impl true
   def handle_continue(:init, state = %Connection{server: server}) do
     log("DiodeClient creating connection to #{server}")
     {:ok, socket} = connect(state)
@@ -231,6 +233,7 @@ defmodule DiodeClient.Connection do
     end
   end
 
+  @impl true
   def handle_call({:rpc, cmd, req, rlp, time, pid}, from, state) do
     cmd = %Cmd{cmd: cmd, reply: from, time: time, port: pid, size: byte_size(rlp)}
     {:noreply, insert_cmd(state, req, cmd, rlp)}
@@ -249,9 +252,16 @@ defmodule DiodeClient.Connection do
     {:reply, peak, state}
   end
 
+  @impl true
   def handle_cast({:rpc, cmd, req, rlp, time, pid}, state) do
     cmd = %Cmd{cmd: cmd, reply: nil, time: time, port: pid, size: byte_size(rlp)}
     {:noreply, insert_cmd(state, req, cmd, rlp)}
+  end
+
+  def handle_cast(:stop, state = %Connection{socket: socket, ports: ports}) do
+    if socket != nil, do: :ssl.close(socket)
+    for {_, {pid, _}} <- ports, do: GenServer.cast(pid, :remote_close)
+    {:stop, :normal, %Connection{state | socket: nil}}
   end
 
   defp handshake(pid) do
@@ -429,6 +439,7 @@ defmodule DiodeClient.Connection do
     end
   end
 
+  @impl true
   def handle_info({:DOWN, _ref, :process, pid, _reason}, state = %Connection{ports: ports}) do
     Enum.find(ports, fn {_port_ref, {port_pid, _status}} -> pid == port_pid end)
     |> case do
