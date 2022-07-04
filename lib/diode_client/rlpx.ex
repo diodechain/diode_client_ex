@@ -70,8 +70,25 @@ defmodule DiodeClient.Rlpx do
     bin
   end
 
-  def list2map(list) do
-    Enum.map(list, fn [key, value] -> {key, value} end)
+  def list2map(list, opts \\ []) do
+    recursive = Keyword.get(opts, :recursive, false)
+    atoms = Keyword.get(opts, :atoms, false)
+
+    Enum.map(list, fn [key, value] ->
+      key =
+        cond do
+          atoms and is_binary(key) -> String.to_atom(key)
+          true -> key
+        end
+
+      value =
+        cond do
+          recursive and is_list(value) -> list2map(value, opts)
+          true -> value
+        end
+
+      {key, value}
+    end)
     |> Map.new()
   end
 end
