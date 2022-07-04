@@ -81,6 +81,11 @@ defmodule DiodeClient.Rlp do
     term
   end
 
+  @spec decode(binary()) :: {rlp(), binary()}
+  def decode(bin) do
+    do_decode!(bin)
+  end
+
   defp encode_other!(nil, _opts) do
     ""
   end
