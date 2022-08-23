@@ -1,10 +1,10 @@
 defmodule DiodeClient do
   @moduledoc ~S"""
-  [DiodeClient](https://github.com/diodechain/diode_client) secure end-to-end encrypted connections bettween any two machines. Connections are established
+  [DiodeClient](https://github.com/diodechain/diode_client_ex) secure end-to-end encrypted connections between any two machines. Connections are established
   either through direct peer-to-peer TCP connections or bridged via the Diode network. To learn more about the
   decentralized Diode network visit https://diode.io/
 
-  Example Usage with a simple server:
+  Example Usage of [DiodeClient](https://github.com/diodechain/diode_client_ex) with a simple server:
 
   ```elixir
   DiodeClient.interface_add("example_server_interface")
