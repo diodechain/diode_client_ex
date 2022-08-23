@@ -93,6 +93,7 @@ defmodule DiodeClient.LocalAcceptor do
   @tls_timeout 5_000
   def loop(socket, portnum) do
     {:ok, client} = :ssl.transport_accept(socket)
+    NetworkMonitor.close_on_down(client, :ssl)
 
     case :ssl.handshake(client, Connection.ssl_options(), @tls_timeout) do
       {:error, reason} ->

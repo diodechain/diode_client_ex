@@ -53,6 +53,7 @@ defmodule DiodeClient.Control do
 
           case :ssl.connect(address, port, Connection.ssl_options(), 5_000) do
             {:ok, ssl} ->
+              NetworkMonitor.close_on_down(ssl, :ssl)
               :ssl.controlling_process(ssl, self())
               ssl
 

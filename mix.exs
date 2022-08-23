@@ -66,15 +66,16 @@ defmodule DiodeClient.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:poison, "~> 3.0"},
+      {:debouncer, "~> 0.1"},
       {:ex_sha3, "~> 0.1.1"},
       {:libsecp256k1, "~> 0.1", hex: :libsecp256k1_diode_fork},
+      {:network_monitor, "~> 1.1"},
+      {:poison, "~> 3.0"},
       # {:libsecp256k1, github: "diodechain/libsecp256k1"},
-      {:debouncer, "~> 0.1"},
 
       # Linting
-      {:dialyxir, "~> 1.1", only: [:dev], runtime: false},
       {:credo, "~> 1.5", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.1", only: [:dev], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
