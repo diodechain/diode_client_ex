@@ -19,17 +19,17 @@ defmodule DiodeClient.Shell do
   @gas_limit 10_000_000
 
   @moduledoc """
-    me = Diode.miner() |> Wallet.address!()
-    Shell.get_balance(me)
+  DiodeClient.Shell is the interface to the blockchain state. It allows
+  fetching accounts and block header information. Data fetched is by
+  default checked against a merkle proof.
 
-    fleetContract = Base16.decode("0x6728c7bea74db60c2fb117c15de28b0b0686c389")
-    Shell.call(fleetContract, "accountant")
+  # Example fetching smart contract state from an address
 
-    registryContract = Diode.registry_address()
-    Shell.call(registryContract, "ContractStake", ["address"], [fleetContract])
+  ```
+  me = DiodeClient.address()
+  DiodeClient.Shell.get_account(me)
+  ```
 
-    addr = Chain.GenesisFactory.genesis_accounts |> hd |> elem(0)
-    Shell.call_from(Wallet.from_address(addr), registryContract, "ContractStake", ["address"], [fleetContract])
   """
 
   defmacrop assert_equal(a, b) do
@@ -40,9 +40,7 @@ defmodule DiodeClient.Shell do
       if unquote(a) != unquote(b) do
         throw(
           {:merkle_check_failed,
-           "Assert #{inspect(unquote(stra))} == #{inspect(unquote(strb))} failed! (#{
-             inspect(unquote(a))
-           } != #{inspect(unquote(b))})"}
+           "Assert #{inspect(unquote(stra))} == #{inspect(unquote(strb))} failed! (#{inspect(unquote(a))} != #{inspect(unquote(b))})"}
         )
       end
     end

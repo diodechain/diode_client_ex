@@ -1,13 +1,19 @@
 defmodule DiodeClient.Wallet do
+  @moduledoc """
+
+  Representation of an Ethereum Wallet. This struct can hold keys in three levels
+  of completeness
+
+  1) Full key (including private key, public key and address)
+  2) Public Key (including public key and address)
+  3) Address (only the 20 byte Ethereum address)
+
+  A wallet can be instantiated from any of those, but accessors for higher level components
+  will fail when the data is not available
+  """
+
   alias DiodeClient.{Base16, Hash, Secp256k1, Wallet}
 
-  @moduledoc """
-  Might be merged with Id.ex, for now just starting with clear Ethereum triple needed for wallets:
-  1) Private Key
-  2) Public Key
-  3) Address
-  A wallet can be instantiated from any of those, but accessors for higher level ids fail
-  """
   @type private_key :: <<_::256>>
   @type compressed_public_key :: <<_::264>>
   @type address :: <<_::160>>

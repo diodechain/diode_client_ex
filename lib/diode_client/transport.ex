@@ -1,14 +1,16 @@
 defmodule DiodeClient.Transport do
   @moduledoc """
-    DiodeClient Transport interface for use with Cowboy2 Adapter
-    and :hackeny. Potentially more depending on interface compatibility
+  DiodeClient Transport interface for use with Cowboy2 Adapter
+  and `:hackeny`. Potentially more depending on interface compatibility
 
-    # Example using hackney to make http requests via Diode:
+  # Example using hackney to make http requests via Diode:
 
-    {:ok, ref} = :hackney.connect(DiodeClient.Transport, address, port)
-    request = {:get, path, [], ""}
-    {:ok, status, headers, ^ref} = :hackney.send_request(ref, request)
-    {:ok, content} = :hackney.body(ref)
+  ```
+  {:ok, ref} = :hackney.connect(DiodeClient.Transport, address, port)
+  request = {:get, path, [], ""}
+  {:ok, status, headers, ^ref} = :hackney.send_request(ref, request)
+  {:ok, content} = :hackney.body(ref)
+  ```
   """
   alias DiodeClient.Rlpx
 

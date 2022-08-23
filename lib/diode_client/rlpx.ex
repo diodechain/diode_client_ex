@@ -1,9 +1,8 @@
 defmodule DiodeClient.Rlpx do
+  @moduledoc false
   alias DiodeClient.Base16
 
-  @moduledoc """
-  Rlpx defines helepr method for converting RLP encoded values back and forth.
-  """
+  # Helper methods for converting RLP encoded values back and forth.
   @type rlp() :: binary() | [rlp()]
 
   @spec hex2uint(binary()) :: non_neg_integer()

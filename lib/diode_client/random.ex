@@ -1,9 +1,8 @@
 defmodule DiodeClient.Random do
-  @moduledoc """
-  Random provides random aliases for the range of machine types
-  uint8-uint64, int8-int64 as well as additional aliases uint8h-uint64h
-  generating random numbers starting at the lower types range end.
-  """
+  @moduledoc false
+  # Random provides random aliases for the range of machine types
+  # uint8-uint64, int8-int64 as well as additional aliases uint8h-uint64h
+  # generating random numbers starting at the lower types range end.
 
   def uint8(), do: random(0, 255)
   def uint16(), do: random(0, 65_535)

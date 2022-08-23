@@ -1,9 +1,6 @@
 defmodule DiodeClient.ETSLru do
+  @moduledoc false
   use GenServer
-
-  @moduledoc """
-  Provides Least-Recently-Used Queue with a fixed maximum size
-  """
 
   def start_link(name, max_size, filter \\ fn _ -> true end) do
     GenServer.start_link(__MODULE__, {name, max_size, filter}, hibernate_after: 5_000)

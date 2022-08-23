@@ -177,7 +177,7 @@ defmodule DiodeClient do
   end
 
   def address() do
-    Wallet.address!(wallet())
+    Wallet.address!(ensure_wallet())
   end
 
   @doc false

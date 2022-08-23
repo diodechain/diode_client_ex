@@ -1,7 +1,5 @@
 defmodule DiodeClient.Manager do
-  @moduledoc """
-    Manages the server connections
-  """
+  @moduledoc false
   alias DiodeClient.{Connection, Manager, Rlpx}
   use GenServer
   defstruct [:conns, :server_list, :waiting, :best, :peak, :online]

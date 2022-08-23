@@ -1,11 +1,7 @@
 defmodule DiodeClient.Cowboy2Adapter do
+  @moduledoc false
   alias DiodeClient.Transport
   use DiodeClient.Log
-
-  @moduledoc """
-  The Cowboy2 adapter for Diode.
-  """
-
   require Logger
 
   @doc false
