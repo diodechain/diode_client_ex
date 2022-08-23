@@ -1,4 +1,5 @@
 defmodule DiodeClient.Sup do
+  @moduledoc false
   alias DiodeClient.{Acceptor, Manager}
 
   def start_link(name) do

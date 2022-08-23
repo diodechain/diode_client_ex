@@ -78,20 +78,13 @@ defmodule DiodeClient.Rlpx do
     Enum.reduce(list, %{}, fn
       [key, value], map ->
         key =
-          cond do
-            (atoms == true or (is_integer(atoms) and atoms > 0)) and is_binary(key) ->
-              String.to_atom(key)
-
-            true ->
-              key
+          if (atoms == true or (is_integer(atoms) and atoms > 0)) and is_binary(key) do
+            String.to_atom(key)
+          else
+            key
           end
 
-        value =
-          cond do
-            recursive and is_list(value) -> list2map(value, opts)
-            true -> value
-          end
-
+        value = if recursive and is_list(value), do: list2map(value, opts), else: value
         Map.put(map, key, value)
 
       key, map ->

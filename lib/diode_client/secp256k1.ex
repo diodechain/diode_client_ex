@@ -1,4 +1,5 @@
 defmodule DiodeClient.Secp256k1 do
+  @moduledoc false
   alias DiodeClient.{Hash, Wallet}
   import Wallet
 
@@ -189,7 +190,7 @@ defmodule DiodeClient.Secp256k1 do
     hash = hash(:sha, public)
 
     {:OTPTBSCertificate, :v3, 9_671_339_679_901_102_673,
-     {:SignatureAlgorithm, {1, 2, 840, 10045, 4, 3, 2}, :asn1_NOVALUE},
+     {:SignatureAlgorithm, {1, 2, 840, 10_045, 4, 3, 2}, :asn1_NOVALUE},
      {:rdnSequence,
       [
         [{:AttributeTypeAndValue, {2, 5, 4, 6}, 'US'}],
@@ -208,7 +209,7 @@ defmodule DiodeClient.Secp256k1 do
         [{:AttributeTypeAndValue, {2, 5, 4, 11}, {:utf8String, "Org"}}],
         [{:AttributeTypeAndValue, {2, 5, 4, 3}, {:utf8String, "www.example.com"}}]
       ]},
-     {:OTPSubjectPublicKeyInfo, {:PublicKeyAlgorithm, {1, 2, 840, 10045, 2, 1}, curve_params()},
+     {:OTPSubjectPublicKeyInfo, {:PublicKeyAlgorithm, {1, 2, 840, 10_045, 2, 1}, curve_params()},
       {:ECPoint, public}}, :asn1_NOVALUE, :asn1_NOVALUE,
      [
        # Identifier: Subject Key Identifier - 2.5.29.14

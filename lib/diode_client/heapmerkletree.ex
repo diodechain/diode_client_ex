@@ -1,4 +1,5 @@
 defmodule DiodeClient.HeapMerkleTree do
+  @moduledoc false
   alias DiodeClient.{BertExt, Hash}
   @type key_type :: binary() | integer()
   @type value_type :: term()

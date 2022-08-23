@@ -1,4 +1,5 @@
 defmodule DiodeClient.Certs do
+  @moduledoc false
   alias DiodeClient.Secp256k1
 
   def extract(socket) do

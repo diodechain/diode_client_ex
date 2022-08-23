@@ -1,4 +1,5 @@
 defmodule DiodeClient.Base16 do
+  @moduledoc false
   @spec encode(binary() | non_neg_integer(), any()) :: <<_::16, _::_*8>>
   def encode(int, bigX \\ true)
 

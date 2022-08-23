@@ -7,6 +7,7 @@ defmodule DiodeClient.Manager do
   defstruct [:conns, :server_list, :waiting, :best, :peak, :online]
 
   defmodule Info do
+    @moduledoc false
     # server_address is the diode public key
     # server_url is the url to connect
     defstruct [:latency, :server_address, :server_url, :port, :key, :pid, :start, :peak]
@@ -27,7 +28,7 @@ defmodule DiodeClient.Manager do
 
   defp seed_list() do
     Enum.map(seed_keys(), fn pre ->
-      {pre, %Info{server_url: "#{pre}.prenet.diode.io", port: 41046, key: pre}}
+      {pre, %Info{server_url: "#{pre}.prenet.diode.io", port: 41_046, key: pre}}
     end)
     |> Map.new()
   end
@@ -64,7 +65,7 @@ defmodule DiodeClient.Manager do
   end
 
   @impl true
-  def handle_info({:EXIT, pid, reason}, %Manager{conns: conns} = state) do
+  def handle_info({:EXIT, pid, reason}, state = %Manager{conns: conns}) do
     if Map.has_key?(conns, pid) do
       %Info{key: key} = Map.fetch!(conns, pid)
       Process.send_after(self(), {:restart_conn, key}, 15_000)
@@ -84,7 +85,7 @@ defmodule DiodeClient.Manager do
   end
 
   @impl true
-  def handle_cast({:update_info, cpid, info}, %Manager{conns: conns} = state) do
+  def handle_cast({:update_info, cpid, info}, state = %Manager{conns: conns}) do
     case Map.get(conns, cpid) do
       nil ->
         {:noreply, state}
@@ -102,11 +103,11 @@ defmodule DiodeClient.Manager do
     end)
   end
 
-  defp restart_conn(_key, %Manager{online: false} = state) do
+  defp restart_conn(_key, state = %Manager{online: false}) do
     state
   end
 
-  defp restart_conn(key, %Manager{server_list: servers, conns: conns} = state) do
+  defp restart_conn(key, state = %Manager{server_list: servers, conns: conns}) do
     info = %Info{server_url: server, port: port, key: ^key} = Map.get(servers, key)
 
     pid =
@@ -120,14 +121,14 @@ defmodule DiodeClient.Manager do
   end
 
   @impl true
-  def handle_call(:online?, _from, %Manager{online: online} = state) do
+  def handle_call(:online?, _from, state = %Manager{online: online}) do
     {:reply, online and length(connected(state)) > 0, state}
   end
 
   def handle_call(
         {:set_online, new_online},
         _from,
-        %Manager{online: online, server_list: servers} = state
+        state = %Manager{online: online, server_list: servers}
       ) do
     state = %Manager{state | online: new_online}
     pids = Map.keys(servers)
@@ -148,26 +149,26 @@ defmodule DiodeClient.Manager do
     {:reply, :ok, state}
   end
 
-  def handle_call(:connections, _from, %Manager{conns: conns} = state) do
+  def handle_call(:connections, _from, state = %Manager{conns: conns}) do
     {:reply, Map.keys(conns), state}
   end
 
-  def handle_call(:get_peak, _from, %Manager{peak: peak} = state) do
+  def handle_call(:get_peak, _from, state = %Manager{peak: peak}) do
     {:reply, peak, state}
   end
 
-  def handle_call({:get_info, cpid, key}, _from, %Manager{conns: conns} = state) do
+  def handle_call({:get_info, cpid, key}, _from, state = %Manager{conns: conns}) do
     case Map.get(conns, cpid) do
       nil -> {:reply, nil, state}
       %Info{} = info -> {:reply, Map.get(info, key), state}
     end
   end
 
-  def handle_call(:get_connection, from, %Manager{online: false, waiting: waiting} = state) do
+  def handle_call(:get_connection, from, state = %Manager{online: false, waiting: waiting}) do
     {:noreply, %Manager{state | waiting: waiting ++ [from]}}
   end
 
-  def handle_call(:get_connection, from, %Manager{best: nil, waiting: waiting} = state) do
+  def handle_call(:get_connection, from, state = %Manager{best: nil, waiting: waiting}) do
     %Manager{best: best} = state = refresh_best(state)
 
     if best == nil do
@@ -177,7 +178,7 @@ defmodule DiodeClient.Manager do
     end
   end
 
-  def handle_call(:get_connection, _from, %Manager{best: best} = state) do
+  def handle_call(:get_connection, _from, state = %Manager{best: best}) do
     {:reply, best, state}
   end
 
@@ -187,7 +188,7 @@ defmodule DiodeClient.Manager do
     end)
   end
 
-  defp refresh_best(%Manager{waiting: waiting, peak: last_peak} = state) do
+  defp refresh_best(state = %Manager{waiting: waiting, peak: last_peak}) do
     connected = connected(state)
 
     peaks =

@@ -1,4 +1,5 @@
 defmodule DiodeClient.Connection do
+  @moduledoc false
   alias DiodeClient.{
     Acceptor,
     Certs,
@@ -24,10 +25,12 @@ defmodule DiodeClient.Connection do
   @inital_latency 100_000_000_000_000
 
   defmodule Cmd do
+    @moduledoc false
     defstruct [:cmd, :reply, :send_reply, :port, :time, :size]
   end
 
   defmodule Channel do
+    @moduledoc false
     defstruct [:times, :backlog]
 
     def latency(%Channel{times: queue}) do
@@ -482,11 +485,11 @@ defmodule DiodeClient.Connection do
 
     case clientloop(what, state) do
       {:noreply, state = %Connection{socket: socket}} ->
-        if not :queue.is_empty(state.events) do
+        if :queue.is_empty(state.events) do
+          {:noreply, state}
+        else
           {{:value, msg}, events} = :queue.out(state.events)
           handle_info({:ssl, socket, msg}, %Connection{state | events: events})
-        else
-          {:noreply, state}
         end
 
       other ->
@@ -684,11 +687,13 @@ defmodule DiodeClient.Connection do
       {"portclose", [port_ref]} ->
         log("Received portclose for ~180p", [port_ref])
 
-        with {pid, :up} <- ports[port_ref] do
-          GenServer.cast(pid, :remote_close)
-          %Connection{state | ports: Map.put(ports, port_ref, {pid, :down})}
-        else
-          _other -> state
+        case ports[port_ref] do
+          {pid, :up} ->
+            GenServer.cast(pid, :remote_close)
+            %Connection{state | ports: Map.put(ports, port_ref, {pid, :down})}
+
+          _other ->
+            state
         end
 
       other ->
@@ -696,7 +701,7 @@ defmodule DiodeClient.Connection do
     end
   end
 
-  def rpc(pid, [cmd | _rest] = data) do
+  def rpc(pid, data = [cmd | _rest]) do
     req = req_id()
     rlp = Rlp.encode!([req | [data]])
 
@@ -707,7 +712,7 @@ defmodule DiodeClient.Connection do
     end
   end
 
-  def rpc_async(pid, [cmd | _rest] = data) do
+  def rpc_async(pid, data = [cmd | _rest]) do
     req = req_id()
     rlp = Rlp.encode!([req | [data]])
     call(pid, {:rpc_async, cmd, req, rlp, System.monotonic_time(), self()})
@@ -717,7 +722,7 @@ defmodule DiodeClient.Connection do
     GenServer.call(pid, args, :infinity)
   end
 
-  def rpc_cast(pid, [cmd | _rest] = data) do
+  def rpc_cast(pid, data = [cmd | _rest]) do
     req = req_id()
     rlp = Rlp.encode!([req | [data]])
     GenServer.cast(pid, {:rpc, cmd, req, rlp, System.monotonic_time(), self()})

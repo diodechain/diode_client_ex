@@ -120,7 +120,7 @@ defmodule DiodeClient.Shell do
     state_roots = Task.await(state_roots, :infinity)
 
     case account do
-      # todo this needs a proof as well...
+      # empty needs a proof as well...
       [:error, "account does not exist"] ->
         %Account{
           nonce: 0,

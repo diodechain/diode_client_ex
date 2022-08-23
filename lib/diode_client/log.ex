@@ -1,4 +1,5 @@
 defmodule DiodeClient.Log do
+  @moduledoc false
   require Logger
   @doc false
   defmacro __using__(_opts) do

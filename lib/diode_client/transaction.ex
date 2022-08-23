@@ -2,7 +2,7 @@
 # Copyright 2019 IoT Blockchain Technology Corporation LLC (IBTC)
 # Licensed under the Diode License, Version 1.0
 defmodule DiodeClient.Transaction do
-  # alias DiodeClient.TransactionReceipt
+  @moduledoc false
   alias DiodeClient.{Base16, Hash, Rlp, Rlpx, Secp256k1, Transaction, Wallet}
 
   @enforce_keys [:chain_id]
@@ -29,7 +29,7 @@ defmodule DiodeClient.Transaction do
   def payload(%Transaction{to: nil, init: init}), do: init
   def payload(%Transaction{data: nil}), do: ""
   def payload(%Transaction{data: data}), do: data
-  def to(%Transaction{to: nil} = tx), do: new_contract_address(tx)
+  def to(tx = %Transaction{to: nil}), do: new_contract_address(tx)
   def to(%Transaction{to: to}), do: to
   def chain_id(%Transaction{chain_id: chain_id}), do: chain_id
 
@@ -114,7 +114,7 @@ defmodule DiodeClient.Transaction do
     nil
   end
 
-  def new_contract_address(%Transaction{nonce: nonce} = tx) do
+  def new_contract_address(tx = %Transaction{nonce: nonce}) do
     address = Wallet.address!(origin(tx))
 
     Rlp.encode!([address, nonce])

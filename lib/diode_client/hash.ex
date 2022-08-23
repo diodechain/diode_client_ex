@@ -1,4 +1,5 @@
 defmodule DiodeClient.Hash do
+  @moduledoc false
   alias DiodeClient.{Base16, Rlp}
   @spec integer(binary()) :: non_neg_integer()
   def integer(hash) do

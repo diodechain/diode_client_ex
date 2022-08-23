@@ -1,4 +1,5 @@
 defmodule DiodeClient.Ticket do
+  @moduledoc false
   alias DiodeClient.{Wallet, Secp256k1, Hash, ABI}
   require Record
 

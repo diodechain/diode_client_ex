@@ -1,4 +1,5 @@
 defmodule DiodeClient.Port do
+  @moduledoc false
   alias DiodeClient.{Acceptor, Control, Port, Certs, Connection, Wallet}
   use GenServer
   use DiodeClient.Log
@@ -82,7 +83,7 @@ defmodule DiodeClient.Port do
     close(pid)
   end
 
-  def close(%Acceptor.Listener{} = listener) do
+  def close(listener = %Acceptor.Listener{}) do
     Acceptor.close(listener)
   end
 
@@ -190,7 +191,7 @@ defmodule DiodeClient.Port do
     {:reply, ret, state}
   end
 
-  @packet_limit 65000
+  @packet_limit 65_000
   def send(pid, msg) do
     msg = :erlang.iolist_to_binary(msg)
 

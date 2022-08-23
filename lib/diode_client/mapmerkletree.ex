@@ -1,4 +1,5 @@
 defmodule DiodeClient.MapMerkleTree do
+  @moduledoc false
   alias DiodeClient.{HeapMerkleTree, MapMerkleTree, MerkleTree}
 
   # ========================================================

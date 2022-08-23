@@ -1,4 +1,5 @@
 defmodule DiodeClient.Acceptor do
+  @moduledoc false
   use GenServer
   use DiodeClient.Log
   alias DiodeClient.{Acceptor, Port}
@@ -8,6 +9,7 @@ defmodule DiodeClient.Acceptor do
   @max_backlog 120
 
   defmodule Listener do
+    @moduledoc false
     defstruct [:portnum, :opts]
   end
 
@@ -35,7 +37,7 @@ defmodule DiodeClient.Acceptor do
     end
   end
 
-  def accept(%Listener{portnum: portnum} = listener, timeout \\ :infinity) do
+  def accept(listener = %Listener{portnum: portnum}, timeout \\ :infinity) do
     {time, ret} = :timer.tc(fn -> do_accept(portnum, timeout) end)
     timeout = if timeout == :infinity, do: :infinity, else: timeout - time
 
@@ -93,7 +95,7 @@ defmodule DiodeClient.Acceptor do
   def handle_call(
         {:open, portnum, options},
         _from,
-        %Acceptor{ports: ports, local_ports: local} = state
+        state = %Acceptor{ports: ports, local_ports: local}
       ) do
     new_value =
       case Keyword.fetch(options, :callback) do
@@ -127,18 +129,18 @@ defmodule DiodeClient.Acceptor do
     {:reply, reply, state}
   end
 
-  def handle_call({:local_port, portnum}, _from, %Acceptor{local_ports: local} = state) do
+  def handle_call({:local_port, portnum}, _from, state = %Acceptor{local_ports: local}) do
     {:reply, Map.get(local, portnum), state}
   end
 
-  def handle_call({:close, portnum}, _from, %Acceptor{} = state) do
+  def handle_call({:close, portnum}, _from, state = %Acceptor{}) do
     {:reply, :ok, do_close(portnum, state)}
   end
 
   def handle_call(
         {:accept, portnum, timeout},
         from,
-        %Acceptor{backlog: backlog, ports: ports} = state
+        state = %Acceptor{backlog: backlog, ports: ports}
       ) do
     case Map.get(backlog, portnum) do
       [request] ->
@@ -169,7 +171,7 @@ defmodule DiodeClient.Acceptor do
   def handle_call(
         {:inject, portnum, request},
         _from,
-        %Acceptor{backlog: backlog, ports: ports} = state
+        state = %Acceptor{backlog: backlog, ports: ports}
       ) do
     case Map.get(ports, portnum) do
       [client | rest] ->
@@ -220,7 +222,7 @@ defmodule DiodeClient.Acceptor do
   end
 
   @impl true
-  def handle_info({:backlog_timeout, portnum, request}, %Acceptor{backlog: backlog} = state) do
+  def handle_info({:backlog_timeout, portnum, request}, state = %Acceptor{backlog: backlog}) do
     backlog =
       case Map.get(backlog, portnum) do
         nil ->
@@ -239,7 +241,7 @@ defmodule DiodeClient.Acceptor do
     {:noreply, %Acceptor{state | backlog: backlog}}
   end
 
-  def handle_info({:accept_timeout, portnum, from}, %Acceptor{ports: ports} = state) do
+  def handle_info({:accept_timeout, portnum, from}, state = %Acceptor{ports: ports}) do
     ports =
       case Map.get(ports, portnum) do
         list when is_list(list) ->
@@ -257,7 +259,7 @@ defmodule DiodeClient.Acceptor do
     {:noreply, %Acceptor{state | ports: ports}}
   end
 
-  defp do_close(portnum, %Acceptor{ports: ports, local_ports: local} = state) do
+  defp do_close(portnum, state = %Acceptor{ports: ports, local_ports: local}) do
     case Map.get(ports, portnum) do
       list when is_list(list) -> list
       _other -> []

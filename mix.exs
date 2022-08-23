@@ -31,7 +31,7 @@ defmodule DiodeClient.MixProject do
       lint: [
         "compile",
         "format --check-formatted",
-        "credo --only warning",
+        "credo",
         "dialyzer"
       ]
     ]

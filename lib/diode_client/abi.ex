@@ -1,4 +1,5 @@
 defmodule DiodeClient.ABI do
+  @moduledoc false
   alias DiodeClient.{Hash, Wallet}
   use DiodeClient.Log
   import Wallet

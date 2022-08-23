@@ -1,4 +1,5 @@
 defmodule DiodeClient.MerkleTree do
+  @moduledoc false
   alias DiodeClient.HeapMerkleTree
   @type key_type :: binary() | integer()
   @type value_type :: term()
@@ -16,7 +17,7 @@ defmodule DiodeClient.MerkleTree do
     HeapMerkleTree.new()
   end
 
-  def copy({mod, _opts, _tree} = merkle) do
+  def copy(merkle = {mod, _opts, _tree}) do
     copy(merkle, mod)
   end
 
@@ -55,52 +56,52 @@ defmodule DiodeClient.MerkleTree do
   # Wrapper functions for the impls
   # ========================================================
   @spec root_hash(merkle()) :: hash_type()
-  def root_hash({mod, _opts, _tree} = merkle) do
+  def root_hash(merkle = {mod, _opts, _tree}) do
     mod.root_hash(merkle)
   end
 
   @spec root_hashes(merkle()) :: [hash_type()]
-  def root_hashes({mod, _opts, _tree} = merkle) do
+  def root_hashes(merkle = {mod, _opts, _tree}) do
     mod.root_hashes(merkle)
   end
 
   @spec get_proofs(merkle(), key_type()) :: proof_type()
-  def get_proofs({mod, _options, _tree} = merkle, key) do
+  def get_proofs(merkle = {mod, _options, _tree}, key) do
     mod.get_proofs(merkle, key)
   end
 
   @spec get(merkle(), key_type()) :: value_type()
-  def get({mod, _options, _tree} = merkle, key) do
+  def get(merkle = {mod, _options, _tree}, key) do
     mod.get(merkle, key)
   end
 
   @spec size(merkle()) :: non_neg_integer()
-  def size({mod, _options, _tree} = merkle) do
+  def size(merkle = {mod, _options, _tree}) do
     mod.size(merkle)
   end
 
   @spec bucket_count(merkle()) :: pos_integer()
-  def bucket_count({mod, _options, _tree} = merkle) do
+  def bucket_count(merkle = {mod, _options, _tree}) do
     mod.bucket_count(merkle)
   end
 
   @spec to_list(merkle()) :: [item()]
-  def to_list({mod, _options, _tree} = merkle) do
+  def to_list(merkle = {mod, _options, _tree}) do
     mod.to_list(merkle)
   end
 
   @spec delete(merkle(), key_type()) :: merkle()
-  def delete({mod, _options, _tree} = merkle, key) do
+  def delete(merkle = {mod, _options, _tree}, key) do
     mod.delete(merkle, key)
   end
 
   @spec member?(merkle(), key_type()) :: boolean()
-  def member?({mod, _opts, _tree} = merkle, key) do
+  def member?(merkle = {mod, _opts, _tree}, key) do
     mod.member?(merkle, key)
   end
 
   @spec insert_items(merkle(), [item()]) :: merkle()
-  def insert_items({mod, _options, _tree} = merkle, items) do
+  def insert_items(merkle = {mod, _options, _tree}, items) do
     mod.insert_items(merkle, items)
   end
 end

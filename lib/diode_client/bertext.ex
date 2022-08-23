@@ -1,4 +1,5 @@
 defmodule DiodeClient.BertExt do
+  @moduledoc false
   @spec encode!(any()) :: binary()
   def encode!(term) do
     :erlang.term_to_binary(term_to_binary(term))

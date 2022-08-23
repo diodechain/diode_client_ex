@@ -109,7 +109,7 @@ defmodule DiodeClient.Wallet do
   def privkey?(wallet(privkey: nil)), do: false
   def privkey?(wallet(privkey: _privkey)), do: true
 
-  def equal?(wallet() = a, wallet() = b) do
+  def equal?(a = wallet(), b = wallet()) do
     address!(a) == address!(b)
   end
 

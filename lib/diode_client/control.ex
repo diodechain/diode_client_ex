@@ -1,4 +1,5 @@
 defmodule DiodeClient.Control do
+  @moduledoc false
   use GenServer
   use DiodeClient.Log
   alias DiodeClient.{Acceptor, Connection, Control, Port, Rlp, Rlpx}
@@ -75,7 +76,7 @@ defmodule DiodeClient.Control do
   defp accept_socket(ssl) do
     peer = Port.peer(ssl)
 
-    # TODO: Let's think how to make this less promisious
+    # Think about how to make this less promiscuous
     # e.g. reduce to known peers or such
     case ensure_peer(peer) do
       nil ->

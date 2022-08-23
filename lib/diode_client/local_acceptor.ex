@@ -1,4 +1,5 @@
 defmodule DiodeClient.LocalAcceptor do
+  @moduledoc false
   use GenServer
   use DiodeClient.Log
   alias DiodeClient.{Acceptor, Connection, LocalAcceptor}
