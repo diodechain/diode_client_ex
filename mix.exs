@@ -1,7 +1,7 @@
 defmodule DiodeClient.MixProject do
   use Mix.Project
 
-  @version "1.0.2"
+  @version "1.1.0"
   @name "Diode Client"
   @url "https://github.com/diodechain/diode_client"
   @maintainers ["Dominic Letz"]
