@@ -40,7 +40,9 @@ defmodule DiodeClient.Shell do
       if unquote(a) != unquote(b) do
         throw(
           {:merkle_check_failed,
-           "Assert #{inspect(unquote(stra))} == #{inspect(unquote(strb))} failed! (#{inspect(unquote(a))} != #{inspect(unquote(b))})"}
+           "Assert #{inspect(unquote(stra))} == #{inspect(unquote(strb))} failed! (#{
+             inspect(unquote(a))
+           } != #{inspect(unquote(b))})"}
         )
       end
     end
