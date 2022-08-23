@@ -1,6 +1,6 @@
 defmodule DiodeClient do
   @moduledoc ~S"""
-  DiodeClient secure end-to-end encrypted connections bettween any two machines. Connections are established
+  [DiodeClient](https://github.com/diodechain/diode_client) secure end-to-end encrypted connections bettween any two machines. Connections are established
   either through direct peer-to-peer TCP connections or bridged via the Diode network. To learn more about the
   decentralized Diode network visit https://diode.io/
 
