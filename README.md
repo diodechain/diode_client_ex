@@ -96,7 +96,7 @@ by adding `diode_client` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:diode_client, "~> 1.0.0"}
+    {:diode_client, "~> 1.1"}
   ]
 end
 ```
