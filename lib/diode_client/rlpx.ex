@@ -74,8 +74,14 @@ defmodule DiodeClient.Rlpx do
     atoms = Keyword.get(opts, :atoms, false)
     opts = Keyword.put(opts, :atoms, if(is_integer(atoms), do: atoms - 1, else: atoms))
 
-    Enum.reduce(list, %{}, fn
-      [key, value], map ->
+    is_map =
+      Enum.all?(list, fn
+        [key, _value] when is_binary(key) -> true
+        _other -> false
+      end)
+
+    if is_map do
+      Enum.reduce(list, %{}, fn [key, value], map ->
         key =
           if (atoms == true or (is_integer(atoms) and atoms > 0)) and is_binary(key) do
             String.to_atom(key)
@@ -85,9 +91,11 @@ defmodule DiodeClient.Rlpx do
 
         value = if recursive and is_list(value), do: list2map(value, opts), else: value
         Map.put(map, key, value)
-
-      key, map ->
-        Map.put(map, key, true)
-    end)
+      end)
+    else
+      Enum.map(list, fn value ->
+        if recursive and is_list(value), do: list2map(value, opts), else: value
+      end)
+    end
   end
 end
