@@ -141,7 +141,7 @@ defmodule DiodeClient.Connection do
       Process.sleep(backoff)
     end
 
-    :ssl.connect(String.to_charlist(server), port, ssl_options(), 25000)
+    :ssl.connect(String.to_charlist(server), port, ssl_options(), 25_000)
     |> case do
       {:ok, socket} ->
         NetworkMonitor.close_on_down(socket, :ssl)

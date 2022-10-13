@@ -33,7 +33,7 @@ defmodule DiodeClient.Manager do
       {pre,
        %Info{
          server_url: "#{pre}.prenet.diode.io",
-         ports: [41046, 993, 1723, 10000] ++ extra_ports(pre),
+         ports: [41_046, 993, 1723, 10_000] ++ extra_ports(pre),
          key: pre
        }}
     end)
