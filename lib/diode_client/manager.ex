@@ -8,7 +8,7 @@ defmodule DiodeClient.Manager do
     @moduledoc false
     # server_address is the diode public key
     # server_url is the url to connect
-    defstruct [:latency, :server_address, :server_url, :port, :key, :pid, :start, :peak]
+    defstruct [:latency, :server_address, :server_url, :ports, :key, :pid, :start, :peak]
   end
 
   def start_link([]) do
@@ -23,10 +23,19 @@ defmodule DiodeClient.Manager do
   end
 
   defp seed_keys(), do: [:eu1, :us1, :as1, :eu2, :us2, :as2]
+  defp extra_ports(:eu1), do: [443]
+  defp extra_ports(:as1), do: [443]
+  defp extra_ports(:us1), do: [443]
+  defp extra_ports(_), do: []
 
   defp seed_list() do
     Enum.map(seed_keys(), fn pre ->
-      {pre, %Info{server_url: "#{pre}.prenet.diode.io", port: 41_046, key: pre}}
+      {pre,
+       %Info{
+         server_url: "#{pre}.prenet.diode.io",
+         ports: [41046, 993, 1723, 10000] ++ extra_ports(pre),
+         key: pre
+       }}
     end)
     |> Map.new()
   end
@@ -106,10 +115,10 @@ defmodule DiodeClient.Manager do
   end
 
   defp restart_conn(key, state = %Manager{server_list: servers, conns: conns}) do
-    info = %Info{server_url: server, port: port, key: ^key} = Map.get(servers, key)
+    info = %Info{server_url: server, ports: ports, key: ^key} = Map.get(servers, key)
 
     pid =
-      case Connection.start_link(server, port, key) do
+      case Connection.start_link(server, ports, key) do
         {:ok, pid} -> pid
         {:error, {:already_started, pid}} -> pid
       end

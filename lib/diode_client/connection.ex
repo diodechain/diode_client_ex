@@ -49,7 +49,7 @@ defmodule DiodeClient.Connection do
     end
   end
 
-  @enforce_keys [:events, :fleet, :server, :port]
+  @enforce_keys [:events, :fleet, :server, :server_ports]
   defstruct recv_id: %{},
             ports: %{},
             channels: %{},
@@ -60,7 +60,7 @@ defmodule DiodeClient.Connection do
             events: nil,
             fleet: nil,
             server: nil,
-            port: nil,
+            server_ports: nil,
             latency: @inital_latency,
             server_wallet: nil,
             socket: nil,
@@ -69,15 +69,15 @@ defmodule DiodeClient.Connection do
             ticket_count: 0,
             blocked: []
 
-  def start_link(server, port, id) do
-    GenServer.start_link(__MODULE__, [server, port],
+  def start_link(server, ports, id) when is_list(ports) do
+    GenServer.start_link(__MODULE__, [server, ports],
       name: id,
       hibernate_after: 5_000
     )
   end
 
   @impl true
-  def init([server, port]) do
+  def init([server, ports]) do
     Process.flag(:trap_exit, true)
     {conns, bytes} = {1, 0}
 
@@ -89,7 +89,7 @@ defmodule DiodeClient.Connection do
       events: :queue.new(),
       fleet: fleet_address(),
       server: server,
-      port: port
+      server_ports: ports
     }
 
     {:ok, state, {:continue, :init}}
@@ -132,15 +132,16 @@ defmodule DiodeClient.Connection do
     state
   end
 
-  defp connect(state = %Connection{server: server, port: port}, count \\ 0) do
+  defp connect(state = %Connection{server: server, server_ports: ports}, count \\ 0) do
     backoff = fib(count) * 1_000
+    port = Enum.at(ports, rem(count, length(ports)))
 
     if backoff > 0 do
-      log("DiodeClient.Connect delayed by #{backoff}ms")
+      log("DiodeClient.Connect delayed by #{backoff}ms trying port #{port}")
       Process.sleep(backoff)
     end
 
-    :ssl.connect(String.to_charlist(server), port, ssl_options(), 5000)
+    :ssl.connect(String.to_charlist(server), port, ssl_options(), 25000)
     |> case do
       {:ok, socket} ->
         NetworkMonitor.close_on_down(socket, :ssl)
