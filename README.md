@@ -90,8 +90,7 @@ To this regard the `DiodeClient` will by default store private keys in local fil
 
 ## Installation
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `diode_client` to your list of dependencies in `mix.exs`:
+The package can be installed by adding `diode_client` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
