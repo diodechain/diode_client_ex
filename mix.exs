@@ -76,7 +76,12 @@ defmodule DiodeClient.MixProject do
       # Linting
       {:credo, "~> 1.5", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.1", only: [:dev], runtime: false},
-      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
+
+      # testing
+      {:hackney, "~> 1.18"}
+      # {:oncrash, "~> 0.1.0"},
+      # {:httpoison, "~> 2.0"}
     ]
   end
 end
