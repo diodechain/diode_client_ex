@@ -91,6 +91,7 @@ defmodule DiodeClient.SocksProxySsl do
     end
   end
 
+  @dialyzer {:nowarn_function, continue_connect: 2}
   def continue_connect(conn, target_url) do
     {:ok, _port_bytes} = DiodeClient.Transport.recv(conn, 2)
     # hackney is written in erlang, which uses lists for strings. encode here:
