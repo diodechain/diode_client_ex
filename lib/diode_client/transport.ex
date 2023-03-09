@@ -39,6 +39,7 @@ defmodule DiodeClient.Transport do
   defdelegate controlling_process(pid, dst), to: :ssl
   defdelegate peername(pid), to: :ssl
   defdelegate setopts(pid, opts), to: :ssl
+  defdelegate getopts(pid, opts), to: :ssl
   defdelegate send(pid, data), to: :ssl
   defdelegate recv(pid, length), to: :ssl
   defdelegate recv(pid, length, timeout), to: :ssl
