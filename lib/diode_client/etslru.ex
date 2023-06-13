@@ -30,25 +30,29 @@ defmodule DiodeClient.ETSLru do
   def put(lru, key, value) do
     filter_fun = filter(lru)
 
-    if filter_fun.(value) and get(lru, key) != value do
-      key = {:key, key}
-      n = :ets.update_counter(lru, :meta, 1)
+    if filter_fun.(value) do
+      if get(lru, key) != value do
+        key = {:key, key}
+        n = :ets.update_counter(lru, :meta, 1)
 
-      :ets.insert(lru, {key, value, n})
-      :ets.insert(lru, {n, key})
+        :ets.insert(lru, {key, value, n})
+        :ets.insert(lru, {n, key})
 
-      max_size = :ets.lookup_element(lru, :meta, 3)
-      del = n - max_size
+        max_size = :ets.lookup_element(lru, :meta, 3)
+        del = n - max_size
 
-      if del > 0 do
-        [{^del, key}] = :ets.lookup(lru, del)
-        :ets.delete(lru, del)
+        if del > 0 do
+          [{^del, key}] = :ets.lookup(lru, del)
+          :ets.delete(lru, del)
 
-        case :ets.lookup(lru, key) do
-          [{^key, _value, ^del}] -> :ets.delete(lru, key)
-          _ -> :ok
+          case :ets.lookup(lru, key) do
+            [{^key, _value, ^del}] -> :ets.delete(lru, key)
+            _ -> :ok
+          end
         end
       end
+    else
+      delete(lru, key)
     end
 
     value
