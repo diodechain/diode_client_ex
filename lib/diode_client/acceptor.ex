@@ -3,7 +3,7 @@ defmodule DiodeClient.Acceptor do
   use GenServer
   use DiodeClient.Log
   alias DiodeClient.{Acceptor, Port}
-  defstruct [:backlog, :ports, :local_ports]
+  defstruct [:backlog, :ports, :local_ports, :backup]
 
   @timeout 30_000
   @max_backlog 120
@@ -14,13 +14,16 @@ defmodule DiodeClient.Acceptor do
   end
 
   def start_link([]) do
-    state = %Acceptor{backlog: %{}, ports: %{}, local_ports: %{}}
+    state = %Acceptor{backlog: %{}, ports: %{}, local_ports: %{}, backup: %{}}
     GenServer.start_link(__MODULE__, state, name: __MODULE__, hibernate_after: 5_000)
   end
 
   @impl true
   def init(state) do
-    {:ok, state}
+    case Application.fetch_env(:diode_client, :backup) do
+      {:ok, backup} -> {:ok, state, {:continue, {:restore, backup}}}
+      _ -> {:ok, state}
+    end
   end
 
   def listen(portnum, options \\ []) when is_integer(portnum) do
@@ -61,6 +64,10 @@ defmodule DiodeClient.Acceptor do
     GenServer.cast(__MODULE__, {:close, portnum})
   end
 
+  def all_ports() do
+    GenServer.call(__MODULE__, :all_ports)
+  end
+
   defp do_accept(portnum, timeout) do
     GenServer.call(Acceptor, {:accept, portnum, timeout}, :infinity)
     |> case do
@@ -92,6 +99,10 @@ defmodule DiodeClient.Acceptor do
   end
 
   @impl true
+  def handle_call(:all_ports, _from, state = %Acceptor{ports: ports}) do
+    {:reply, ports, state}
+  end
+
   def handle_call(
         {:open, portnum, options},
         _from,
@@ -108,6 +119,10 @@ defmodule DiodeClient.Acceptor do
       if new_value == :invalid_callback do
         {{:error, :invalid_callback}, state}
       else
+        backup = Map.put(state.backup, portnum, new_value)
+        state = %{state | backup: backup}
+        Application.put_env(:diode_client, :backup, backup)
+
         state =
           if is_function(new_value) do
             do_close(portnum, state)
@@ -259,7 +274,22 @@ defmodule DiodeClient.Acceptor do
     {:noreply, %Acceptor{state | ports: ports}}
   end
 
-  defp do_close(portnum, state = %Acceptor{ports: ports, local_ports: local}) do
+  @impl true
+  def handle_continue({:restore, backup}, state) do
+    state =
+      Enum.reduce(backup, state, fn {portnum, callback}, state ->
+        if is_function(callback) do
+          {:reply, _, state} = handle_call({:open, portnum, callback: callback}, nil, state)
+          state
+        else
+          state
+        end
+      end)
+
+    {:noreply, state}
+  end
+
+  defp do_close(portnum, state = %Acceptor{ports: ports, local_ports: local, backup: backup}) do
     case Map.get(ports, portnum) do
       list when is_list(list) -> list
       _other -> []
@@ -271,6 +301,11 @@ defmodule DiodeClient.Acceptor do
       pid -> GenServer.stop(pid, :closed, 1_000)
     end
 
-    %Acceptor{state | ports: Map.delete(ports, portnum), local_ports: Map.delete(local, portnum)}
+    %Acceptor{
+      state
+      | ports: Map.delete(ports, portnum),
+        local_ports: Map.delete(local, portnum),
+        backup: Map.delete(backup, portnum)
+    }
   end
 end
