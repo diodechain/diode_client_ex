@@ -14,4 +14,15 @@ defmodule DiodeClientRlpxTest do
 
     assert Rlpx.list2map(Rlp.encode!(input) |> Rlp.decode!(), atoms: 1, recursive: true) == output
   end
+
+  test "list2map empty lists/maps" do
+    input_map = %{files: %{}}
+    input_list = %{files: []}
+
+    assert Rlpx.list2map(Rlp.encode!(input_map) |> Rlp.decode!(), atoms: 1, recursive: true) ==
+             input_map
+
+    assert Rlpx.list2map(Rlp.encode!(input_list) |> Rlp.decode!(), atoms: 1, recursive: true) ==
+             input_map
+  end
 end
