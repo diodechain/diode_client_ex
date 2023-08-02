@@ -457,7 +457,7 @@ defmodule DiodeClient.Port do
     end
   end
 
-  defp do_connect([], _destination, _port, access) do
+  defp do_connect([], _destination, _port, _access) do
     {:error, "not found"}
   end
 

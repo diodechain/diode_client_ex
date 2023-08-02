@@ -7,8 +7,7 @@ defmodule DiodeClientTest do
 
     DiodeClient.port_listen(5000,
       callback: fn socket ->
-        IO.puts("Accepted connection on port 5000")
-        IO.inspect(socket)
+        IO.puts("Accepted connection on port 5000 #{inspect(socket)}")
       end
     )
 
