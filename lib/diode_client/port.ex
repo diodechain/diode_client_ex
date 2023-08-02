@@ -414,10 +414,10 @@ defmodule DiodeClient.Port do
   defp do_connect(destination, port, options) do
     access = Keyword.get(options, :access, "rw")
 
-    conn =
+    conns =
       case DiodeClient.Shell.get_object(destination) do
         nil ->
-          DiodeClient.default_conn()
+          [DiodeClient.default_conn()]
 
         ticket ->
           all_conns = DiodeClient.connections()
@@ -430,9 +430,13 @@ defmodule DiodeClient.Port do
           end)
           |> Enum.filter(fn conn -> conn != nil end)
           |> Enum.concat([DiodeClient.default_conn()])
-          |> hd()
+          |> Enum.uniq()
       end
 
+    do_connect(conns, destination, port, access)
+  end
+
+  defp do_connect([conn | conns], destination, port, access) do
     conn
     |> DiodeClient.Connection.rpc([
       "portopen",
@@ -445,9 +449,16 @@ defmodule DiodeClient.Port do
         update_peer_port(pid, destination, port)
         tls_connect(pid)
 
+      [:error, "not found"] ->
+        do_connect(conns, destination, port, access)
+
       [:error, reason] ->
         {:error, reason}
     end
+  end
+
+  defp do_connect([], _destination, _port, access) do
+    {:error, "not found"}
   end
 
   defdelegate listen(portnum, opts \\ []), to: DiodeClient.Acceptor
