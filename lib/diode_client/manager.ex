@@ -231,7 +231,7 @@ defmodule DiodeClient.Manager do
     {:noreply, restart_all(state)}
   end
 
-  def get_connection_info(cpid, key) when key == :server_address or key == :latency do
+  def get_connection_info(cpid, key) when key in [:server_address, :latency, :server_url] do
     GenServer.call(__MODULE__, {:get_info, cpid, key})
   end
 

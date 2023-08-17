@@ -103,6 +103,10 @@ defmodule DiodeClient.Connection do
     Manager.get_connection_info(pid, :server_address) || ""
   end
 
+  def server_url(pid) do
+    Manager.get_connection_info(pid, :server_url) || ""
+  end
+
   def peak(pid) do
     call(pid, :peak)
   end
@@ -148,7 +152,7 @@ defmodule DiodeClient.Connection do
         {:ok, socket}
 
       {:error, reason} ->
-        log("DiodeClient.Connect failed to #{server}: #{reason}")
+        log("DiodeClient.Connect failed to #{server}: #{inspect(reason)}")
 
         %{state | latency: @inital_latency}
         |> update_info()

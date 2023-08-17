@@ -14,19 +14,25 @@ defmodule DiodeClient.Transport do
   """
   alias DiodeClient.Rlpx
 
+  @spec connect(binary(), integer(), keyword, integer()) :: {:ok, pid()} | {:error, any()}
   def connect(addr, port, opts \\ [], timeout \\ 5000) when is_integer(port) do
     port = Rlpx.bin2uint("tls:#{port}")
+
     DiodeClient.Port.connect(addr, port, opts, timeout)
+    |> maybe_reset_options()
   end
 
+  @spec listen(keyword) :: %DiodeClient.Acceptor.Listener{}
   def listen(opts) do
     port = Keyword.fetch!(opts, :port)
     portnum = Rlpx.bin2uint("tls:#{port}")
     DiodeClient.Port.listen(portnum)
   end
 
+  @spec accept(%DiodeClient.Acceptor.Listener{}, any) :: {:error, any()} | {:ok, pid()}
   def accept(portnum, timeout) do
     DiodeClient.Port.accept(portnum, timeout)
+    |> maybe_reset_options()
   end
 
   def sockname(ssl) when is_tuple(ssl), do: :ssl.sockname(ssl)
@@ -56,4 +62,15 @@ defmodule DiodeClient.Transport do
   def messages(_pid), do: {:ssl, :ssl_closed, :ssl_error}
   def name(), do: __MODULE__
   def secure(), do: true
+
+  defp maybe_reset_options(ret) do
+    case ret do
+      {:ok, pid} ->
+        setopts(pid, packet: :raw, active: false, mode: :binary)
+        {:ok, pid}
+
+      other ->
+        other
+    end
+  end
 end
