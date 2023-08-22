@@ -122,7 +122,23 @@ defmodule DiodeClient.Port do
   @impl true
   def handle_cast(:remote_close, state = %Port{controlling_process: cp}) do
     with {pid, _mon} <- cp do
-      Kernel.send(pid, {Port.Closed, self()})
+      msg = {Port.Closed, self()}
+
+      # There is a bug in some erlang:ssl module implementations where the
+      # "close" signal when coming too early will be ignored. Hence
+      # we're sending it potentially multiple times until the message is received
+      spawn(fn ->
+        Enum.reduce_while([1, 10, 100, 100, 1000, 5000], 0, fn delay, acc ->
+          Kernel.send(pid, msg)
+          Process.sleep(delay)
+
+          if Process.alive?(pid) do
+            {:cont, acc + 1}
+          else
+            {:halt, acc}
+          end
+        end)
+      end)
     end
 
     # avoiding dangling process
