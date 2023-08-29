@@ -11,6 +11,11 @@ defmodule DiodeClient.Acceptor do
   defmodule Listener do
     @moduledoc false
     defstruct [:portnum, :opts]
+
+    @type t :: %__MODULE__{
+            portnum: integer(),
+            opts: keyword()
+          }
   end
 
   def start_link([]) do

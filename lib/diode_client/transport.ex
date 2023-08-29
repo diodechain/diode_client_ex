@@ -22,14 +22,14 @@ defmodule DiodeClient.Transport do
     |> maybe_reset_options()
   end
 
-  @spec listen(keyword) :: %DiodeClient.Acceptor.Listener{}
+  @spec listen(keyword) :: DiodeClient.Acceptor.Listener.t()
   def listen(opts) do
     port = Keyword.fetch!(opts, :port)
     portnum = Rlpx.bin2uint("tls:#{port}")
     DiodeClient.Port.listen(portnum)
   end
 
-  @spec accept(%DiodeClient.Acceptor.Listener{}, any) :: {:error, any()} | {:ok, pid()}
+  @spec accept(DiodeClient.Acceptor.Listener.t(), any) :: {:error, any()} | {:ok, pid()}
   def accept(portnum, timeout) do
     DiodeClient.Port.accept(portnum, timeout)
     |> maybe_reset_options()
@@ -53,9 +53,14 @@ defmodule DiodeClient.Transport do
   defdelegate close(pid), to: :ssl
 
   def sendfile(socket, path, offset, bytes) do
-    :ranch_transport.sendfile(name(), socket, path, offset, bytes,
+    apply(:ranch_transport, :sendfile, [
+      name(),
+      socket,
+      path,
+      offset,
+      bytes,
       chunk_size: DiodeClient.Port.chunk_size()
-    )
+    ])
   end
 
   def messages(), do: {:ssl, :ssl_closed, :ssl_error, :ssl_passive}
