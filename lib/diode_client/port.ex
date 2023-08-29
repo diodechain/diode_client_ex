@@ -315,13 +315,14 @@ defmodule DiodeClient.Port do
   end
 
   @tls_timeout 60_000
-  @dialyzer {:nowarn_function, tls_connect: 1}
+  # @dialyzer {:nowarn_function, tls_connect: 1}
+  @spec tls_connect(any()) :: {:ok, any()} | {:error, any()}
   def tls_connect(pid) do
     opts = transport_option(pid)
 
     # This in a bridged virtual SSL conn not running via a
     # raw socket, so no NetworkManager monitoring here
-    :ssl.connect(pid, opts, @tls_timeout)
+    apply(:ssl, :connect, [pid, opts, @tls_timeout])
   end
 
   def tls_handshake(pid) do
