@@ -1,7 +1,7 @@
 defmodule DiodeClient.MixProject do
   use Mix.Project
 
-  @version "1.1.3"
+  @version "1.1.4"
   @name "Diode Client"
   @url "https://github.com/diodechain/diode_client_ex"
   @maintainers ["Dominic Letz"]
@@ -70,7 +70,6 @@ defmodule DiodeClient.MixProject do
       {:ex_sha3, "~> 0.1.1"},
       {:libsecp256k1, "~> 0.1", hex: :libsecp256k1_diode_fork},
       {:network_monitor, "~> 1.1"},
-      {:poison, "~> 3.0"},
       # {:libsecp256k1, github: "diodechain/libsecp256k1"},
 
       # Linting
