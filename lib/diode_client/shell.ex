@@ -1,4 +1,5 @@
 defmodule DiodeClient.Shell do
+  alias DiodeClient.MetaTransaction
   alias DiodeClient.{
     ABI,
     Account,
@@ -70,6 +71,25 @@ defmodule DiodeClient.Shell do
     callcode = ABI.encode_call(function_name, types, values)
     create_transaction(callcode, opts)
   end
+
+  @deadline 1_800_000_000
+  def create_meta_transaction(address, function_name, types, values, opts \\ [])
+      when is_list(types) and is_list(values) do
+    # https://solidity.readthedocs.io/en/v0.4.24/abi-spec.html
+    callcode = ABI.encode_call(function_name, types, values)
+    wallet = DiodeClient.ensure_wallet()
+    from = Wallet.address!(wallet)
+
+
+    gaslimit = Keyword.get(opts, :gas, @gas_limit)
+    deadline = Keyword.get(opts, :deadline, @deadline)
+    value = Keyword.get(opts, :value, 0)
+
+    %MetaTransaction{from: from, to: address, call: callcode, gaslimit: gaslimit, deadline: deadline, value: value}
+    |> MetaTransaction.sign(wallet)
+  end
+
+
 
   def get_object(key) do
     case cached_rpc(["getobject", key]) do
