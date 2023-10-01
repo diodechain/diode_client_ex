@@ -79,7 +79,7 @@ defmodule DiodeClient.Secp256k1 do
     )
   end
 
-  @spec sign(private_key(), binary(), :sha | :kec) :: signature()
+  @spec sign(private_key(), binary(), :sha | :kec | :none) :: signature()
   def sign(private, msg, algo \\ :sha) do
     {:ok, signature, recid} =
       :libsecp256k1.ecdsa_sign_compact(hash(algo, msg), private, :default, "")

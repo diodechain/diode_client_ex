@@ -1,7 +1,11 @@
 defmodule DiodeClient.Contracts.CallPermit do
-  alias DiodeClient.{ABI, Base16, EIP712, Wallet}
-  # https://github.com/moonbeam-foundation/moonbeam/blob/master/precompiles/call-permit/CallPermit.sol
-  @address Base16.decode("0x000000000000000000000000000000000000080A")
+  @moduledoc """
+    Moonbeam CallPermit contract
+    https://github.com/moonbeam-foundation/moonbeam/blob/master/precompiles/call-permit/CallPermit.sol
+  """
+  alias DiodeClient.{ABI, Base16, EIP712}
+
+  # @address Base16.decode("0x000000000000000000000000000000000000080A")
   # Moonbase Alpha (0x507)
   # @chain_id 1287
   @domain_separator Base16.decode(
@@ -24,7 +28,7 @@ defmodule DiodeClient.Contracts.CallPermit do
   # /// @param s S part of the signature.
   # /// @return output Output of the call.
   # /// @custom:selector b5ea0966
-  def dispatch(from, to, value, data, gaslimit, deadline, v, r, s) do
+  def dispatch(from, to, value, data, gaslimit, deadline, {v, r, s}) do
     ABI.encode_call(
       "dispatch",
       [
@@ -50,32 +54,21 @@ defmodule DiodeClient.Contracts.CallPermit do
     ABI.encode_call("DOMAIN_SEPARATOR", [], [])
   end
 
-
   @endpoint "https://moonbeam-alpha.api.onfinality.io/public"
   # @endpoint "https://rpc.api.moonbase.moonbeam.network"
   def endpoint() do
     @endpoint
   end
 
-  def call_permit(from_wallet, to, value, data, gaslimit, deadline) do
-    from = Wallet.address!(from_wallet)
-    nonce = call(nonces(from)) |> Base16.decode_int()
-
-    signature =
-      EIP712.encode(@domain_separator, "CallPermit", [
-        {"from", "address", from},
-        {"to", "address", to},
-        {"value", "uint256", value},
-        {"data", "bytes", data},
-        {"gaslimit", "uint64", gaslimit},
-        {"nonce", "uint256", nonce},
-        {"deadline", "uint256", deadline}
-      ])
-
-    [v, r, s] =
-      Wallet.sign!(from_wallet, signature, :none)
-      |> Secp256k1.bitcoin_to_rlp()
-
-    dispatch(from, to, value, data, gaslimit, deadline, v, r, s)
+  def call_permit(from, to, value, data, gaslimit, deadline, nonce) do
+    EIP712.encode(@domain_separator, "CallPermit", [
+      {"from", "address", from},
+      {"to", "address", to},
+      {"value", "uint256", value},
+      {"data", "bytes", data},
+      {"gaslimit", "uint64", gaslimit},
+      {"nonce", "uint256", nonce},
+      {"deadline", "uint256", deadline}
+    ])
   end
 end

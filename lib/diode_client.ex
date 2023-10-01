@@ -199,4 +199,7 @@ defmodule DiodeClient do
       _pid -> DiodeClient.Manager.connections()
     end
   end
+
+  def shell_for_chain_id(15), do: DiodeClient.Shell
+  def shell_for_chain_id(1287), do: DiodeClient.Shell.MoonbaseAlpha
 end

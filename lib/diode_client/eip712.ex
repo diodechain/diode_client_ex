@@ -1,4 +1,7 @@
 defmodule DiodeClient.EIP712 do
+  @moduledoc """
+    EIP-712 implementation
+  """
   alias DiodeClient.{ABI, Hash}
   defstruct [:primary_type, :types, :message]
 
@@ -57,7 +60,7 @@ defmodule DiodeClient.EIP712 do
 
   def hash_struct(primary_type, type_data, message) do
     encode_data =
-      Enum.map(type_data[primary_type], fn {name, type} when is_binary(type) ->
+      Enum.map_join(type_data[primary_type], fn {name, type} when is_binary(type) ->
         value = Map.get(message, name)
 
         cond do
@@ -71,7 +74,6 @@ defmodule DiodeClient.EIP712 do
             ABI.encode(type, value)
         end
       end)
-      |> Enum.join()
 
     Hash.keccak_256(type_hash(primary_type, type_data) <> encode_data)
   end

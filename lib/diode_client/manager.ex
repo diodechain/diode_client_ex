@@ -8,7 +8,7 @@ defmodule DiodeClient.Manager do
     @moduledoc false
     # server_address is the diode public key
     # server_url is the url to connect
-    defstruct [:latency, :server_address, :server_url, :ports, :key, :pid, :start, :peak]
+    defstruct [:latency, :server_address, :server_url, :ports, :key, :pid, :start, :peaks]
   end
 
   def start_link([]) do
@@ -22,21 +22,36 @@ defmodule DiodeClient.Manager do
     {:ok, state, {:continue, :init}}
   end
 
-  defp seed_keys(), do: [:eu1, :us1, :as1, :eu2, :us2, :as2]
+  defp default_seed_keys(), do: [:eu1, :us1, :as1, :eu2, :us2, :as2]
   defp extra_ports(:eu1), do: [443]
   defp extra_ports(:as1), do: [443]
   defp extra_ports(:us1), do: [443]
   defp extra_ports(_), do: []
 
   defp seed_list() do
-    Enum.map(seed_keys(), fn pre ->
-      {pre,
-       %Info{
-         server_url: "#{pre}.prenet.diode.io",
-         ports: [41_046, 993, 1723, 10_000] ++ extra_ports(pre),
-         key: pre
-       }}
-    end)
+    if System.get_env("SEED_LIST") == nil do
+      Enum.map(default_seed_keys(), fn pre ->
+        {pre,
+         %Info{
+           server_url: "#{pre}.prenet.diode.io",
+           ports: [41_046, 993, 1723, 10_000] ++ extra_ports(pre),
+           key: pre
+         }}
+      end)
+    else
+      System.get_env("SEED_LIST")
+      |> String.split(",")
+      |> Enum.map(fn url ->
+        {url, ports} =
+          case String.split(url, ":") do
+            [url] -> {url, [41_046, 993, 1723, 10_000]}
+            [url, port] -> {url, [String.to_integer(port)]}
+          end
+
+        key = String.to_atom(url)
+        {key, %Info{server_url: url, ports: ports, key: key}}
+      end)
+    end
     |> Map.new()
   end
 
@@ -105,7 +120,7 @@ defmodule DiodeClient.Manager do
   end
 
   defp restart_all(state) do
-    Enum.reduce(seed_keys(), state, fn key, state ->
+    Enum.reduce(Map.keys(seed_list()), state, fn key, state ->
       restart_conn(key, state)
     end)
   end
@@ -190,8 +205,8 @@ defmodule DiodeClient.Manager do
   end
 
   defp connected(%Manager{conns: conns}) do
-    Enum.filter(Map.values(conns), fn %Info{server_address: addr, peak: peak} ->
-      addr != nil and peak != nil
+    Enum.filter(Map.values(conns), fn %Info{server_address: addr, peaks: peaks} ->
+      addr != nil and Map.get(peaks, DiodeClient.Shell) != nil
     end)
   end
 
@@ -199,7 +214,7 @@ defmodule DiodeClient.Manager do
     connected = connected(state)
 
     peaks =
-      Enum.map(connected, fn %Info{peak: a} -> block_number(a) end)
+      Enum.map(connected, fn %Info{peaks: %{DiodeClient.Shell => a}} -> block_number(a) end)
       |> Enum.sort(:desc)
 
     # IO.puts("PEAKS: #{inspect(peaks)}")
@@ -209,14 +224,16 @@ defmodule DiodeClient.Manager do
     min_peak = max(min_peak, block_number(last_peak))
     # IO.puts("MIN_PEAK2: #{min_peak}")
 
-    Enum.filter(connected, fn %Info{peak: peak} -> block_number(peak) >= min_peak end)
+    Enum.filter(connected, fn %Info{peaks: %{DiodeClient.Shell => peak}} ->
+      block_number(peak) >= min_peak
+    end)
     |> Enum.sort(fn %Info{latency: a}, %Info{latency: b} -> a < b end)
     |> List.first()
     |> case do
       nil ->
         %Manager{state | best: nil}
 
-      %Info{pid: pid, peak: new_peak} ->
+      %Info{pid: pid, peaks: %{DiodeClient.Shell => new_peak}} ->
         peak = if block_number(new_peak) > block_number(last_peak), do: new_peak, else: last_peak
         for from <- waiting, do: GenServer.reply(from, pid)
         %Manager{state | best: pid, waiting: [], peak: peak}

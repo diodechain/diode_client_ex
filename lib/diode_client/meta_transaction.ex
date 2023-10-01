@@ -1,8 +1,43 @@
 defmodule DiodeClient.MetaTransaction do
-  alias DiodeClient.MetaTransaction
-  defstruct [:from, :to, :value, :call, :gaslimit, :deadline, :signature]
+  @moduledoc """
+  Meta transaction to submit pre-signed transactions to the blockchain.
+  """
+  alias DiodeClient.Contracts.CallPermit
+  alias DiodeClient.{MetaTransaction, Secp256k1, Wallet}
+  defstruct [:from, :to, :value, :call, :gaslimit, :deadline, :nonce, :signature, :chain_id]
 
-  def sign(%MetaTransaction{}) do
+  def sign(
+        mtx = %MetaTransaction{
+          from: from,
+          to: to,
+          value: value,
+          call: data,
+          gaslimit: gaslimit,
+          deadline: deadline,
+          nonce: nonce
+        },
+        wallet
+      ) do
+    signature = CallPermit.call_permit(from, to, value, data, gaslimit, deadline, nonce)
 
+    [v, r, s] =
+      Wallet.privkey!(wallet)
+      |> Secp256k1.sign(signature, :none)
+      |> Secp256k1.bitcoin_to_rlp()
+
+    %MetaTransaction{mtx | signature: {v, r, s}}
+  end
+
+  def to_rlp(%MetaTransaction{
+        from: from,
+        to: to,
+        value: value,
+        call: data,
+        gaslimit: gaslimit,
+        deadline: deadline,
+        # nonce: nonce,
+        signature: {v, r, s}
+      }) do
+    [from, to, value, data, gaslimit, deadline, v, r, s]
   end
 end

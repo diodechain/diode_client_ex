@@ -64,7 +64,7 @@ defmodule DiodeClient.Connection do
             latency: @inital_latency,
             server_wallet: nil,
             socket: nil,
-            peak: nil,
+            peaks: %{},
             pending_tickets: %{},
             ticket_count: 0,
             blocked: []
@@ -107,8 +107,8 @@ defmodule DiodeClient.Connection do
     Manager.get_connection_info(pid, :server_url) || ""
   end
 
-  def peak(pid) do
-    call(pid, :peak)
+  def peak(pid, shell \\ DiodeClient.Shell) do
+    call(pid, {:peak, shell})
   end
 
   @impl true
@@ -130,9 +130,9 @@ defmodule DiodeClient.Connection do
     {:noreply, state}
   end
 
-  defp update_info(state = %Connection{server_wallet: wallet, latency: latency, peak: peak}) do
+  defp update_info(state = %Connection{server_wallet: wallet, latency: latency, peaks: peaks}) do
     address = if wallet == nil, do: nil, else: Wallet.address!(wallet)
-    Manager.update_info(self(), %{latency: latency, server_address: address, peak: peak})
+    Manager.update_info(self(), %{latency: latency, server_address: address, peaks: peaks})
     state
   end
 
@@ -253,12 +253,19 @@ defmodule DiodeClient.Connection do
     {:noreply, insert_cmd(state, req, cmd, rlp)}
   end
 
-  def handle_call(:peak, from, state = %Connection{peak: nil, blocked: blocked}) do
-    {:noreply, %Connection{state | blocked: [from | blocked]}}
-  end
+  def handle_call({:peak, shell}, from, state = %Connection{peaks: peaks, blocked: blocked}) do
+    case Map.get(peaks, shell) do
+      nil ->
+        {:noreply,
+         %Connection{
+           state
+           | blocked: [{shell, from} | blocked],
+             peaks: Map.put(peaks, shell, nil)
+         }}
 
-  def handle_call(:peak, _from, state = %Connection{peak: peak}) do
-    {:reply, peak, state}
+      peak ->
+        {:reply, peak, state}
+    end
   end
 
   @impl true
@@ -315,12 +322,14 @@ defmodule DiodeClient.Connection do
            conns: conns,
            unpaid_bytes: unpaid_bytes,
            paid_bytes: paid_bytes,
-           peak: peak,
+           peaks: peaks,
            server_wallet: server_wallet,
            pending_tickets: pending_tickets,
            ticket_count: tc
          }
        ) do
+    peak = Map.get(peaks, DiodeClient.Shell)
+
     count =
       div(unpaid_bytes + 400 - paid_bytes, @ticket_size)
       |> max(1)
@@ -502,7 +511,10 @@ defmodule DiodeClient.Connection do
     end
   end
 
-  defp clientloop(what, state = %Connection{socket: socket, server: server, blocked: blocked}) do
+  defp clientloop(
+         what,
+         state = %Connection{socket: socket, server: server, blocked: blocked, peaks: peaks}
+       ) do
     case what do
       {:ssl, ^socket, rlp} ->
         {:noreply, handle_msg(rlp, state)}
@@ -536,21 +548,37 @@ defmodule DiodeClient.Connection do
         send(pid, {:ret, Wallet.from_pubkey(Certs.extract(socket))})
         {:noreply, state}
 
-      {:peak, peak} ->
-        Enum.each(blocked, fn from ->
-          GenServer.reply(from, peak)
-        end)
+      {:peak, shell, peak} ->
+        blocked =
+          Enum.filter(blocked, fn {s, from} ->
+            if s == shell do
+              GenServer.reply(from, peak)
+              false
+            else
+              true
+            end
+          end)
 
         state =
-          %Connection{state | peak: peak, blocked: []}
+          %Connection{state | peaks: Map.put(peaks, shell, peak), blocked: blocked}
           |> update_info()
-          |> maybe_create_ticket(state.peak == nil)
+          |> maybe_create_ticket(Map.get(peaks, DiodeClient.Shell) == nil)
 
         {:noreply, state}
 
       :ping ->
         pid = self()
-        Debouncer.immediate(pid, fn -> update_block(pid) end, @ping)
+
+        Debouncer.immediate(
+          pid,
+          fn ->
+            for {shell, peak} <- peaks do
+              update_block(pid, shell, peak)
+            end
+          end,
+          @ping
+        )
+
         {:noreply, state}
 
       msg ->
@@ -588,7 +616,7 @@ defmodule DiodeClient.Connection do
         socket: nil,
         channels: %{},
         channel_usage: 0,
-        peak: nil,
+        peaks: %{},
         ports: %{},
         recv_id: %{},
         conns: conns + 1,
@@ -597,11 +625,14 @@ defmodule DiodeClient.Connection do
     }
   end
 
-  defp update_block(pid) do
-    case rpc(pid, ["getblockpeak"]) do
+  defp update_block(pid, shell \\ DiodeClient.Shell, peak \\ nil) do
+    case rpc(pid, [shell.prefix() <> "getblockpeak"]) do
       [num] ->
-        [block] = rpc(pid, ["getblockheader", to_num(num) - 3])
-        send(pid, {:peak, Rlpx.list2map(block)})
+        if peak == nil or to_num(num) > to_num(peak["number"]) do
+          [block] = rpc(pid, [shell.prefix() <> "getblockheader", max(0, to_num(num) - 3)])
+          send(pid, {:peak, shell, Rlpx.list2map(block)})
+        end
+
         :ok
 
       error ->
@@ -710,7 +741,7 @@ defmodule DiodeClient.Connection do
     req = req_id()
     rlp = Rlp.encode!([req | [data]])
 
-    call(pid, {:rpc, cmd, req, rlp, System.monotonic_time(), self()})
+    call(pid, {:rpc, cmd, req, rlp, System.monotonic_time(), self()}, 120_000)
     |> case do
       [^req, ["error" | rest]] -> [:error | rest]
       [^req, ["response" | rest]] -> rest
@@ -723,8 +754,12 @@ defmodule DiodeClient.Connection do
     call(pid, {:rpc_async, cmd, req, rlp, System.monotonic_time(), self()})
   end
 
-  defp call(pid, args) do
-    GenServer.call(pid, args, :infinity)
+  defp call(pid, args, timeout \\ :infinity) do
+    GenServer.call(pid, args, timeout)
+  catch
+    :exit, reason ->
+      Process.exit(pid, reason)
+      raise "DiodeClient rpc timeout: #{inspect(reason)}"
   end
 
   def rpc_cast(pid, data = [cmd | _rest]) do
