@@ -46,7 +46,7 @@ defmodule DiodeClient.Shell do
     end
   end
 
-  defp maybe_hex("0x" <> _ = x), do: x
+  defp maybe_hex(x = "0x" <> _), do: x
   defp maybe_hex(x), do: DiodeClient.Base16.encode(x, false)
 
   defmacrop assert_equal(a, b) do

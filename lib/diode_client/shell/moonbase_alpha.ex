@@ -44,7 +44,7 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
     end
   end
 
-  defp maybe_hex("0x" <> _ = x), do: x
+  defp maybe_hex(x = "0x" <> _), do: x
   defp maybe_hex(x), do: DiodeClient.Base16.encode(x, false)
 
   def send_transaction(address, function_name, types, values, opts \\ [])
@@ -118,13 +118,6 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
     Rlpx.bin2uint(num)
   end
 
-  @spec get_account(<<_::128, _::_*16>> | integer, nil | maybe_improper_list | map) ::
-          %DiodeClient.Account{
-            balance: non_neg_integer,
-            code_hash: any,
-            nonce: non_neg_integer,
-            storage_root: any
-          }
   def get_account(address, peak \\ peak()) do
     peak_index = Rlpx.bin2uint(peak["number"])
     address = Hash.to_address(address)
