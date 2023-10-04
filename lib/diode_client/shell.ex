@@ -1,4 +1,18 @@
 defmodule DiodeClient.Shell do
+  @moduledoc """
+  DiodeClient.Shell is the interface to the blockchain state. It allows
+  fetching accounts and block header information. Data fetched is by
+  default checked against a merkle proof.
+
+  # Example fetching smart contract state from an address
+
+  ```
+  me = DiodeClient.address()
+  DiodeClient.Shell.get_account(me)
+  ```
+
+  """
+
   alias DiodeClient.{
     ABI,
     Account,
@@ -15,22 +29,25 @@ defmodule DiodeClient.Shell do
 
   use DiodeClient.Log
 
-  @chain_id 15
+  def chain_id(), do: 15
+  def prefix(), do: ""
   @gas_limit 10_000_000
 
-  @moduledoc """
-  DiodeClient.Shell is the interface to the blockchain state. It allows
-  fetching accounts and block header information. Data fetched is by
-  default checked against a merkle proof.
+  def blockexplorer_url(opts \\ []) do
+    cond do
+      opts[:address] != nil ->
+        "https://diode.io/prenet/#/address/#{maybe_hex(opts[:address])}"
 
-  # Example fetching smart contract state from an address
+      opts[:tx] != nil ->
+        "https://diode.io/prenet/#/tx/#{maybe_hex(opts[:tx])}"
 
-  ```
-  me = DiodeClient.address()
-  DiodeClient.Shell.get_account(me)
-  ```
+      true ->
+        "https://diode.io/prenet/"
+    end
+  end
 
-  """
+  defp maybe_hex(x = "0x" <> _), do: x
+  defp maybe_hex(x), do: DiodeClient.Base16.encode(x, false)
 
   defmacrop assert_equal(a, b) do
     stra = Macro.to_string(a)
@@ -133,7 +150,7 @@ defmodule DiodeClient.Shell do
         acc = %Account{
           nonce: Rlpx.bin2uint(acc["nonce"]),
           balance: Rlpx.bin2uint(acc["balance"]),
-          storage_root: acc["storage_root"],
+          storage_root: Rlpx.bin2addr(acc["storage_root"]),
           code_hash: acc["code"]
         }
 
@@ -193,7 +210,7 @@ defmodule DiodeClient.Shell do
     case values do
       [:error, message] ->
         log("getaccountvalues #{inspect(keys)} produced error #{inspect(message)}")
-        List.duplicate(nil, length(keys))
+        raise "getaccountvalues #{inspect(keys)} produced error #{inspect(message)}"
 
       [values] ->
         Enum.zip(values, keys)
@@ -226,7 +243,7 @@ defmodule DiodeClient.Shell do
     Rlpx.bin2uint(peak["number"])
   end
 
-  defp cached_rpc(args) do
+  def cached_rpc(args) do
     ETSLru.fetch(ShellCache, args, fn ->
       # a = System.os_time(:millisecond)
       ret = Connection.rpc(conn(), args)
@@ -234,6 +251,10 @@ defmodule DiodeClient.Shell do
       # Logger.debug("#{b - a}ms #{inspect(hd(args))}")
       ret
     end)
+  end
+
+  def rpc(args) do
+    Connection.rpc(conn(), args)
   end
 
   def ether(x), do: 1000 * finney(x)
@@ -267,7 +288,7 @@ defmodule DiodeClient.Shell do
       gasPrice: gas_price,
       gasLimit: gas,
       value: value,
-      chain_id: @chain_id
+      chain_id: chain_id()
     }
 
     case Map.get(opts, :to) do
