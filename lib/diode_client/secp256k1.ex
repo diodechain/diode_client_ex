@@ -1,5 +1,6 @@
 defmodule DiodeClient.Secp256k1 do
   @moduledoc false
+  alias DiodeClient.Base16
   alias DiodeClient.{Hash, Wallet}
   import Wallet
 
@@ -60,17 +61,35 @@ defmodule DiodeClient.Secp256k1 do
     ])
   end
 
-  require Record
-
-  Record.defrecord(
-    :eCPrivateKey,
-    Record.extract(:ECPrivateKey, from_lib: "public_key/include/public_key.hrl")
-  )
-
+  @der_key Base16.decode("0x3020020101040770726976617465a00706052b8104000aa1090307007075626c6963")
   def erl_encode_private(private, public) do
-    eCPrivateKey(version: 1, privateKey: private, parameters: curve_params(), publicKey: public)
-    |> put_elem(0, :ECPrivateKey)
+    # Hack to avoid using Erlang Records which depend on header
+    # files and thus can (and did) change between minor versions
+    :public_key.der_decode(:ECPrivateKey, @der_key)
+    |> deep_replace(%{
+      "public" => public,
+      "private" => private
+    })
   end
+
+  defp deep_replace(tuple, map) when is_tuple(tuple) do
+    tuple
+    |> Tuple.to_list()
+    |> deep_replace(map)
+    |> List.to_tuple()
+  end
+
+  defp deep_replace(list, map) when is_list(list) do
+    Enum.map(list, fn key ->
+      if Map.has_key?(map, key) do
+        Map.get(map, key)
+      else
+        deep_replace(key, map)
+      end
+    end)
+  end
+
+  defp deep_replace(term, _), do: term
 
   def selfsigned(private, public) do
     :public_key.pkix_sign(
@@ -189,26 +208,18 @@ defmodule DiodeClient.Secp256k1 do
   def erl_encode_cert(public) do
     hash = hash(:sha, public)
 
+    rdn = [
+      [{:AttributeTypeAndValue, {2, 5, 4, 6}, 'US'}],
+      [{:AttributeTypeAndValue, {2, 5, 4, 8}, {:utf8String, "Oregon"}}],
+      [{:AttributeTypeAndValue, {2, 5, 4, 7}, {:utf8String, "Portland"}}],
+      [{:AttributeTypeAndValue, {2, 5, 4, 10}, {:utf8String, "Company Name"}}],
+      [{:AttributeTypeAndValue, {2, 5, 4, 11}, {:utf8String, "Org"}}],
+      [{:AttributeTypeAndValue, {2, 5, 4, 3}, {:utf8String, "www.example.com"}}]
+    ]
+
     {:OTPTBSCertificate, :v3, 9_671_339_679_901_102_673,
-     {:SignatureAlgorithm, {1, 2, 840, 10_045, 4, 3, 2}, :asn1_NOVALUE},
-     {:rdnSequence,
-      [
-        [{:AttributeTypeAndValue, {2, 5, 4, 6}, 'US'}],
-        [{:AttributeTypeAndValue, {2, 5, 4, 8}, {:utf8String, "Oregon"}}],
-        [{:AttributeTypeAndValue, {2, 5, 4, 7}, {:utf8String, "Portland"}}],
-        [{:AttributeTypeAndValue, {2, 5, 4, 10}, {:utf8String, "Company Name"}}],
-        [{:AttributeTypeAndValue, {2, 5, 4, 11}, {:utf8String, "Org"}}],
-        [{:AttributeTypeAndValue, {2, 5, 4, 3}, {:utf8String, "www.example.com"}}]
-      ]}, {:Validity, {:utcTime, '181113072916Z'}, {:utcTime, '231113072916Z'}},
-     {:rdnSequence,
-      [
-        [{:AttributeTypeAndValue, {2, 5, 4, 6}, 'US'}],
-        [{:AttributeTypeAndValue, {2, 5, 4, 8}, {:utf8String, "Oregon"}}],
-        [{:AttributeTypeAndValue, {2, 5, 4, 7}, {:utf8String, "Portland"}}],
-        [{:AttributeTypeAndValue, {2, 5, 4, 10}, {:utf8String, "Company Name"}}],
-        [{:AttributeTypeAndValue, {2, 5, 4, 11}, {:utf8String, "Org"}}],
-        [{:AttributeTypeAndValue, {2, 5, 4, 3}, {:utf8String, "www.example.com"}}]
-      ]},
+     {:SignatureAlgorithm, {1, 2, 840, 10_045, 4, 3, 2}, :asn1_NOVALUE}, {:rdnSequence, rdn},
+     {:Validity, {:utcTime, '181113072916Z'}, {:utcTime, '231113072916Z'}}, {:rdnSequence, rdn},
      {:OTPSubjectPublicKeyInfo, {:PublicKeyAlgorithm, {1, 2, 840, 10_045, 2, 1}, curve_params()},
       {:ECPoint, public}}, :asn1_NOVALUE, :asn1_NOVALUE,
      [
