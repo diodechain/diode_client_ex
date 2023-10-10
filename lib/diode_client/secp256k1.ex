@@ -207,14 +207,15 @@ defmodule DiodeClient.Secp256k1 do
   @spec erl_encode_cert(public_key()) :: any()
   def erl_encode_cert(public) do
     hash = hash(:sha, public)
+    address = Wallet.from_pubkey(public) |> Wallet.address!()
 
     rdn = [
-      [{:AttributeTypeAndValue, {2, 5, 4, 6}, 'US'}],
-      [{:AttributeTypeAndValue, {2, 5, 4, 8}, {:utf8String, "Oregon"}}],
-      [{:AttributeTypeAndValue, {2, 5, 4, 7}, {:utf8String, "Portland"}}],
-      [{:AttributeTypeAndValue, {2, 5, 4, 10}, {:utf8String, "Company Name"}}],
-      [{:AttributeTypeAndValue, {2, 5, 4, 11}, {:utf8String, "Org"}}],
-      [{:AttributeTypeAndValue, {2, 5, 4, 3}, {:utf8String, "www.example.com"}}]
+      [{:AttributeTypeAndValue, {2, 5, 4, 3}, {:utf8String, address}}]
+      # [{:AttributeTypeAndValue, {2, 5, 4, 8}, {:utf8String, "Oregon"}}],
+      # [{:AttributeTypeAndValue, {2, 5, 4, 7}, {:utf8String, "Portland"}}],
+      # [{:AttributeTypeAndValue, {2, 5, 4, 10}, {:utf8String, "Company Name"}}],
+      # [{:AttributeTypeAndValue, {2, 5, 4, 11}, {:utf8String, "Org"}}],
+      # [{:AttributeTypeAndValue, {2, 5, 4, 3}, {:utf8String, "www.example.com"}}]
     ]
 
     {:OTPTBSCertificate, :v3, 9_671_339_679_901_102_673,
