@@ -195,7 +195,7 @@ defmodule DiodeClient.Connection do
   defp pop_cmd(
          state = %Connection{recv_id: recv_id, channels: channels, channel_usage: usage},
          req,
-         %Cmd{port: id, time: time, size: size}
+         %Cmd{port: id, time: time, size: size, cmd: cmd}
        ) do
     ch = %Channel{times: queue} = Map.fetch!(channels, id)
     {_, queue} = :queue.out(queue)
@@ -208,7 +208,16 @@ defmodule DiodeClient.Connection do
         Map.put(channels, id, ch)
       end
 
-    latency = System.monotonic_time() - time
+    latency =
+      if cmd == "getblockpeak" do
+        if state.latency == @inital_latency do
+          System.monotonic_time() - time
+        else
+          (9 * state.latency + (System.monotonic_time() - time)) / 10
+        end
+      else
+        state.latency
+      end
 
     sched_cmd(%Connection{
       state

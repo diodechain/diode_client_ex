@@ -117,7 +117,9 @@ defmodule DiodeClient.Shell do
   end
 
   def get_block_header(block_index) do
-    cached_rpc(["getblockheader", block_index])
+    case cached_rpc(["getblockheader", block_index]) do
+      [block] -> Rlpx.list2map(block)
+    end
   end
 
   def get_state_roots(%{"number" => number, "state_hash" => hash}) do
