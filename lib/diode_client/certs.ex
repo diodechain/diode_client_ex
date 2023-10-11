@@ -14,14 +14,6 @@ defmodule DiodeClient.Certs do
     id_from_der(der_cert)
   end
 
-  def private_from_file(filename) do
-    pem = :public_key.pem_decode(File.read!(filename))
-    cert = :proplists.lookup(:PrivateKeyInfo, pem)
-
-    :public_key.der_decode(:PrivateKeyInfo, :erlang.element(2, cert))
-    |> getfield(:ECPrivateKey, :privateKey)
-  end
-
   def id_from_der(der_encoded_cert) when is_binary(der_encoded_cert) do
     :public_key.pkix_decode_cert(der_encoded_cert, :otp)
     |> id_from_der()
@@ -41,7 +33,7 @@ defmodule DiodeClient.Certs do
     Keyword.get(keywords(record_def, record), fieldname)
   end
 
-  @types [:ECPrivateKey, :OTPCertificate, :OTPTBSCertificate, :OTPSubjectPublicKeyInfo, :ECPoint]
+  @types [:OTPCertificate, :OTPTBSCertificate, :OTPSubjectPublicKeyInfo, :ECPoint]
   for type <- @types do
     record = Record.extract(type, from_lib: "public_key/include/public_key.hrl")
 
