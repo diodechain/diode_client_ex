@@ -41,6 +41,7 @@ defmodule DiodeClient.Port do
     {:ok, {:undefined, remote}} = peername(pid)
 
     Connection.ssl_options()
+    |> Keyword.put(:packet, :raw)
     |> Keyword.put(:cb_info, {Port, Port.Msg, Port.Closed, Port.Error})
     |> Keyword.put(:verify_fun, {&__MODULE__.check_remote/3, Wallet.from_address(remote)})
   end
