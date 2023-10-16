@@ -151,11 +151,13 @@ defmodule DiodeClient.Port do
     {:stop, :normal, state}
   end
 
-  def handle_cast({:send, msg}, state = %Port{queue: queue}) do
+  def handle_cast({:send, msg}, state = %Port{queue: queue, peer: peer}) do
     # log("Port.recv: ~p bytes (~p)", [
     #   byte_size(msg),
     #   DiodeClient.Base16.encode(:crypto.hash(:md5, msg))
     # ])
+
+    DiodeClient.Stats.submit(:peer, peer, :self, byte_size(msg))
 
     state =
       %Port{state | queue: :queue.in(msg, queue)}
@@ -191,8 +193,9 @@ defmodule DiodeClient.Port do
     {:reply, :ok, flush(%Port{state | opts: opts})}
   end
 
-  def handle_call({:send_out, msg}, _, state = %Port{port_ref: port_ref, conn: conn}) do
+  def handle_call({:send_out, msg}, _, state = %Port{port_ref: port_ref, conn: conn, peer: peer}) do
     Connection.rpc_async(conn, ["portsend", port_ref, msg])
+    DiodeClient.Stats.submit(:peer, :self, peer, byte_size(msg))
     {:reply, :ok, state}
   end
 

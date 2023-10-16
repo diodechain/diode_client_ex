@@ -1,6 +1,6 @@
 defmodule DiodeClient.Sup do
   @moduledoc false
-  alias DiodeClient.{Acceptor, Manager}
+  alias DiodeClient.{Acceptor, Manager, Stats}
 
   def start_link(name) do
     Supervisor.start_link(__MODULE__, name)
@@ -15,6 +15,6 @@ defmodule DiodeClient.Sup do
   end
 
   def init(_name) do
-    Supervisor.init([Acceptor, Manager], strategy: :one_for_one, max_restarts: 1000)
+    Supervisor.init([Stats, Acceptor, Manager], strategy: :one_for_one, max_restarts: 1000)
   end
 end

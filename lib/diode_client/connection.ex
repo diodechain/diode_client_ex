@@ -23,6 +23,7 @@ defmodule DiodeClient.Connection do
   @vsn 1000
   @ping 15_000
   @inital_latency 100_000_000_000_000
+  @packet_header 2
 
   defmodule Cmd do
     @moduledoc false
@@ -406,7 +407,8 @@ defmodule DiodeClient.Connection do
            events: events,
            unpaid_bytes: unpaid_bytes,
            pending_tickets: pending_tickets,
-           socket: socket
+           socket: socket,
+           server: server
          }
        ) do
     msg =
@@ -421,7 +423,8 @@ defmodule DiodeClient.Connection do
     case Rlp.decode!(msg) do
       [^req, reply] ->
         tck = Map.get(pending_tickets, req)
-        state = %Connection{state | unpaid_bytes: unpaid_bytes + byte_size(msg)}
+        DiodeClient.Stats.submit(:relay, server, :self, byte_size(msg) + @packet_header)
+        state = %Connection{state | unpaid_bytes: unpaid_bytes + byte_size(msg) + @packet_header}
         handle_ticket(state, tck, [req, reply])
 
       _other ->
@@ -655,10 +658,12 @@ defmodule DiodeClient.Connection do
            unpaid_bytes: ub,
            ports: ports,
            recv_id: recv_id,
-           pending_tickets: pending_tickets
+           pending_tickets: pending_tickets,
+           server: server
          }
        ) do
-    state = %Connection{state | unpaid_bytes: ub + byte_size(rlp)}
+    DiodeClient.Stats.submit(:relay, server, :self, byte_size(rlp) + @packet_header)
+    state = %Connection{state | unpaid_bytes: ub + byte_size(rlp) + @packet_header}
 
     msg = [req | _rest] = Rlp.decode!(rlp)
 
@@ -790,7 +795,7 @@ defmodule DiodeClient.Connection do
 
     [
       mode: :binary,
-      packet: 2,
+      packet: @packet_header,
       cert: cert,
       cacerts: [cert],
       versions: [:"tlsv1.2"],
@@ -808,10 +813,11 @@ defmodule DiodeClient.Connection do
     ]
   end
 
-  defp ssl_send!(state = %Connection{socket: socket, unpaid_bytes: up}, msg) do
+  defp ssl_send!(state = %Connection{socket: socket, unpaid_bytes: up, server: server}, msg) do
     # IO.puts("send size: #{byte_size(msg)}")
     :ok = :ssl.send(socket, msg)
-    %Connection{state | unpaid_bytes: up + byte_size(msg)}
+    DiodeClient.Stats.submit(:relay, :self, server, byte_size(msg) + @packet_header)
+    %Connection{state | unpaid_bytes: up + byte_size(msg) + @packet_header}
   end
 
   defp fleet_address() do
