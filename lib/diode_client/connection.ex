@@ -771,6 +771,14 @@ defmodule DiodeClient.Connection do
   defp call(pid, args, timeout \\ :infinity) do
     GenServer.call(pid, args, timeout)
   catch
+    :exit, {:noproc, _reason} ->
+      Process.exit(pid, :normal)
+      exit(:connection_shutdown)
+
+    :exit, {:normal, _reason} ->
+      Process.exit(pid, :normal)
+      exit(:connection_shutdown)
+
     :exit, reason ->
       Process.exit(pid, reason)
       raise "DiodeClient rpc timeout: #{inspect(reason)}"
