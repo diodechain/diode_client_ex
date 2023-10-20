@@ -207,7 +207,7 @@ defmodule DiodeClient.Secp256k1 do
   @spec erl_encode_cert(public_key()) :: any()
   def erl_encode_cert(public) do
     hash = hash(:sha, public)
-    address = Wallet.from_pubkey(public) |> Wallet.address!()
+    address = Wallet.from_pubkey(public) |> Wallet.address!() |> Base16.encode()
 
     rdn = [
       [{:AttributeTypeAndValue, {2, 5, 4, 3}, {:utf8String, address}}]
