@@ -220,7 +220,7 @@ defmodule DiodeClient.Secp256k1 do
 
     {:OTPTBSCertificate, :v3, 9_671_339_679_901_102_673,
      {:SignatureAlgorithm, {1, 2, 840, 10_045, 4, 3, 2}, :asn1_NOVALUE}, {:rdnSequence, rdn},
-     {:Validity, {:utcTime, '181113072916Z'}, {:utcTime, '231113072916Z'}}, {:rdnSequence, rdn},
+     {:Validity, {:utcTime, '181113072916Z'}, {:utcTime, '321113072916Z'}}, {:rdnSequence, rdn},
      {:OTPSubjectPublicKeyInfo, {:PublicKeyAlgorithm, {1, 2, 840, 10_045, 2, 1}, curve_params()},
       {:ECPoint, public}}, :asn1_NOVALUE, :asn1_NOVALUE,
      [
