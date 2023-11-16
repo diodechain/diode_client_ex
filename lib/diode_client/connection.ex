@@ -305,7 +305,10 @@ defmodule DiodeClient.Connection do
 
   def check(_cert, event, state) do
     case event do
+      # All diode certificates are self signed
       {:bad_cert, :selfsigned_peer} -> {:valid, state}
+      # Date + time of the certs is not important
+      {:bad_cert, :cert_expired} -> {:valid, state}
       _ -> {:fail, event}
     end
   end
