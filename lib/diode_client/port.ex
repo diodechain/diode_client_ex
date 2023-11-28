@@ -2,7 +2,7 @@ defmodule DiodeClient.Port do
   @moduledoc false
   alias DiodeClient.{Acceptor, Control, Port, Certs, Connection, Wallet}
   use GenServer
-  use DiodeClient.Log
+  require Logger
 
   defstruct [:conn, :peer, :portnum, :port_ref, :opts, :controlling_process, :queue]
 
@@ -51,28 +51,23 @@ defmodule DiodeClient.Port do
   end
 
   def setopts(pid, opts) do
-    # log("Port.setopts: ~p ~p", [pid, opts])
     GenServer.call(pid, {:setopts, opts})
   end
 
   def getopts(pid, opts) do
-    # log("Port.getopts: ~p ~p", [pid, opts])
     {:ok, GenServer.call(pid, {:getopts, opts})}
   end
 
   def peername(pid) do
-    # log("Port.peername: ~p", [pid])
     {:ok, GenServer.call(pid, :peername)}
   end
 
   def sockname(_pid) do
     {:ok, {:undefined, :none}}
-    # log("Port.sockname: ~p", [pid])
     # {:ok, GenServer.call(pid, :sockname)}
   end
 
   def port(pid) do
-    # log("Port.port: ~p", [pid])
     {:ok, GenServer.call(pid, :portnum)}
   end
 
@@ -102,14 +97,13 @@ defmodule DiodeClient.Port do
   end
 
   def controlling_process(pid, cpid) do
-    # log("Port.controlling_process: ~p ~p", [pid, cpid])
     GenServer.call(pid, {:controlling_process, cpid})
   end
 
   @impl true
   def handle_info({:DOWN, ref, :process, pid, reason}, state = %Port{controlling_process: cpid}) do
     if cpid == {pid, ref} do
-      log("closing port because cpid shuts down for #{inspect(reason)}")
+      Logger.debug("closing port because cpid shuts down for #{inspect(reason)}")
       {:stop, :normal, state}
     else
       {:noreply, state}
@@ -152,11 +146,6 @@ defmodule DiodeClient.Port do
   end
 
   def handle_cast({:send, msg}, state = %Port{queue: queue, peer: peer}) do
-    # log("Port.recv: ~p bytes (~p)", [
-    #   byte_size(msg),
-    #   DiodeClient.Base16.encode(:crypto.hash(:md5, msg))
-    # ])
-
     DiodeClient.Stats.submit(:peer, peer, :self, byte_size(msg))
 
     state =
@@ -311,7 +300,7 @@ defmodule DiodeClient.Port do
 
   @impl true
   def terminate(reason, %Port{controlling_process: cp}) do
-    log("Port.terminate(~p, ~p)", [reason, cp])
+    Logger.debug("Port.terminate(#{inspect(reason)}, #{inspect(cp)})")
 
     with {pid, _mon} <- cp do
       Kernel.send(pid, {Port.Closed, self()})
@@ -372,7 +361,6 @@ defmodule DiodeClient.Port do
     active = opts[:active]
 
     if :queue.is_empty(queue) or active == false or active == 0 do
-      # log("Port.noflush: ~p ~p", [:queue.len(queue), active])
       state
     else
       {{:value, msg}, queue} = :queue.out(queue)

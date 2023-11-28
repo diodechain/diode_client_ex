@@ -1,7 +1,7 @@
 defmodule DiodeClient.LocalAcceptor do
   @moduledoc false
   use GenServer
-  use DiodeClient.Log
+  require Logger
   alias DiodeClient.{Acceptor, Connection, LocalAcceptor}
   defstruct [:backlog, :socket, :portnum]
 
@@ -24,7 +24,7 @@ defmodule DiodeClient.LocalAcceptor do
         {:noreply, %LocalAcceptor{state | socket: socket}}
 
       {:error, reason} ->
-        log("failed opening local socket: #{inspect(reason)}")
+        Logger.debug("failed opening local socket: #{inspect(reason)}")
         Process.send_after(self(), :open, 5_000)
         {:noreply, state}
     end
@@ -98,7 +98,7 @@ defmodule DiodeClient.LocalAcceptor do
 
     case :ssl.handshake(client, Connection.ssl_options(), @tls_timeout) do
       {:error, reason} ->
-        log("ssl handshake failed for #{inspect(reason)}")
+        Logger.debug("ssl handshake failed for #{inspect(reason)}")
         :ssl.close(client)
 
       {:ok, ssl} ->

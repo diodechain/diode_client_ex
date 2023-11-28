@@ -1,7 +1,7 @@
 defmodule DiodeClient.ABI do
   @moduledoc false
   alias DiodeClient.{Hash, Wallet}
-  use DiodeClient.Log
+  require Logger
   import Wallet
 
   def encode_args(types, values) when is_list(types) and is_list(values) do
@@ -31,7 +31,7 @@ defmodule DiodeClient.ABI do
   end
 
   def decode_revert(other) do
-    log("DEBUG: decode_revert(~0p)", [other])
+    Logger.debug("decode_revert(#{inspect(other)})")
     {:evmc_revert, "blubb"}
   end
 

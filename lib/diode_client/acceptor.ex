@@ -1,7 +1,7 @@
 defmodule DiodeClient.Acceptor do
   @moduledoc false
   use GenServer
-  use DiodeClient.Log
+  require Logger
   alias DiodeClient.{Acceptor, Port}
   defstruct [:backlog, :ports, :local_ports, :backup]
 
@@ -92,7 +92,7 @@ defmodule DiodeClient.Acceptor do
         socket
 
       {:error, reason} ->
-        log("port closed during handshake (~p)", [reason])
+        Logger.debug("port closed during handshake (#{reason})")
         Port.close(pid)
         {:error, reason}
     end

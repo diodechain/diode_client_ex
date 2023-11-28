@@ -27,7 +27,7 @@ defmodule DiodeClient.Shell do
     Wallet
   }
 
-  use DiodeClient.Log
+  require Logger
 
   def chain_id(), do: 15
   def prefix(), do: ""
@@ -211,7 +211,7 @@ defmodule DiodeClient.Shell do
 
     case values do
       [:error, message] ->
-        log("getaccountvalues #{inspect(keys)} produced error #{inspect(message)}")
+        Logger.debug("getaccountvalues #{inspect(keys)} produced error #{inspect(message)}")
         raise "getaccountvalues #{inspect(keys)} produced error #{inspect(message)}"
 
       [values] ->

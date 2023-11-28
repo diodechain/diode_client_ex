@@ -1,5 +1,7 @@
 defmodule DiodeClient.Connection do
   @moduledoc false
+  alias DiodeClient.Base16
+
   alias DiodeClient.{
     Acceptor,
     Certs,
@@ -16,7 +18,7 @@ defmodule DiodeClient.Connection do
 
   import Ticket
   use GenServer
-  use DiodeClient.Log
+  require Logger
 
   @ticket_grace 1024 * 1024
   @ticket_size @ticket_grace * 4
@@ -96,6 +98,12 @@ defmodule DiodeClient.Connection do
     {:ok, state, {:continue, :init}}
   end
 
+  defmacrop debug(format) do
+    quote do
+      Logger.debug("DiodeClient[#{var!(state).server}] " <> unquote(format))
+    end
+  end
+
   def latency(pid) do
     Manager.get_connection_info(pid, :latency) || @inital_latency
   end
@@ -113,8 +121,8 @@ defmodule DiodeClient.Connection do
   end
 
   @impl true
-  def handle_continue(:init, state = %Connection{server: server}) do
-    log("DiodeClient creating connection to #{server}")
+  def handle_continue(:init, state = %Connection{}) do
+    debug("creating connection")
     {:ok, socket} = connect(state)
     server_wallet = Wallet.from_pubkey(Certs.extract(socket))
 
@@ -142,7 +150,7 @@ defmodule DiodeClient.Connection do
     port = Enum.at(ports, rem(count, length(ports)))
 
     if backoff > 0 do
-      log("DiodeClient.Connect delayed by #{backoff}ms trying port #{port}")
+      debug("connect() delayed by #{backoff}ms trying port #{port}")
       Process.sleep(backoff)
     end
 
@@ -153,7 +161,7 @@ defmodule DiodeClient.Connection do
         {:ok, socket}
 
       {:error, reason} ->
-        log("DiodeClient.Connect failed to #{server}: #{inspect(reason)}")
+        debug("connect() failed: #{inspect(reason)}")
 
         %{state | latency: @inital_latency}
         |> update_info()
@@ -242,7 +250,12 @@ defmodule DiodeClient.Connection do
       {id, ch = %Channel{backlog: [[req, rlp] | backlog]}} ->
         state = ssl_send!(state, rlp)
         state = maybe_create_ticket(state)
-        %Cmd{send_reply: reply} = Map.fetch!(recv_id, req)
+        %Cmd{cmd: cmd, send_reply: reply} = Map.fetch!(recv_id, req)
+
+        if cmd in ["portopen", "portsend"] do
+          debug("sending #{cmd}")
+        end
+
         if reply != nil, do: GenServer.reply(reply, :ok)
         channels = Map.put(channels, id, %Channel{ch | backlog: backlog})
         sched_cmd(%Connection{state | channels: channels, channel_usage: usage + byte_size(rlp)})
@@ -347,14 +360,6 @@ defmodule DiodeClient.Connection do
       div(unpaid_bytes + 400 - paid_bytes, @ticket_size)
       |> max(1)
 
-    # {:ok, stats} = :ssl.getstat(state.socket, [:send_pend])
-    # log("do_create_ticket: ~p ~p ~p", [count, unpaid_bytes, stats])
-    # if rem(tc, 60) == 0 do
-    #   :io.format(".~n")
-    # else
-    #   :io.format(".")
-    # end
-
     # Definining an alternative node hint
     # <<0>> means it's a preferred node
     # <<1>> means it's a secondary node
@@ -391,7 +396,6 @@ defmodule DiodeClient.Connection do
     ]
 
     req = req_id()
-    # log("maybe_create_ticket => ~p", [data])
     msg = Rlp.encode!([req, data])
 
     state = %Connection{
@@ -420,8 +424,6 @@ defmodule DiodeClient.Connection do
       after
         5000 -> throw(:missing_ticket_reply)
       end
-
-    # log("wait_for_ticket => ~p", [Rlp.decode!(msg)])
 
     case Rlp.decode!(msg) do
       [^req, reply] ->
@@ -466,7 +468,6 @@ defmodule DiodeClient.Connection do
             %Connection{state | conns: new_conns + 1}
           end
 
-        # log("too_low: paid: ~p unpaid: ~p", [state.paid_bytes, state.unpaid_bytes])
         {req, state} = do_create_ticket(state)
         wait_for_ticket(req, state)
     end
@@ -482,7 +483,6 @@ defmodule DiodeClient.Connection do
 
       nil ->
         # This just means :EXIT was handled before :DOWN
-        # log("received down for unknown port ~p: ~p", [pid, reason])
         {:noreply, state}
     end
   end
@@ -493,13 +493,13 @@ defmodule DiodeClient.Connection do
     Enum.find(ports, fn {_port_ref, {port_pid, _status}} -> pid == port_pid end)
     |> case do
       {ref, {_pid, status}} ->
-        log("removing port ~p: ~p ~180p", [ref, pid, reason])
+        debug("removing port #{Base16.encode(ref)}: #{inspect pid} #{inspect(reason)}")
         if status == :up, do: rpc_cast(self(), ["portclose", ref])
         {:noreply, %Connection{state | ports: Map.delete(ports, ref)}}
 
       nil ->
         if reason != :normal do
-          log("other pid crashed: ~180p", [reason])
+          debug("other pid crashed: #{inspect(reason)}")
           if socket != nil, do: :ssl.close(socket)
           # This might be a parent exiting
           {:stop, reason, state}
@@ -526,25 +526,21 @@ defmodule DiodeClient.Connection do
     end
   end
 
-  defp clientloop(
-         what,
-         state = %Connection{socket: socket, server: server, blocked: blocked, peaks: peaks}
-       ) do
+  defp clientloop(what, state = %Connection{socket: socket, blocked: blocked, peaks: peaks}) do
     case what do
       {:ssl, ^socket, rlp} ->
         {:noreply, handle_msg(rlp, state)}
 
       {:ssl, wrong_socket, _rlp} ->
-        log("DiodeClient flushing ssl #{inspect(wrong_socket)} != #{inspect(socket)}")
+        debug("flushing ssl #{inspect(wrong_socket)} != #{inspect(socket)}")
         {:noreply, state}
 
       {:ssl_closed, ^socket} ->
-        log("DiodeClient.ssl_closed() #{server}")
+        debug("ssl_closed()")
         {:noreply, reset(state), {:continue, :init}}
 
       {:ssl_closed, wrong_socket} ->
-        log("DiodeClient flushing ssl_close #{inspect(wrong_socket)} != #{inspect(socket)}")
-
+        debug("flushing ssl_close #{inspect(wrong_socket)} != #{inspect(socket)}")
         {:noreply, state}
 
       {pid, :quit} ->
@@ -597,7 +593,7 @@ defmodule DiodeClient.Connection do
         {:noreply, state}
 
       msg ->
-        log("Unhandled: #{inspect(msg)}")
+        debug("unhandled: #{inspect(msg)}")
         {:stop, :unhandled, state}
     end
   end
@@ -667,7 +663,6 @@ defmodule DiodeClient.Connection do
        ) do
     DiodeClient.Stats.submit(:relay, server, :self, byte_size(rlp) + @packet_header)
     state = %Connection{state | unpaid_bytes: ub + byte_size(rlp) + @packet_header}
-
     msg = [req | _rest] = Rlp.decode!(rlp)
 
     case Map.get(recv_id, req) do
@@ -677,12 +672,11 @@ defmodule DiodeClient.Connection do
           tck -> handle_ticket(state, tck, msg)
         end
 
-      # log("handle_msg => ~p", [msg])
-
       cmd = %Cmd{cmd: name, reply: from} ->
         {msg, state} =
           case {name, msg} do
             {"portopen", [^req, ["response", "ok", port_ref]]} ->
+              debug("received portopen ack for #{Base16.encode(port_ref)}")
               {:ok, pid} = Port.start_link(self(), port_ref)
 
               {[req, ["response", "ok", pid]],
@@ -693,7 +687,6 @@ defmodule DiodeClient.Connection do
           end
 
         if from != nil, do: GenServer.reply(from, msg)
-        # log("handle_msg reply ~p => ~p", [name, msg])
         pop_cmd(state, req, cmd)
     end
   end
@@ -722,6 +715,7 @@ defmodule DiodeClient.Connection do
               {state, msg}
 
             {:error, message} ->
+              debug("reject portopen on port #{port} ref: #{Base16.encode(port_ref)} reason: #{inspect message}")
               Process.unlink(pid)
               Port.close(pid)
               {state, ["error", port_ref, inspect(message)]}
@@ -732,13 +726,14 @@ defmodule DiodeClient.Connection do
 
       {"portsend", [port_ref, msg]} ->
         with {pid, :up} <- ports[port_ref] do
+          debug("received portsend for #{Base16.encode(port_ref)}")
           GenServer.cast(pid, {:send, msg})
         end
 
         state
 
       {"portclose", [port_ref]} ->
-        log("Received portclose for ~180p", [port_ref])
+        debug("received portclose for #{Base16.encode(port_ref)}")
 
         case ports[port_ref] do
           {pid, :up} ->
@@ -749,8 +744,19 @@ defmodule DiodeClient.Connection do
             state
         end
 
+      {"trace", [timestamp, edge, msg]} ->
+        dt =
+          Rlpx.bin2uint(timestamp)
+          |> DateTime.from_unix!(:millisecond)
+          |> DateTime.truncate(:second)
+          |> to_string()
+
+        Logger.info("TRACE> #{dt} #{edge} #{msg}")
+        state
+
       other ->
-        log("Ignoring unknown server event ~p", [other])
+        debug("ignoring unknown server event #{inspect(other)}")
+        state
     end
   end
 

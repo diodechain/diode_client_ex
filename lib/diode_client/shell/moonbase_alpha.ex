@@ -25,7 +25,7 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
     Wallet
   }
 
-  use DiodeClient.Log
+  require Logger
 
   def chain_id(), do: 1287
   def prefix(), do: "m1:"
@@ -151,7 +151,7 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
 
     case values do
       [:error, message] ->
-        log(
+        Logger.debug(
           "getaccountvalues #{inspect({peak_index, address, keys})} produced error #{inspect(message)}"
         )
 

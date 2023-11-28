@@ -1,7 +1,7 @@
 defmodule DiodeClient.Control do
   @moduledoc false
   use GenServer
-  use DiodeClient.Log
+  require Logger
   require Logger
   alias DiodeClient.{Acceptor, Connection, Control, Port, Rlp, Rlpx}
   @control_port 320_922
@@ -30,7 +30,7 @@ defmodule DiodeClient.Control do
             pid
 
           {:error, reason} ->
-            log("couldn't start control plane for #{inspect(reason)}")
+            Logger.debug("couldn't start control plane for #{inspect(reason)}")
             nil
         end
 
@@ -98,7 +98,7 @@ defmodule DiodeClient.Control do
       :ssl.setopts(socket, active: true, packet: 2)
       {:reply, :ok, %Control{state | socket: socket}}
     else
-      log("ignoring socket on control plane since i'm open already")
+      Logger.debug("ignoring socket on control plane since i'm open already")
       :ssl.close(socket)
       {:reply, :ok, state}
     end
@@ -128,7 +128,7 @@ defmodule DiodeClient.Control do
         %Control{state | socket: pid}
 
       {:error, _reason} ->
-        # log("control plane failed for #{inspect(reason)}")
+        # Logger.debug("control plane failed for #{inspect(reason)}")
         state
     end
   end
@@ -159,7 +159,7 @@ defmodule DiodeClient.Control do
 
         case data do
           ["RESOLVED", ^bin_portnum] ->
-            log("failed to resolve #{inspect(portnum)}")
+            Logger.debug("failed to resolve #{inspect(portnum)}")
             state
 
           ["RESOLVED", ^bin_portnum, ret_addr, ret_port] ->
@@ -175,7 +175,7 @@ defmodule DiodeClient.Control do
     after
       5_000 ->
         :ssl.close(socket)
-        log("failed control plane on timeout")
+        Logger.debug("failed control plane on timeout")
         %Control{state | socket: nil}
     end
   end
@@ -208,7 +208,7 @@ defmodule DiodeClient.Control do
         end
 
       other ->
-        log("received unknown request #{inspect(other)}")
+        Logger.debug("received unknown request #{inspect(other)}")
     end
 
     state
