@@ -1,4 +1,5 @@
 #!/usr/bin/env elixir
+# This is a sample port publisher, that listens on port 80 and forwards it to local port 8080
 Mix.install([{:diode_client, path: "../"}, {:socket2, "~> 2.0.4"}])
 
 defmodule Listener do
