@@ -493,7 +493,7 @@ defmodule DiodeClient.Connection do
     Enum.find(ports, fn {_port_ref, {port_pid, _status}} -> pid == port_pid end)
     |> case do
       {ref, {_pid, status}} ->
-        debug("removing port #{Base16.encode(ref)}: #{inspect pid} #{inspect(reason)}")
+        debug("removing port #{Base16.encode(ref)}: #{inspect(pid)} #{inspect(reason)}")
         if status == :up, do: rpc_cast(self(), ["portclose", ref])
         {:noreply, %Connection{state | ports: Map.delete(ports, ref)}}
 
@@ -715,7 +715,10 @@ defmodule DiodeClient.Connection do
               {state, msg}
 
             {:error, message} ->
-              debug("reject portopen on port #{port} ref: #{Base16.encode(port_ref)} reason: #{inspect message}")
+              debug(
+                "reject portopen on port #{port} ref: #{Base16.encode(port_ref)} reason: #{inspect(message)}"
+              )
+
               Process.unlink(pid)
               Port.close(pid)
               {state, ["error", port_ref, inspect(message)]}
