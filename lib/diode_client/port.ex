@@ -183,7 +183,7 @@ defmodule DiodeClient.Port do
   end
 
   def handle_call({:send_out, msg}, _, state = %Port{port_ref: port_ref, conn: conn, peer: peer}) do
-    Connection.rpc_async(conn, ["portsend", port_ref, msg])
+    Connection.rpc_async(conn, ["portsend", port_ref, msg], port_ref)
     DiodeClient.Stats.submit(:peer, :self, peer, byte_size(msg))
     {:reply, :ok, state}
   end

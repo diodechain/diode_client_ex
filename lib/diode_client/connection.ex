@@ -248,13 +248,16 @@ defmodule DiodeClient.Connection do
     |> Enum.min(fn {_, a}, {_, b} -> Channel.size(a) < Channel.size(b) end, fn -> nil end)
     |> case do
       {id, ch = %Channel{backlog: [[req, rlp] | backlog]}} ->
-        state = ssl_send!(state, rlp)
-        state = maybe_create_ticket(state)
         %Cmd{cmd: cmd, send_reply: reply} = Map.fetch!(recv_id, req)
 
         if cmd in ["portopen", "portsend"] do
-          debug("sending #{cmd}")
+          debug(
+            "sending #{cmd} for #{if is_binary(id), do: Base16.encode(id), else: inspect(id)}"
+          )
         end
+
+        state = ssl_send!(state, rlp)
+        state = maybe_create_ticket(state)
 
         if reply != nil, do: GenServer.reply(reply, :ok)
         channels = Map.put(channels, id, %Channel{ch | backlog: backlog})
@@ -703,6 +706,7 @@ defmodule DiodeClient.Connection do
         {state, ["response", "pong"]}
 
       {"portopen", [port, port_ref, from]} ->
+        debug("received portopen for #{Base16.encode(port_ref)}")
         port = to_num(port)
 
         {:ok, pid} = Port.start_link(self(), port_ref, port, from)
@@ -774,10 +778,10 @@ defmodule DiodeClient.Connection do
     end
   end
 
-  def rpc_async(pid, data = [cmd | _rest]) do
+  def rpc_async(pid, data = [cmd | _rest], id \\ self()) do
     req = req_id()
     rlp = Rlp.encode!([req | [data]])
-    call(pid, {:rpc_async, cmd, req, rlp, System.monotonic_time(), self()})
+    call(pid, {:rpc_async, cmd, req, rlp, System.monotonic_time(), id})
   end
 
   defp call(pid, args, timeout \\ :infinity) do
