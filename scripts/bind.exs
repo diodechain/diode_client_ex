@@ -1,4 +1,4 @@
-#!/usr/bin/env elixir
+#! /usr/bin/env elixir
 Mix.install([{:diode_client, path: "../"}, {:socket2, "~> 2.0.4"}])
 
 defmodule Listener do
@@ -18,13 +18,13 @@ defmodule Listener do
             :ssl.controlling_process(remote, pid)
             :ssl.setopts(remote, active: true)
 
-            {:error, :closed} ->
-              IO.puts("Socket closed")
-              :ok
+          {:error, :closed} ->
+            IO.puts("Socket closed")
+            :ok
 
-            {:error, :timeout} ->
-              IO.puts("Socket timeout")
-              :ok
+          {:error, :timeout} ->
+            IO.puts("Socket timeout")
+            :ok
         end
     end
 
@@ -71,13 +71,12 @@ port = Enum.at(args, 0) |> String.to_integer()
 diode_address = Enum.at(args, 1)
 diode_port = Enum.at(args, 2) |> String.to_integer()
 
-
 # :hackney_trace.enable(:max, :io)
 # Logger.configure(level: :debug)
 # Logger.put_application_level(:diode_client, :debug)
 
 DiodeClient.interface_add("bind_interface")
 IO.puts("Interface Address: 0x" <> Base.encode16(DiodeClient.address(), case: :lower))
-{:ok, socket} = :gen_tcp.listen(port, [active: true])
+{:ok, socket} = :gen_tcp.listen(port, active: true)
 IO.puts("Binding to localhost:#{port}")
 Listener.loop(socket, diode_address, diode_port)
