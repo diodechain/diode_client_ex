@@ -1,7 +1,7 @@
 #! /usr/bin/env elixir
 Mix.install([{:diode_client, path: "../"}, {:socket2, "~> 2.0.4"}])
 
-defmodule Listener do
+defmodule Bind do
   def loop(socket, diode_address, diode_port) do
     case :gen_tcp.accept(socket) do
       {:ok, local} ->
