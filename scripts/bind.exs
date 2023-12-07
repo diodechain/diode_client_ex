@@ -10,9 +10,7 @@ defmodule Listener do
             pid = spawn(__MODULE__, :client_loop, [remote, local])
 
             # set owner of localhost connection
-            # :applicationinet?
             :gen_tcp.controlling_process(local, pid)
-            # :gen_tcp.setopts(local, active: true)
 
             # set owner of diode connection
             :ssl.controlling_process(remote, pid)
@@ -28,7 +26,7 @@ defmodule Listener do
         end
     end
 
-    # call itself at the end to accept multiple connections after eachother
+    # call itself at the end to accept multiple connections after each other
     loop(socket, diode_address, diode_port)
   end
 
@@ -64,7 +62,7 @@ end
 
 # this code all runs first
 
-# call like this: elixir bind.exs 1080 "0xe4297e2c6b87650090a3a8da45b8520dd870efc1" 1080
+# call like this from scripts dir: elixir bind.exs 1080 "0xe4297e2c6b87650090a3a8da45b8520dd870efc1" 1080
 args = System.argv()
 
 port = Enum.at(args, 0) |> String.to_integer()
