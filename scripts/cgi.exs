@@ -3,53 +3,37 @@
 Mix.install([{:diode_client, path: "../"}, {:socket2, path: "../../../elixir-socket"}])
 
 defmodule Listener do
-  def loop(socket, cmd) do
-    case DiodeClient.Port.accept(socket) do
-      {:ok, remote} ->
-        {:ok, {:undefined, peer}} = :ssl.peername(remote)
-        IO.puts("Accepted connection from #{DiodeClient.Base16.encode(peer)}")
+  def id(socket), do: :erlang.phash2(socket)
 
-        pid =
-          spawn(fn ->
-            {:ok, request} = parse_http_request(remote)
-            uri = URI.parse(request.query_string)
-            script = Path.join(File.cwd!(), "index.html")
+  def accept(remote, cmd) do
+    {:ok, {:undefined, peer}} = :ssl.peername(remote)
+    IO.puts("[#{id(remote)}] Accepted connection from #{DiodeClient.Base16.encode(peer)}")
 
-            env =
-              %{
-                "REQUEST_METHOD" => request.method,
-                "CONTENT_LENGTH" => "#{byte_size(request.body)}",
-                "CONTENT_TYPE" => request["content-type"] || "",
-                "QUERY_STRING" => request.query_string,
-                "REQUEST_URI" => uri.path,
-                "REDIRECT_STATUS" => "200",
-                "SCRIPT_FILENAME" => script,
-                "GATEWAY_INTERFACE" => "CGI/1.1"
-              }
-              |> IO.inspect(label: "ENV")
+    :ssl.controlling_process(remote, self())
+    :ssl.setopts(remote, active: true)
+    {time, {:ok, request}} = :timer.tc(fn -> parse_http_request(remote) end)
+    uri = URI.parse(request.query_string)
+    script = Path.join(File.cwd!(), "index.html")
 
-            local = Socket.Port.open!(cmd, env: env)
+    env = %{
+      "REQUEST_METHOD" => request.method,
+      "CONTENT_LENGTH" => "#{byte_size(request.body)}",
+      "CONTENT_TYPE" => request["content-type"] || "",
+      "QUERY_STRING" => uri.query || "",
+      "REQUEST_URI" => uri.path,
+      "REDIRECT_STATUS" => "200",
+      "SCRIPT_FILENAME" => script,
+      "GATEWAY_INTERFACE" => "CGI/1.1"
+    }
 
-            if request.body != "" do
-              Socket.Stream.send!(local, request.body)
-            end
+    local = Socket.Port.open!(cmd, env: env)
 
-            client_loop(local, remote)
-          end)
-
-        :ssl.controlling_process(remote, pid)
-        :ssl.setopts(remote, active: true)
-
-      {:error, :closed} ->
-        IO.puts("Socket closed")
-        :ok
-
-      {:error, :timeout} ->
-        IO.puts("Socket timeout")
-        :ok
+    if request.body != "" do
+      Socket.Stream.send!(local, request.body)
     end
 
-    loop(socket, cmd)
+    client_loop(local, remote)
+    {time, request.query_string}
   end
 
   def parse_http_request(remote, rest \\ "") do
@@ -101,8 +85,11 @@ defmodule Listener do
         client_loop(local, remote, ret <> data)
 
       {_port, {:exit_status, status}} ->
-        :ssl.send(remote, html_reply(ret) |> IO.inspect(label: "REPLY"))
-        IO.puts("Pogram exit: #{inspect(status)}")
+        if status != 0 do
+          IO.puts("Local error: #{inspect(status)}")
+        end
+
+        :ssl.send(remote, html_reply(ret))
         :ok
 
       {:EXIT, _port, reason} ->
@@ -130,11 +117,25 @@ defmodule Listener do
 end
 
 # :hackney_trace.enable(:max, :io)
-Logger.configure(level: :debug)
-Logger.put_application_level(:diode_client, :debug)
+# Logger.configure(level: :debug)
+Logger.put_application_level(:diode_client, :info)
 
 DiodeClient.interface_add("listener_interface")
 IO.puts("Interface Address: 0x" <> Base.encode16(DiodeClient.address(), case: :lower))
-{:ok, socket} = DiodeClient.Port.listen(:binary.decode_unsigned("tls:80"))
+
+{:ok, _socket} =
+  DiodeClient.Port.listen(:binary.decode_unsigned("tls:80"),
+    callback: fn socket ->
+      {total_time, {read_time, info}} =
+        :timer.tc(fn ->
+          Listener.accept(socket, "php-cgi")
+        end)
+
+      IO.puts(
+        "[#{Listener.id(socket)}] request to #{inspect(info)} took #{div(total_time, 1000)}ms (#{div(read_time, 1000)}ms read)})"
+      )
+    end
+  )
+
 IO.puts("Listening on port 80")
-Listener.loop(socket, "php-cgi")
+Process.sleep(:infinity)
