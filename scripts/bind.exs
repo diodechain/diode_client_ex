@@ -1,5 +1,5 @@
 #! /usr/bin/env elixir
-Mix.install([{:diode_client, path: "../"}, {:socket2, "~> 2.0.4"}])
+Mix.install([{:diode_client, path: "../"}, :socket2])
 
 defmodule Bind do
   def loop(socket, diode_address, diode_port) do

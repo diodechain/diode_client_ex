@@ -1,6 +1,10 @@
 #!/usr/bin/env elixir
 # This is a sample port publisher, that listens on port 80 and forwards it to local port 8080
-Mix.install([{:diode_client, path: "../"}, {:socket2, path: "../../../elixir-socket"}])
+Mix.install([
+  {:diode_client, path: "../"},
+  :socket2,
+  :oncrash
+])
 
 defmodule Listener do
   def id(socket), do: :erlang.phash2(socket)
@@ -8,6 +12,12 @@ defmodule Listener do
   def accept(remote, cmd) do
     {:ok, {:undefined, peer}} = :ssl.peername(remote)
     IO.puts("[#{id(remote)}] Accepted connection from #{DiodeClient.Base16.encode(peer)}")
+
+    OnCrash.call(fn reason ->
+      if reason != :normal do
+        IO.puts("[#{id(remote)}] Failed for #{inspect(reason)}")
+      end
+    end)
 
     :ssl.controlling_process(remote, self())
     :ssl.setopts(remote, active: true)
@@ -46,8 +56,23 @@ defmodule Listener do
         end
 
     case header_and_body(data) do
-      :error -> parse_http_request(remote, data)
-      request -> request
+      :error ->
+        parse_http_request(remote, data)
+
+      {:ok, request} ->
+        case request["content-length"] do
+          nil ->
+            {:ok, request}
+
+          length ->
+            length = String.to_integer(length)
+
+            if byte_size(request.body) < length do
+              parse_http_request(remote, data)
+            else
+              {:ok, request}
+            end
+        end
     end
   end
 
@@ -90,6 +115,7 @@ defmodule Listener do
         end
 
         :ssl.send(remote, html_reply(ret))
+        :ssl.close(remote)
         :ok
 
       {:EXIT, _port, reason} ->
