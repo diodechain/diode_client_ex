@@ -7,6 +7,8 @@ Mix.install([
 ])
 
 defmodule Socks do
+  @udp_port 1080
+
   @socksVer4 0x04
   @socksVer5 0x05
   @socks4CmdConnect 0x01
@@ -24,6 +26,15 @@ defmodule Socks do
   @socks5Reserved 0x00
 
   def id(socket), do: :erlang.phash2(socket)
+
+  def loop_udp(socket) do
+    receive do
+      any ->
+        IO.inspect(any, label: "UDP")
+    end
+
+    loop_udp(socket)
+  end
 
   def loop(socket) do
     {:ok, local} = :gen_tcp.accept(socket)
@@ -127,7 +138,7 @@ defmodule Socks do
         receive do
           {:tcp, ^local, data} -> data
         after
-          5_000 ->
+          50_000 ->
             IO.inspect(rest, label: "TIMEOUT2")
             raise "timeout2"
         end
@@ -164,11 +175,11 @@ defmodule Socks do
   end
 
   defp parse_preamble(
-         <<@socksVer4, @socks4CmdConnect, _port::unsigned-big-size(16),
-           otherIp::unsigned-size(32), _::binary()>>
+         <<@socksVer4, @socks4CmdConnect, _port::unsigned-big-size(16), a, b, c, d,
+           _rest::binary()>>
        )
-       when otherIp != 0,
-       do: {:error, :invalid_socks4_ip}
+       when a != 0 or b != 0 or c != 0 or d != 0,
+       do: {:error, {:invalid_socks4_ip, {a, b, c, d}}}
 
   defp parse_preamble(<<@socksVer4, otherCmd, _::binary()>>) when otherCmd != @socks4CmdConnect,
     do: {:error, :invalid_socks4_command}
@@ -184,17 +195,9 @@ defmodule Socks do
   defp parse_preamble(_other), do: :incomplete
 
   defp parse_preamble2(
-         <<@socksVer5, cmd, _, @typeDomain, domain_len, domain::binary-size(domain_len),
-           port::unsigned-big-size(16), rest::binary()>>
-       )
-       when cmd in [@socks5CmdConnect, @socks5CmdUDPAssoc] do
-    # X'00' NO AUTHENTICATION REQUIRED
-    # X'01' GSSAPI
-    # X'02' USERNAME/PASSWORD
-    # X'03' to X'7F' IANA ASSIGNED
-    # X'80' to X'FE' RESERVED FOR PRIVATE METHODS
-    # X'FF' NO ACCEPTABLE METHODS
-
+         <<@socksVer5, @socks5CmdConnect, _, @typeDomain, domain_len,
+           domain::binary-size(domain_len), port::unsigned-big-size(16), rest::binary()>>
+       ) do
     {:ok,
      %{
        vsn: @socksVer5,
@@ -209,6 +212,15 @@ defmodule Socks do
          <<@socksVer5, @socks5ReplyConnectionError, @socks5Reserved, @typeIPv4, 0, 0, 0, 1,
            port::unsigned-big-size(16)>>
      }}
+  end
+
+  defp parse_preamble2(
+         <<@socksVer5, @socks5CmdUDPAssoc, _, @typeDomain, domain_len,
+           _domain::binary-size(domain_len), _port::unsigned-big-size(16), _rest::binary()>>
+       ) do
+    {:reply,
+     <<@socksVer5, @socks5ReplySuccess, @socks5Reserved, @typeIPv4, 127, 0, 0, 1,
+       @udp_port::unsigned-big-size(16)>>}
   end
 
   defp parse_preamble2(<<@socksVer5, _cmd, _, otherType, _rest::binary()>>)
@@ -286,8 +298,15 @@ Logger.configure(level: :debug)
 DiodeClient.interface_add("listener_interface")
 IO.puts("Interface Address: 0x" <> Base.encode16(DiodeClient.address(), case: :lower))
 
-port = 1080
-{:ok, socket} = :gen_tcp.listen(port, [{:active, true}, :binary, {:reuseaddr, true}])
-IO.puts("Starting Socks Server on localhost:#{port}")
-Socks.loop(socket)
+tcp_port = 1080
+udp_port = 1080
+
+spawn(fn ->
+  IO.puts("Starting Socks Server on localhost:#{tcp_port}")
+  {:ok, socket} = :gen_tcp.listen(tcp_port, [{:active, true}, :binary, {:reuseaddr, true}])
+  Socks.loop(socket)
+end)
+
+{:ok, socket} = :gen_udp.open(udp_port, [{:active, true}, :binary, {:reuseaddr, true}])
+Socks.loop_udp(socket)
 Process.sleep(:infinity)
