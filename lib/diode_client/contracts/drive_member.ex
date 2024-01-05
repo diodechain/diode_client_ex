@@ -51,7 +51,14 @@ defmodule DiodeClient.Contracts.DriveMember do
     block = block || shell.peak()
 
     <<number::256>> =
-      DiodeClient.Contracts.Utils.value(shell, address, @slot_addtl_drive_addresses, block, <<0::256>>, nil)
+      DiodeClient.Contracts.Utils.value(
+        shell,
+        address,
+        @slot_addtl_drive_addresses,
+        block,
+        <<0::256>>,
+        nil
+      )
 
     array_start =
       Hash.keccak_256(Hash.to_bytes32(@slot_addtl_drive_addresses))
@@ -105,7 +112,7 @@ defmodule DiodeClient.Contracts.DriveMember do
       Hash.keccak_256(Hash.to_bytes32(@slot_members_list))
       |> :binary.decode_unsigned()
 
-      DiodeClient.Contracts.Utils.value(shell, address, array_start + index, block, :undefined, nil)
+    DiodeClient.Contracts.Utils.value(shell, address, array_start + index, block, :undefined, nil)
     |> Hash.to_address()
   end
 
