@@ -2,7 +2,7 @@ defmodule DiodeClient.BertExt do
   @moduledoc false
   @spec encode!(any()) :: binary()
   def encode!(term) do
-    :erlang.term_to_binary(term_to_binary(term))
+    :erlang.term_to_binary(term_to_binary(term), minor_version: 1)
   end
 
   defp term_to_binary(map) when is_map(map) do
