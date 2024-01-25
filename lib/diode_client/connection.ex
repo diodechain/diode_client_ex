@@ -425,7 +425,7 @@ defmodule DiodeClient.Connection do
       receive do
         {:ssl, ^socket, msg} -> msg
       after
-        5000 -> throw(:missing_ticket_reply)
+        15000 -> throw(:missing_ticket_reply)
       end
 
     case Rlp.decode!(msg) do
