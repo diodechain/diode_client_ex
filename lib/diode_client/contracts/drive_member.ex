@@ -1,4 +1,8 @@
 defmodule DiodeClient.Contracts.DriveMember do
+  @moduledoc """
+  Imported contract to read group memberships. Useful to recursively resolve
+  BNS names to individual devices.
+  """
   alias DiodeClient.Hash
 
   @slot_owner 51
@@ -122,6 +126,6 @@ defmodule DiodeClient.Contracts.DriveMember do
   end
 
   defp cast(shell, address, name, types, args) do
-    Model.App.send_transaction(shell, address, name, types, args)
+    shell.send_transaction(address, name, types, args)
   end
 end

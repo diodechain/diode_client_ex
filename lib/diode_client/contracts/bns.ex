@@ -1,4 +1,7 @@
 defmodule DiodeClient.Contracts.BNS do
+  @moduledoc """
+  Wrapper for BNS smart contract to register and resolve names.
+  """
   import DiodeClient.Contracts.Utils
   alias DiodeClient.{Hash}
   @slot_names 1

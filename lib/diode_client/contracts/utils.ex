@@ -1,4 +1,5 @@
 defmodule DiodeClient.Contracts.Utils do
+  @moduledoc false
   alias DiodeClient.Hash
 
   defmacro __using__({address, shell}) do
@@ -57,10 +58,9 @@ defmodule DiodeClient.Contracts.Utils do
         len = div(:binary.decode_unsigned(str) - 1, 2)
         slots = div(len - 1, 32) + 1
 
-        Enum.map(1..slots, fn idx ->
+        Enum.map_join(1..slots, fn idx ->
           value(shell, address, add(slot, idx), block, <<0::256>>, nil)
         end)
-        |> Enum.join()
         |> binary_part(0, len)
       end
     end
