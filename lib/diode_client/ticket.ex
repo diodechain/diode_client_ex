@@ -32,13 +32,17 @@ defmodule DiodeClient.Ticket do
     device_address(tck)
   end
 
-  def device_address(tck = ticket()) do
+  def device_wallet(tck = ticket()) do
     Secp256k1.recover!(
       device_signature(tck),
       device_blob(tck),
       :kec
     )
     |> Wallet.from_pubkey()
+  end
+
+  def device_address(tck = ticket()) do
+    device_wallet(tck)
     |> Wallet.address!()
   end
 
