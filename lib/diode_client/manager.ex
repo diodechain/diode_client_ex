@@ -113,9 +113,14 @@ defmodule DiodeClient.Manager do
         {:noreply, state}
 
       old_info ->
-        new_info = struct!(old_info, info)
-        state = %Manager{state | conns: Map.put(conns, cpid, new_info)}
-        {:noreply, refresh_best(state)}
+        case struct!(old_info, info) do
+          ^old_info ->
+            {:noreply, state}
+
+          new_info ->
+            state = %Manager{state | conns: Map.put(conns, cpid, new_info)}
+            {:noreply, refresh_best(state)}
+        end
     end
   end
 
