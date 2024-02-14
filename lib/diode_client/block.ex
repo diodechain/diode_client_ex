@@ -30,6 +30,10 @@ defmodule DiodeClient.Block do
     DiodeClient.Rlpx.bin2uint(block["timestamp"])
   end
 
+  def nano_timestamp(block) do
+    DiodeClient.Rlpx.bin2uint(block["timestamp"]) * 1_000_000_000
+  end
+
   def transaction_hash(block) do
     block["transaction_hash"]
   end
