@@ -142,7 +142,7 @@ defmodule DiodeClient do
       File.read!(path)
       |> Wallet.from_privkey()
     else
-      Logger.warn("diode_client is creating a new id at #{path}")
+      Logger.warning("diode_client is creating a new id at #{path}")
       wallet = Wallet.new()
       File.write!(path, Wallet.privkey!(wallet))
       File.chmod!(path, 0o600)
