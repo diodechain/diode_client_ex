@@ -1,4 +1,4 @@
-defmodule DiodeClient.Shell.MoonbaseAlpha do
+defmodule DiodeClient.Shell.Moonbeam do
   @moduledoc """
   DiodeClient.Shell is the interface to the blockchain state. It allows
   fetching accounts and block header information. Data fetched is by
@@ -28,19 +28,19 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
   require Logger
 
   def chain_id(), do: 1287
-  def prefix(), do: "m1:"
+  def prefix(), do: "glmr:"
   @gas_limit 10_000_000
 
   def blockexplorer_url(opts \\ []) do
     cond do
       opts[:address] != nil ->
-        "https://moonbase.moonscan.io/address/#{maybe_hex(opts[:address])}"
+        "https://moonscan.io/address/#{maybe_hex(opts[:address])}"
 
       opts[:tx] != nil ->
-        "https://moonbase.moonscan.io/tx/#{maybe_hex(opts[:tx])}"
+        "https://moonscan.io/tx/#{maybe_hex(opts[:tx])}"
 
       true ->
-        "https://moonbase.moonscan.io/"
+        "https://moonscan.io/"
     end
   end
 
