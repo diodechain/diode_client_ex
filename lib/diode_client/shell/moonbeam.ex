@@ -34,13 +34,13 @@ defmodule DiodeClient.Shell.Moonbeam do
   def blockexplorer_url(opts \\ []) do
     cond do
       opts[:address] != nil ->
-        "https://moonscan.io/address/#{maybe_hex(opts[:address])}"
+        "https://moonbeam.moonscan.io/address/#{maybe_hex(opts[:address])}"
 
       opts[:tx] != nil ->
-        "https://moonscan.io/tx/#{maybe_hex(opts[:tx])}"
+        "https://moonbeam.moonscan.io/tx/#{maybe_hex(opts[:tx])}"
 
       true ->
-        "https://moonscan.io/"
+        "https://moonbeam.moonscan.io/"
     end
   end
 
@@ -77,7 +77,6 @@ defmodule DiodeClient.Shell.Moonbeam do
     create_transaction(callcode, opts)
   end
 
-  @deadline 1_800_000_000
   def create_meta_transaction(address, function_name, types, values, nonce, opts \\ [])
       when is_list(types) and is_list(values) do
     # https://solidity.readthedocs.io/en/v0.4.24/abi-spec.html
@@ -86,7 +85,7 @@ defmodule DiodeClient.Shell.Moonbeam do
     from = Wallet.address!(wallet)
 
     gaslimit = Keyword.get(opts, :gas, @gas_limit)
-    deadline = Keyword.get(opts, :deadline, @deadline)
+    deadline = Keyword.get(opts, :deadline, System.os_time(:second) + 3600)
     value = Keyword.get(opts, :value, 0)
 
     MetaTransaction.sign(

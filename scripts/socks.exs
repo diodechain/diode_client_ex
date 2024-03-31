@@ -147,7 +147,7 @@ defmodule Socks do
   # hand_shake only support SOCKS4A + SOCKS5
   defp parse_preamble(
          <<@socksVer4, @socks4CmdConnect, port::unsigned-big-size(16), 0::unsigned-size(32),
-           rest::binary()>>
+           rest::binary>>
        ) do
     with {userid, rest} when is_binary(userid) <- read_string(rest),
          {host, rest} <- read_string(rest) do
@@ -165,19 +165,19 @@ defmodule Socks do
 
   defp parse_preamble(
          <<@socksVer4, @socks4CmdConnect, _port::unsigned-big-size(16),
-           otherIp::unsigned-size(32), _::binary()>>
+           otherIp::unsigned-size(32), _::binary>>
        )
        when otherIp != 0,
        do: {:error, :invalid_socks4_ip}
 
-  defp parse_preamble(<<@socksVer4, otherCmd, _::binary()>>) when otherCmd != @socks4CmdConnect,
+  defp parse_preamble(<<@socksVer4, otherCmd, _::binary>>) when otherCmd != @socks4CmdConnect,
     do: {:error, :invalid_socks4_command}
 
-  defp parse_preamble(<<@socksVer5, auth_len, _auth::binary-size(auth_len), rest::binary()>>) do
+  defp parse_preamble(<<@socksVer5, auth_len, _auth::binary-size(auth_len), rest::binary>>) do
     {:reply, <<@socksVer5, 0>>, rest}
   end
 
-  defp parse_preamble(<<version, _rest::binary()>>)
+  defp parse_preamble(<<version, _rest::binary>>)
        when version != @socksVer4 and version != @socksVer5,
        do: {:error, :invalid_socks_version}
 
@@ -185,7 +185,7 @@ defmodule Socks do
 
   defp parse_preamble2(
          <<@socksVer5, cmd, _, @typeDomain, domain_len, domain::binary-size(domain_len),
-           port::unsigned-big-size(16), rest::binary()>>
+           port::unsigned-big-size(16), rest::binary>>
        )
        when cmd in [@socks5CmdConnect, @socks5CmdUDPAssoc] do
     # X'00' NO AUTHENTICATION REQUIRED
@@ -211,24 +211,24 @@ defmodule Socks do
      }}
   end
 
-  defp parse_preamble2(<<@socksVer5, _cmd, _, otherType, _rest::binary()>>)
+  defp parse_preamble2(<<@socksVer5, _cmd, _, otherType, _rest::binary>>)
        when otherType != @typeDomain,
        do: {:error, :invalid_socks5_address_type}
 
-  defp parse_preamble2(<<@socksVer5, otherCmd, _rest::binary()>>)
+  defp parse_preamble2(<<@socksVer5, otherCmd, _rest::binary>>)
        when otherCmd not in [@socks5CmdConnect, @socks5CmdUDPAssoc],
        do: {:error, :invalid_socks5_cmd}
 
-  defp parse_preamble2(<<version, _rest::binary()>>)
+  defp parse_preamble2(<<version, _rest::binary>>)
        when version != @socksVer5,
        do: {:error, :invalid_socks_version}
 
   defp parse_preamble2(_other), do: :incomplete
 
   defp read_string(<<>>), do: :incomplete
-  defp read_string(<<0, rest::binary()>>), do: {"", rest}
+  defp read_string(<<0, rest::binary>>), do: {"", rest}
 
-  defp read_string(<<char, rest::binary()>>) do
+  defp read_string(<<char, rest::binary>>) do
     {str, rest} = read_string(rest)
     {<<char, str::binary>>, rest}
   end
