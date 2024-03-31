@@ -200,6 +200,7 @@ defmodule DiodeClient do
     end
   end
 
-  def shell_for_chain_id(15), do: DiodeClient.Shell
-  def shell_for_chain_id(1287), do: DiodeClient.Shell.MoonbaseAlpha
+  for shell <- [DiodeClient.Shell, DiodeClient.Shell.Moonbeam, DiodeClient.Shell.MoonbaseAlpha] do
+    def shell_for_chain_id(unquote(shell.chain_id())), do: unquote(shell)
+  end
 end
