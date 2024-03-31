@@ -8,9 +8,12 @@ defmodule DiodeClient.Contracts.CallPermit do
   # @address Base16.decode("0x000000000000000000000000000000000000080A")
   # Moonbase Alpha (0x507)
   # @chain_id 1287
-  @domain_separator Base16.decode(
-                      "0x2d44830364594de15bf34f87ca86da8d1967e5bc7d64b301864028acb9120412"
-                    )
+  @domain_separator %{
+    DiodeClient.Shell.MoonbaseAlpha.chain_id() =>
+      Base16.decode("0x2d44830364594de15bf34f87ca86da8d1967e5bc7d64b301864028acb9120412"),
+    DiodeClient.Shell.Moonbeam.chain_id() =>
+      Base16.decode("0x4f83a3a1d1a8f42700b988f3d8f4b0a56bd0768a19d045db65158b079b2a0bae")
+  }
 
   # /// @dev Dispatch a call on the behalf of an other user with a EIP712 permit.
   # /// Will revert if the permit is not valid or if the dispatched call reverts or errors (such as
@@ -54,14 +57,8 @@ defmodule DiodeClient.Contracts.CallPermit do
     ABI.encode_call("DOMAIN_SEPARATOR", [], [])
   end
 
-  @endpoint "https://moonbeam-alpha.api.onfinality.io/public"
-  # @endpoint "https://rpc.api.moonbase.moonbeam.network"
-  def endpoint() do
-    @endpoint
-  end
-
-  def call_permit(from, to, value, data, gaslimit, deadline, nonce) do
-    EIP712.encode(@domain_separator, "CallPermit", [
+  def call_permit(chain_id, from, to, value, data, gaslimit, deadline, nonce) do
+    EIP712.encode(@domain_separator[chain_id], "CallPermit", [
       {"from", "address", from},
       {"to", "address", to},
       {"value", "uint256", value},

@@ -14,11 +14,12 @@ defmodule DiodeClient.MetaTransaction do
           call: data,
           gaslimit: gaslimit,
           deadline: deadline,
-          nonce: nonce
+          nonce: nonce,
+          chain_id: chain_id
         },
         wallet
       ) do
-    signature = CallPermit.call_permit(from, to, value, data, gaslimit, deadline, nonce)
+    signature = CallPermit.call_permit(chain_id, from, to, value, data, gaslimit, deadline, nonce)
 
     [v, r, s] =
       Wallet.privkey!(wallet)
