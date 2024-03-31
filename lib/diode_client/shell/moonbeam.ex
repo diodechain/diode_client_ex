@@ -27,7 +27,7 @@ defmodule DiodeClient.Shell.Moonbeam do
 
   require Logger
 
-  def chain_id(), do: 1287
+  def chain_id(), do: 1284
   def prefix(), do: "glmr:"
   @gas_limit 10_000_000
 
