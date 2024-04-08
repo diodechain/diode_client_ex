@@ -108,7 +108,9 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
   defdelegate get_node(key), to: Shell
 
   def get_block_header(block_index) do
-    cached_rpc([prefix() <> "getblockheader", block_index])
+    case cached_rpc([prefix() <> "getblockheader", block_index]) do
+      [block] -> Rlpx.list2map(block)
+    end
   end
 
   def get_meta_nonce(address, peak \\ peak()) do
