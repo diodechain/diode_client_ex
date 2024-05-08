@@ -247,11 +247,12 @@ defmodule DiodeClient.Shell do
 
   def cached_rpc(args) do
     ETSLru.fetch(ShellCache, args, fn ->
-      # a = System.os_time(:millisecond)
-      ret = Connection.rpc(conn(), args)
-      # b = System.os_time(:millisecond)
-      # Logger.debug("#{b - a}ms #{inspect(hd(args))}")
-      ret
+      c = conn()
+
+      case Connection.rpc(c, args) do
+        [:error, "remote_closed"] -> Connection.rpc(conn(), args)
+        ret -> ret
+      end
     end)
   end
 

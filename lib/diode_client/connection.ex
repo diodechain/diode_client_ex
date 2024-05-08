@@ -773,8 +773,18 @@ defmodule DiodeClient.Connection do
 
     call(pid, {:rpc, cmd, req, rlp, System.monotonic_time(), self()}, 120_000)
     |> case do
-      [^req, ["error" | rest]] -> [:error | rest]
-      [^req, ["response" | rest]] -> rest
+      [^req, ["error", "remote_closed"]] ->
+        Logger.warning(
+          "DiodeClient remote_closed during RPC(#{inspect(cmd)}) from #{server_url(pid)}"
+        )
+
+        [:error, "remote_closed"]
+
+      [^req, ["error" | rest]] ->
+        [:error | rest]
+
+      [^req, ["response" | rest]] ->
+        rest
     end
   end
 
