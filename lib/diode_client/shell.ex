@@ -190,7 +190,18 @@ defmodule DiodeClient.Shell do
     address = Hash.to_address(address)
 
     root = Task.async(fn -> get_account_root(address, peak) end)
-    [roots] = cached_rpc(["getaccountroots", peak_index, address])
+
+    roots =
+      case cached_rpc(["getaccountroots", peak_index, address]) do
+        [roots] ->
+          roots
+
+        other ->
+          throw(
+            "#{Connection.server_url(conn())}: received invalid response #{inspect(other)} at #{inspect(peak_index)}"
+          )
+      end
+
     assert_equal(Task.await(root, :infinity), signature(roots))
     roots
   end
@@ -205,7 +216,6 @@ defmodule DiodeClient.Shell do
     peak_index = peak_number(peak)
     address = Hash.to_address(address)
     roots = Task.async(fn -> get_account_roots(address, peak) end)
-
     values = cached_rpc(["getaccountvalues", peak_index, address | keys])
     roots = Task.await(roots, :infinity)
 
