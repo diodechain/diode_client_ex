@@ -3,7 +3,7 @@ defmodule DiodeClient.Sup do
   alias DiodeClient.{Acceptor, Manager, Stats}
 
   def start_link(name) do
-    Supervisor.start_link(__MODULE__, name)
+    Supervisor.start_link(__MODULE__, name, name: name(name))
   end
 
   def child_spec(name) do
@@ -15,6 +15,13 @@ defmodule DiodeClient.Sup do
   end
 
   def init(_name) do
-    Supervisor.init([Stats, Acceptor, Manager], strategy: :one_for_one, max_restarts: 1000)
+    Supervisor.init([Stats, Acceptor, Manager],
+      strategy: :one_for_one,
+      max_restarts: 1000
+    )
+  end
+
+  def name(name \\ :default) do
+    {:global, {__MODULE__, name}}
   end
 end

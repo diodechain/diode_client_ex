@@ -19,12 +19,13 @@ defmodule DiodeClient.Control do
     end
   end
 
-  def ensure_peer(peer) do
+  defp ensure_peer(peer) do
     case whereis(peer) do
       nil ->
-        case Supervisor.start_child(DiodeClient, %{
+        case Supervisor.start_child(DiodeClient.Sup.name(), %{
                id: peer,
-               start: {Control, :start_link, [peer]}
+               start: {Control, :start_link, [peer]},
+               restart: :temporary
              }) do
           {:ok, pid} ->
             pid
