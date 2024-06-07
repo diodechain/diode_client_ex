@@ -134,9 +134,9 @@ defmodule DiodeClient.Shell.Moonbeam do
   end
 
   def get_account_root(address, peak \\ peak()) do
+    peak_index = Rlpx.bin2uint(peak["number"])
     address = Hash.to_address(address)
-    %Account{storage_root: root} = get_account(address, peak)
-    root
+    cached_rpc([prefix() <> "getaccountroot", peak_index, address])
   end
 
   def get_account_value(address, key = <<_::256>>, peak \\ peak())
