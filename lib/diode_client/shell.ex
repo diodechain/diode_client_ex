@@ -103,7 +103,10 @@ defmodule DiodeClient.Shell do
           server_signature
         ]
       ] ->
-        {:ticket, server_id, Rlpx.bin2uint(block_number), nil, fleet_contract,
+        block_number = Rlpx.bin2uint(block_number)
+        block_hash = get_block_header(block_number)["block_hash"]
+
+        {:ticket, server_id, block_number, block_hash, fleet_contract,
          Rlpx.bin2uint(total_connections), Rlpx.bin2uint(total_bytes), local_address,
          device_signature, server_signature}
 
