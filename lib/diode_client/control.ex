@@ -57,7 +57,7 @@ defmodule DiodeClient.Control do
           Logger.info("resolve_local: #{inspect(addr)}")
           address = String.to_charlist(address)
 
-          case :ssl.connect(address, port, Connection.ssl_options(), 5_000) do
+          case :ssl.connect(address, port, Connection.ssl_options(role: :client), 5_000) do
             {:ok, ssl} ->
               NetworkMonitor.close_on_down(ssl, :ssl)
               :ssl.controlling_process(ssl, self())

@@ -91,7 +91,6 @@ defmodule DiodeClient.Contracts.BNS do
   end
 
   def resolve_address(address, block \\ nil) do
-    # IO.inspect(Base16.encode(address), label: "resolve_address")
     base = Hash.to_bytes32(@slot_reverse_names)
     slot = Hash.keccak_256(Hash.to_bytes32(address) <> base)
 
@@ -115,7 +114,6 @@ defmodule DiodeClient.Contracts.BNS do
 
   defp name_to_impl(name) do
     case String.split(name, ".") do
-      # [name] -> {Contract.DiodeBNS, name}
       [name, "diode"] -> {DiodeClient.Contracts.DiodeBNS, name}
       [name, "m1"] -> {DiodeClient.Contracts.M1BNS, name}
     end
@@ -123,6 +121,7 @@ defmodule DiodeClient.Contracts.BNS do
 
   def name_to_shell(name) do
     case String.split(name, ".") do
+      [_name, "glmr"] -> DiodeClient.Shell.Moonbeam
       [_name, "diode"] -> DiodeClient.Shell
       [_name, "m1"] -> DiodeClient.Shell.MoonbaseAlpha
       _ -> nil

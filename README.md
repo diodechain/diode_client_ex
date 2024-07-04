@@ -60,7 +60,7 @@ For example `server_address = "0x389eba94b330140579cdce1feb1a6e905ff876e6"`
 ```elixir
   # Client:
   server_address = "0x389eba94b330140579cdce1feb1a6e905ff876e6"
-  DiodeClient.add_interface("example_client_interface")
+  DiodeClient.interface_add("example_client_interface")
 
   spawn_link(fn ->
     {:ok, ssl} = DiodeClient.port_connect(server_address, 5000)

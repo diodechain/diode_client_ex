@@ -1,9 +1,11 @@
 defmodule DiodeClient.Connection do
   @moduledoc false
+  alias Credo.Code.Block
   alias DiodeClient.Base16
 
   alias DiodeClient.{
     Acceptor,
+    Block,
     Certs,
     Connection,
     Manager,
@@ -13,10 +15,12 @@ defmodule DiodeClient.Connection do
     Rlpx,
     Secp256k1,
     Ticket,
+    TicketV2,
     Wallet
   }
 
   import Ticket
+  import TicketV2
   use GenServer
   require Logger
 
@@ -67,6 +71,7 @@ defmodule DiodeClient.Connection do
             latency: @inital_latency,
             server_wallet: nil,
             socket: nil,
+            shell: nil,
             peaks: %{},
             pending_tickets: %{},
             ticket_count: 0,
@@ -90,7 +95,8 @@ defmodule DiodeClient.Connection do
       paid_bytes: bytes,
       conns: conns,
       events: :queue.new(),
-      fleet: fleet_address(),
+      fleet: DiodeClient.fleet_address(),
+      shell: DiodeClient.Shell.Moonbeam,
       server: server,
       server_ports: ports
     }
@@ -116,7 +122,7 @@ defmodule DiodeClient.Connection do
     Manager.get_connection_info(pid, :server_url) || ""
   end
 
-  def peak(pid, shell \\ DiodeClient.Shell) do
+  def peak(pid, shell \\ DiodeClient.Shell.Moonbeam) do
     call(pid, {:peak, shell})
   end
 
@@ -154,7 +160,7 @@ defmodule DiodeClient.Connection do
       Process.sleep(backoff)
     end
 
-    :ssl.connect(String.to_charlist(server), port, ssl_options(), 25_000)
+    :ssl.connect(String.to_charlist(server), port, ssl_options(role: :client), 25_000)
     |> case do
       {:ok, socket} ->
         NetworkMonitor.close_on_down(socket, :ssl)
@@ -352,12 +358,13 @@ defmodule DiodeClient.Connection do
            unpaid_bytes: unpaid_bytes,
            paid_bytes: paid_bytes,
            peaks: peaks,
+           shell: shell,
            server_wallet: server_wallet,
            pending_tickets: pending_tickets,
            ticket_count: tc
          }
        ) do
-    peak = Map.get(peaks, DiodeClient.Shell)
+    peak = Map.get(peaks, shell)
 
     count =
       div(unpaid_bytes + 400 - paid_bytes, @ticket_size)
@@ -376,35 +383,37 @@ defmodule DiodeClient.Connection do
         pid -> <<0>> <> server_address(pid)
       end
 
-    tck =
-      ticket(
-        server_id: Wallet.address!(server_wallet),
-        total_connections: conns,
-        total_bytes: paid_bytes + @ticket_size * count,
-        local_address: local,
-        block_number: to_num(peak["number"]),
-        block_hash: peak["block_hash"],
-        fleet_contract: fleet_address()
-      )
-      |> Ticket.device_sign(Wallet.privkey!(DiodeClient.wallet()))
+    {tck, mod} =
+      if Block.diode?(peak) do
+        {ticket(
+           server_id: Wallet.address!(server_wallet),
+           total_connections: conns,
+           total_bytes: paid_bytes + @ticket_size * count,
+           local_address: local,
+           block_number: Block.number(peak),
+           block_hash: Block.hash(peak),
+           fleet_contract: DiodeClient.fleet_address()
+         ), Ticket}
+      else
+        {ticketv2(
+           server_id: Wallet.address!(server_wallet),
+           epoch: Block.epoch(peak),
+           chain_id: shell.chain_id(),
+           total_connections: conns,
+           total_bytes: paid_bytes + @ticket_size * count,
+           local_address: local,
+           fleet_contract: DiodeClient.fleet_address()
+         ), TicketV2}
+      end
 
-    data = [
-      "ticket",
-      Ticket.block_number(tck),
-      Ticket.fleet_contract(tck),
-      Ticket.total_connections(tck),
-      Ticket.total_bytes(tck),
-      Ticket.local_address(tck),
-      Ticket.device_signature(tck)
-    ]
-
+    tck = mod.device_sign(tck, Wallet.privkey!(DiodeClient.wallet()))
     req = req_id()
-    msg = Rlp.encode!([req, data])
+    msg = Rlp.encode!([req, mod.message(tck)])
 
     state = %Connection{
       state
       | pending_tickets: Map.put(pending_tickets, req, tck),
-        paid_bytes: Ticket.total_bytes(tck),
+        paid_bytes: mod.total_bytes(tck),
         ticket_count: tc + 1
     }
 
@@ -445,7 +454,7 @@ defmodule DiodeClient.Connection do
           unpaid_bytes: unpaid_bytes,
           pending_tickets: pending_tickets
         },
-        _tck,
+        ticket(),
         [req, reply]
       ) do
     state = %Connection{state | pending_tickets: Map.delete(pending_tickets, req)}
@@ -455,6 +464,42 @@ defmodule DiodeClient.Connection do
         state
 
       ["response", "too_low", _peak, rlp_conns, rlp_bytes, _address, _signature] ->
+        new_bytes = to_num(rlp_bytes)
+        new_conns = to_num(rlp_conns)
+
+        state =
+          if new_bytes > unpaid_bytes do
+            # this must be a continuiation of a previous connection
+            %Connection{
+              state
+              | conns: new_conns,
+                paid_bytes: new_bytes,
+                unpaid_bytes: new_bytes + unpaid_bytes
+            }
+          else
+            %Connection{state | conns: new_conns + 1}
+          end
+
+        {req, state} = do_create_ticket(state)
+        wait_for_ticket(req, state)
+    end
+  end
+
+  def handle_ticket(
+        state = %Connection{
+          unpaid_bytes: unpaid_bytes,
+          pending_tickets: pending_tickets
+        },
+        ticketv2(),
+        [req, reply]
+      ) do
+    state = %Connection{state | pending_tickets: Map.delete(pending_tickets, req)}
+
+    case reply do
+      ["response", "thanks!", _bytes] ->
+        state
+
+      ["response", "too_low", _chain_id, _epoch, rlp_conns, rlp_bytes, _address, _signature] ->
         new_bytes = to_num(rlp_bytes)
         new_conns = to_num(rlp_conns)
 
@@ -576,7 +621,7 @@ defmodule DiodeClient.Connection do
         state =
           %Connection{state | peaks: Map.put(peaks, shell, peak), blocked: blocked}
           |> update_info()
-          |> maybe_create_ticket(Map.get(peaks, DiodeClient.Shell) == nil)
+          |> maybe_create_ticket(shell == state.shell and Map.get(peaks, shell) == nil)
 
         {:noreply, state}
 
@@ -639,10 +684,10 @@ defmodule DiodeClient.Connection do
     }
   end
 
-  defp update_block(pid, shell \\ DiodeClient.Shell, peak \\ nil) do
+  defp update_block(pid, shell \\ DiodeClient.Shell.Moonbeam, peak \\ nil) do
     case rpc(pid, [shell.prefix() <> "getblockpeak"]) do
       [num] ->
-        if peak == nil or to_num(num) > to_num(peak["number"]) do
+        if peak == nil or to_num(num) > Block.number(peak) do
           [block] = rpc(pid, [shell.prefix() <> "getblockheader", max(0, to_num(num) - 3)])
           send(pid, {:peak, shell, Rlpx.list2map(block)})
         end
@@ -807,7 +852,7 @@ defmodule DiodeClient.Connection do
 
     :exit, reason ->
       Process.exit(pid, reason)
-      raise "DiodeClient rpc timeout: #{inspect(reason)}"
+      raise "DiodeClient exception: #{inspect(reason)}"
   end
 
   def rpc_cast(pid, data = [cmd | _rest]) do
@@ -821,30 +866,41 @@ defmodule DiodeClient.Connection do
     |> to_bin()
   end
 
-  def ssl_options() do
+  def ssl_options(opts \\ []) do
+    # Can be :server or :client
+    role = Keyword.get(opts, :role, :server)
     wallet = DiodeClient.wallet()
     private = Wallet.privkey!(wallet)
     public = Wallet.pubkey_long!(wallet)
     cert = Secp256k1.selfsigned(private, public)
 
     [
-      mode: :binary,
-      packet: @packet_header,
-      cert: cert,
-      cacerts: [cert],
-      versions: [:"tlsv1.2"],
-      verify: :verify_peer,
-      verify_fun: {&__MODULE__.check/3, nil},
-      fail_if_no_peer_cert: true,
-      eccs: [:secp256k1],
       active: false,
-      reuseaddr: true,
-      key: {:ECPrivateKey, Secp256k1.der_encode_private(private, public)},
+      cacerts: [cert],
+      cert: cert,
       delay_send: true,
+      eccs: [:secp256k1],
+      key: {:ECPrivateKey, Secp256k1.der_encode_private(private, public)},
+      log_alert: false,
+      log_level: :warning,
+      mode: :binary,
+      nodelay: false,
+      packet: @packet_header,
       reuse_sessions: true,
+      reuseaddr: true,
+      send_timeout_close: true,
       send_timeout: 30_000,
-      send_timeout_close: true
-    ]
+      show_econnreset: true,
+      verify_fun: {&check/3, nil},
+      verify: :verify_peer,
+      versions: [:"tlsv1.2"],
+    ] ++
+    if role == :server do
+      [fail_if_no_peer_cert: true]
+    else
+      []
+    end
+
   end
 
   defp ssl_send!(state = %Connection{socket: socket, unpaid_bytes: up, server: server}, msg) do
@@ -852,10 +908,6 @@ defmodule DiodeClient.Connection do
     :ok = :ssl.send(socket, msg)
     DiodeClient.Stats.submit(:relay, :self, server, byte_size(msg) + @packet_header)
     %Connection{state | unpaid_bytes: up + byte_size(msg) + @packet_header}
-  end
-
-  defp fleet_address() do
-    Base.decode16!("6000000000000000000000000000000000000000")
   end
 
   defp set_keepalive(socket) do

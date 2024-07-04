@@ -2,7 +2,7 @@ defmodule DiodeClient.Manager do
   @moduledoc false
   alias DiodeClient.{Connection, Manager, Rlpx}
   use GenServer
-  defstruct [:conns, :server_list, :waiting, :best, :peak, :online]
+  defstruct [:conns, :server_list, :waiting, :best, :peak, :online, :shell]
 
   defmodule Info do
     @moduledoc false
@@ -18,7 +18,7 @@ defmodule DiodeClient.Manager do
   @impl true
   def init(_arg) do
     Process.flag(:trap_exit, true)
-    state = %Manager{server_list: seed_list(), conns: %{}, waiting: [], online: true}
+    state = %Manager{server_list: seed_list(), conns: %{}, waiting: [], online: true, shell: DiodeClient.Shell.Moonbeam}
     {:ok, state, {:continue, :init}}
   end
 
@@ -209,17 +209,17 @@ defmodule DiodeClient.Manager do
     {:reply, best, state}
   end
 
-  defp connected(%Manager{conns: conns}) do
+  defp connected(%Manager{conns: conns, shell: shell}) do
     Enum.filter(Map.values(conns), fn %Info{server_address: addr, peaks: peaks} ->
-      addr != nil and Map.get(peaks, DiodeClient.Shell) != nil
+      addr != nil and Map.get(peaks, shell) != nil
     end)
   end
 
-  defp refresh_best(state = %Manager{waiting: waiting, peak: last_peak}) do
+  defp refresh_best(state = %Manager{waiting: waiting, peak: last_peak, shell: shell}) do
     connected = connected(state)
 
     peaks =
-      Enum.map(connected, fn %Info{peaks: %{DiodeClient.Shell => a}} -> block_number(a) end)
+      Enum.map(connected, fn %Info{peaks: %{^shell => a}} -> block_number(a) end)
       |> Enum.sort(:desc)
 
     # IO.puts("PEAKS: #{inspect(peaks)}")
@@ -229,7 +229,7 @@ defmodule DiodeClient.Manager do
     min_peak = max(min_peak, block_number(last_peak))
     # IO.puts("MIN_PEAK2: #{min_peak}")
 
-    Enum.filter(connected, fn %Info{peaks: %{DiodeClient.Shell => peak}} ->
+    Enum.filter(connected, fn %Info{peaks: %{^shell => peak}} ->
       block_number(peak) >= min_peak
     end)
     |> Enum.sort(fn %Info{latency: a}, %Info{latency: b} -> a < b end)
@@ -238,7 +238,7 @@ defmodule DiodeClient.Manager do
       nil ->
         %Manager{state | best: nil}
 
-      %Info{pid: pid, peaks: %{DiodeClient.Shell => new_peak}} ->
+      %Info{pid: pid, peaks: %{^shell => new_peak}} ->
         peak = if block_number(new_peak) > block_number(last_peak), do: new_peak, else: last_peak
         for from <- waiting, do: GenServer.reply(from, pid)
         %Manager{state | best: pid, waiting: [], peak: peak}

@@ -118,4 +118,16 @@ defmodule DiodeClient.Ticket do
       _ -> [id]
     end
   end
+
+  def message(tck = ticket()) do
+    [
+      "ticket",
+      block_number(tck),
+      fleet_contract(tck),
+      total_connections(tck),
+      total_bytes(tck),
+      local_address(tck),
+      device_signature(tck)
+    ]
+  end
 end

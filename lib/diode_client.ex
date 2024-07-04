@@ -161,9 +161,23 @@ defmodule DiodeClient do
 
   @doc false
   def wallet() do
-    case :persistent_term.get({__MODULE__, :wallet}) do
+    case :persistent_term.get({__MODULE__, :wallet}, nil) do
+      {module, fun, args} ->
+        apply(module, fun, args)
+
+      cb when is_function(cb) ->
+        cb.()
+
+      nil ->
+        throw("No wallet set, call DiodeClient.set_wallet/1 or DiodeClient.ensure_wallet/0 first")
+    end
+  end
+
+  def fleet_address() do
+    case :persistent_term.get({__MODULE__, :fleet_address}, nil) do
       {module, fun, args} -> apply(module, fun, args)
       cb when is_function(cb) -> cb.()
+      nil -> DiodeClient.Base16.decode("0x8aFe08d333f785C818199a5bdc7A52ac6Ffc492A")
     end
   end
 

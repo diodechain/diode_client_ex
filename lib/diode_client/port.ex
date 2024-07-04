@@ -37,13 +37,13 @@ defmodule DiodeClient.Port do
      }}
   end
 
-  defp transport_option(pid) do
+  defp transport_option(pid, opts \\ []) do
     {:ok, {:undefined, remote}} = peername(pid)
 
-    Connection.ssl_options()
+    Connection.ssl_options(opts)
     |> Keyword.put(:packet, :raw)
     |> Keyword.put(:cb_info, {Port, Port.Msg, Port.Closed, Port.Error})
-    |> Keyword.put(:verify_fun, {&__MODULE__.check_remote/3, Wallet.from_address(remote)})
+    |> Keyword.put(:verify_fun, {&check_remote/3, Wallet.from_address(remote)})
   end
 
   def update_peer_port(pid, peer, portnum) do
@@ -311,7 +311,7 @@ defmodule DiodeClient.Port do
   # @dialyzer {:nowarn_function, tls_connect: 1}
   @spec tls_connect(any()) :: {:ok, any()} | {:error, any()}
   def tls_connect(pid) do
-    opts = transport_option(pid)
+    opts = transport_option(pid, role: :client)
 
     # This in a bridged virtual SSL conn not running via a
     # raw socket, so no NetworkManager monitoring here

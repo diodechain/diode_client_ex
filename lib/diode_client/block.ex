@@ -10,6 +10,18 @@ defmodule DiodeClient.Block do
     DiodeClient.Rlpx.bin2uint(block["block_hash"])
   end
 
+  def epoch(block) do
+    if diode?(block) do
+      div(number(block), 40_320)
+    else
+      div(timestamp(block), 2_592_000)
+    end
+  end
+
+  def diode?(block) do
+    miner_signature(block) not in [nil, ""]
+  end
+
   def miner_signature(block) do
     block["miner_signature"]
   end
