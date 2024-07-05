@@ -110,6 +110,24 @@ defmodule DiodeClient.Shell do
          Rlpx.bin2uint(total_connections), Rlpx.bin2uint(total_bytes), local_address,
          device_signature, server_signature}
 
+      [
+        [
+          "ticketv2",
+          server_id,
+          chain_id,
+          epoch,
+          fleet_contract,
+          total_connections,
+          total_bytes,
+          local_address,
+          device_signature,
+          server_signature
+        ]
+      ] ->
+        {:ticketv2, server_id, Rlpx.bin2uint(chain_id), Rlpx.bin2uint(epoch), fleet_contract,
+         Rlpx.bin2uint(total_connections), Rlpx.bin2uint(total_bytes), local_address,
+         device_signature, server_signature}
+
       _other ->
         nil
     end

@@ -174,15 +174,10 @@ defmodule DiodeClient.Shell.Moonbeam do
   end
 
   def peak() do
-    [block] = cached_rpc([prefix() <> "getblockheader", peak_number()])
-    Rlpx.list2map(block)
+    DiodeClient.Manager.get_peak(__MODULE__)
   end
 
-  def peak_number() do
-    Rlpx.bin2uint(hd(rpc([prefix() <> "getblockpeak"])))
-  end
-
-  def peak_number(peak) do
+  def peak_number(peak \\ peak()) do
     Rlpx.bin2uint(peak["number"])
   end
 

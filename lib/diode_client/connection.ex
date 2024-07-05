@@ -15,11 +15,12 @@ defmodule DiodeClient.Connection do
     Rlpx,
     Secp256k1,
     Ticket,
+    TicketV1,
     TicketV2,
     Wallet
   }
 
-  import Ticket
+  import TicketV1
   import TicketV2
   use GenServer
   require Logger
@@ -383,37 +384,37 @@ defmodule DiodeClient.Connection do
         pid -> <<0>> <> server_address(pid)
       end
 
-    {tck, mod} =
+    tck =
       if Block.diode?(peak) do
-        {ticket(
-           server_id: Wallet.address!(server_wallet),
-           total_connections: conns,
-           total_bytes: paid_bytes + @ticket_size * count,
-           local_address: local,
-           block_number: Block.number(peak),
-           block_hash: Block.hash(peak),
-           fleet_contract: DiodeClient.fleet_address()
-         ), Ticket}
+        ticket(
+          server_id: Wallet.address!(server_wallet),
+          total_connections: conns,
+          total_bytes: paid_bytes + @ticket_size * count,
+          local_address: local,
+          block_number: Block.number(peak),
+          block_hash: Block.hash(peak),
+          fleet_contract: DiodeClient.fleet_address()
+        )
       else
-        {ticketv2(
-           server_id: Wallet.address!(server_wallet),
-           epoch: Block.epoch(peak),
-           chain_id: shell.chain_id(),
-           total_connections: conns,
-           total_bytes: paid_bytes + @ticket_size * count,
-           local_address: local,
-           fleet_contract: DiodeClient.fleet_address()
-         ), TicketV2}
+        ticketv2(
+          server_id: Wallet.address!(server_wallet),
+          epoch: Block.epoch(peak),
+          chain_id: shell.chain_id(),
+          total_connections: conns,
+          total_bytes: paid_bytes + @ticket_size * count,
+          local_address: local,
+          fleet_contract: DiodeClient.fleet_address()
+        )
       end
 
-    tck = mod.device_sign(tck, Wallet.privkey!(DiodeClient.wallet()))
+    tck = Ticket.device_sign(tck, Wallet.privkey!(DiodeClient.wallet()))
     req = req_id()
-    msg = Rlp.encode!([req, mod.message(tck)])
+    msg = Rlp.encode!([req, Ticket.message(tck)])
 
     state = %Connection{
       state
       | pending_tickets: Map.put(pending_tickets, req, tck),
-        paid_bytes: mod.total_bytes(tck),
+        paid_bytes: Ticket.total_bytes(tck),
         ticket_count: tc + 1
     }
 
@@ -574,23 +575,27 @@ defmodule DiodeClient.Connection do
     end
   end
 
+  defp clientloop({:ssl, socket, rlp}, state = %Connection{}) do
+    if socket == state.socket do
+      {:noreply, handle_msg(rlp, state)}
+    else
+      debug("flushing ssl #{inspect(socket)} != #{inspect(state.socket)}")
+      {:noreply, state}
+    end
+  end
+
+  defp clientloop({:ssl_closed, socket}, state = %Connection{}) do
+    if socket == state.socket do
+      debug("ssl_closed()")
+      {:noreply, reset(state), {:continue, :init}}
+    else
+      debug("flushing ssl_close #{inspect(socket)} != #{inspect(state.socket)}")
+      {:noreply, state}
+    end
+  end
+
   defp clientloop(what, state = %Connection{socket: socket, blocked: blocked, peaks: peaks}) do
     case what do
-      {:ssl, ^socket, rlp} ->
-        {:noreply, handle_msg(rlp, state)}
-
-      {:ssl, wrong_socket, _rlp} ->
-        debug("flushing ssl #{inspect(wrong_socket)} != #{inspect(socket)}")
-        {:noreply, state}
-
-      {:ssl_closed, ^socket} ->
-        debug("ssl_closed()")
-        {:noreply, reset(state), {:continue, :init}}
-
-      {:ssl_closed, wrong_socket} ->
-        debug("flushing ssl_close #{inspect(wrong_socket)} != #{inspect(socket)}")
-        {:noreply, state}
-
       {pid, :quit} ->
         send(pid, {:ret, :ok})
         {:stop, :quit, state}

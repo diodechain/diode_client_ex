@@ -2,7 +2,7 @@ defmodule DiodeClient.Manager do
   @moduledoc false
   alias DiodeClient.{Connection, Manager, Rlpx}
   use GenServer
-  defstruct [:conns, :server_list, :waiting, :best, :peak, :online, :shell]
+  defstruct [:conns, :server_list, :waiting, :best, :peaks, :online, :shell]
 
   defmodule Info do
     @moduledoc false
@@ -20,11 +20,12 @@ defmodule DiodeClient.Manager do
     Process.flag(:trap_exit, true)
 
     state = %Manager{
-      server_list: seed_list(),
       conns: %{},
-      waiting: [],
       online: true,
-      shell: DiodeClient.Shell.Moonbeam
+      peaks: %{},
+      server_list: seed_list(),
+      shell: DiodeClient.Shell.Moonbeam,
+      waiting: []
     }
 
     {:ok, state, {:continue, :init}}
@@ -76,7 +77,7 @@ defmodule DiodeClient.Manager do
     higher than any of the connections returned by get_connection has reported.
   """
   def get_peak(shell) do
-    case GenServer.call(__MODULE__, :get_peak, :infinity) do
+    case GenServer.call(__MODULE__, {:get_peak, shell}, :infinity) do
       nil -> Connection.peak(get_connection(), shell)
       peak -> peak
     end
@@ -95,12 +96,12 @@ defmodule DiodeClient.Manager do
   end
 
   @impl true
-  def handle_info({:EXIT, pid, reason}, state = %Manager{conns: conns}) do
+  def handle_info({:EXIT, pid, reason}, state = %Manager{conns: conns, shell: shell}) do
     if Map.has_key?(conns, pid) do
       %Info{key: key} = Map.fetch!(conns, pid)
       Process.send_after(self(), {:restart_conn, key}, 15_000)
       state = %Manager{state | conns: Map.delete(conns, pid)}
-      {:noreply, refresh_best(state)}
+      {:noreply, refresh_best(state, shell)}
     else
       if reason == :normal do
         {:noreply, state}
@@ -125,9 +126,17 @@ defmodule DiodeClient.Manager do
           ^old_info ->
             {:noreply, state}
 
-          new_info ->
-            state = %Manager{state | conns: Map.put(conns, cpid, new_info)}
-            {:noreply, refresh_best(state)}
+          new_info = %{peaks: peaks} ->
+            state =
+              Enum.reduce(
+                Map.keys(peaks),
+                %Manager{state | conns: Map.put(conns, cpid, new_info)},
+                fn shell, state ->
+                  refresh_best(state, shell)
+                end
+              )
+
+            {:noreply, state}
         end
     end
   end
@@ -188,8 +197,8 @@ defmodule DiodeClient.Manager do
     {:reply, Map.keys(conns), state}
   end
 
-  def handle_call(:get_peak, _from, state = %Manager{peak: peak}) do
-    {:reply, peak, state}
+  def handle_call({:get_peak, shell}, _from, state = %Manager{peaks: peaks}) do
+    {:reply, Map.get(peaks, shell), state}
   end
 
   def handle_call({:get_info, cpid, key}, _from, state = %Manager{conns: conns}) do
@@ -203,8 +212,12 @@ defmodule DiodeClient.Manager do
     {:noreply, %Manager{state | waiting: waiting ++ [from]}}
   end
 
-  def handle_call(:get_connection, from, state = %Manager{best: nil, waiting: waiting}) do
-    %Manager{best: best} = state = refresh_best(state)
+  def handle_call(
+        :get_connection,
+        from,
+        state = %Manager{best: nil, waiting: waiting, shell: shell}
+      ) do
+    %Manager{best: best} = state = refresh_best(state, shell)
 
     if best == nil do
       {:noreply, %Manager{state | waiting: waiting ++ [from]}}
@@ -223,19 +236,18 @@ defmodule DiodeClient.Manager do
     end)
   end
 
-  defp refresh_best(state = %Manager{waiting: waiting, peak: last_peak, shell: shell}) do
-    connected = connected(state)
+  defp refresh_best(state = %Manager{waiting: waiting, peaks: last_peaks}, shell) do
+    connected =
+      connected(state) |> Enum.reject(fn %Info{peaks: peaks} -> Map.get(peaks, shell) == nil end)
 
-    peaks =
-      Enum.map(connected, fn %Info{peaks: %{^shell => a}} -> block_number(a) end)
+    last_peak = Map.get(last_peaks, shell)
+
+    new_peaks =
+      Enum.map(connected, fn %Info{peaks: %{^shell => peak}} -> block_number(peak) end)
       |> Enum.sort(:desc)
 
-    # IO.puts("PEAKS: #{inspect(peaks)}")
-
-    min_peak = List.last(Enum.take(peaks, floor(length(peaks) / 2) + 1)) || 0
-    # IO.puts("MIN_PEAK: #{min_peak}")
+    min_peak = List.last(Enum.take(new_peaks, div(length(new_peaks), 2) + 1)) || 0
     min_peak = max(min_peak, block_number(last_peak))
-    # IO.puts("MIN_PEAK2: #{min_peak}")
 
     Enum.filter(connected, fn %Info{peaks: %{^shell => peak}} ->
       block_number(peak) >= min_peak
@@ -244,12 +256,21 @@ defmodule DiodeClient.Manager do
     |> List.first()
     |> case do
       nil ->
-        %Manager{state | best: nil}
+        if shell == state.shell do
+          %Manager{state | best: nil}
+        else
+          state
+        end
 
       %Info{pid: pid, peaks: %{^shell => new_peak}} ->
         peak = if block_number(new_peak) > block_number(last_peak), do: new_peak, else: last_peak
-        for from <- waiting, do: GenServer.reply(from, pid)
-        %Manager{state | best: pid, waiting: [], peak: peak}
+
+        if shell == state.shell do
+          for from <- waiting, do: GenServer.reply(from, pid)
+          %Manager{state | best: pid, waiting: [], peaks: Map.put(last_peaks, shell, peak)}
+        else
+          %Manager{state | peaks: Map.put(last_peaks, shell, peak)}
+        end
     end
   end
 
