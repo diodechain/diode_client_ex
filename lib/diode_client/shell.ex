@@ -251,7 +251,7 @@ defmodule DiodeClient.Shell do
   end
 
   def peak() do
-    DiodeClient.Manager.get_peak()
+    DiodeClient.Manager.get_peak(__MODULE__)
   end
 
   def peak_number(peak \\ peak()) do

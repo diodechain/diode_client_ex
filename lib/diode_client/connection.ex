@@ -122,7 +122,7 @@ defmodule DiodeClient.Connection do
     Manager.get_connection_info(pid, :server_url) || ""
   end
 
-  def peak(pid, shell \\ DiodeClient.Shell.Moonbeam) do
+  def peak(pid, shell) do
     call(pid, {:peak, shell})
   end
 
@@ -314,7 +314,7 @@ defmodule DiodeClient.Connection do
 
   defp handshake(pid) do
     ["ok"] = rpc(pid, ["hello", @vsn])
-    :ok = update_block(pid)
+    :ok = update_block(pid, DiodeClient.Shell.Moonbeam)
   end
 
   defp to_bin(num) do
@@ -684,7 +684,7 @@ defmodule DiodeClient.Connection do
     }
   end
 
-  defp update_block(pid, shell \\ DiodeClient.Shell.Moonbeam, peak \\ nil) do
+  defp update_block(pid, shell, peak \\ nil) do
     case rpc(pid, [shell.prefix() <> "getblockpeak"]) do
       [num] ->
         if peak == nil or to_num(num) > Block.number(peak) do
@@ -893,14 +893,13 @@ defmodule DiodeClient.Connection do
       show_econnreset: true,
       verify_fun: {&check/3, nil},
       verify: :verify_peer,
-      versions: [:"tlsv1.2"],
+      versions: [:"tlsv1.2"]
     ] ++
-    if role == :server do
-      [fail_if_no_peer_cert: true]
-    else
-      []
-    end
-
+      if role == :server do
+        [fail_if_no_peer_cert: true]
+      else
+        []
+      end
   end
 
   defp ssl_send!(state = %Connection{socket: socket, unpaid_bytes: up, server: server}, msg) do

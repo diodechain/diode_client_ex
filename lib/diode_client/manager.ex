@@ -18,7 +18,15 @@ defmodule DiodeClient.Manager do
   @impl true
   def init(_arg) do
     Process.flag(:trap_exit, true)
-    state = %Manager{server_list: seed_list(), conns: %{}, waiting: [], online: true, shell: DiodeClient.Shell.Moonbeam}
+
+    state = %Manager{
+      server_list: seed_list(),
+      conns: %{},
+      waiting: [],
+      online: true,
+      shell: DiodeClient.Shell.Moonbeam
+    }
+
     {:ok, state, {:continue, :init}}
   end
 
@@ -67,9 +75,9 @@ defmodule DiodeClient.Manager do
     get_connection and get_peak are linked in that peak will never return a block
     higher than any of the connections returned by get_connection has reported.
   """
-  def get_peak() do
+  def get_peak(shell) do
     case GenServer.call(__MODULE__, :get_peak, :infinity) do
-      nil -> Connection.peak(get_connection())
+      nil -> Connection.peak(get_connection(), shell)
       peak -> peak
     end
   end

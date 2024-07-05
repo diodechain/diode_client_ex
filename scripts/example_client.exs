@@ -8,13 +8,15 @@ DiodeClient.interface_add("example_client_interface")
 spawn_link(fn ->
   {:ok, ssl} = DiodeClient.port_connect(server_address, 5000)
   :ssl.controlling_process(ssl, self())
-  :ssl.setopts(ssl, [packet: :line, active: true])
+  :ssl.setopts(ssl, packet: :line, active: true)
+
   Enum.reduce_while(1..10, nil, fn _, _ ->
     receive do
       {:ssl, _ssl, msg} -> {:cont, IO.inspect(msg)}
       other -> {:halt, IO.inspect(other)}
     end
   end)
+
   :ssl.close(ssl)
   IO.puts("closed!")
 end)
