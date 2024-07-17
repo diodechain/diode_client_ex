@@ -32,6 +32,7 @@ defmodule DiodeClient.Shell do
   def chain_id(), do: 15
   def prefix(), do: ""
   @gas_limit 10_000_000
+  @null_hash DiodeClient.Hash.sha3_256("")
 
   def blockexplorer_url(opts \\ []) do
     cond do
@@ -164,7 +165,7 @@ defmodule DiodeClient.Shell do
           nonce: 0,
           balance: 0,
           storage_root: nil,
-          code_hash: Hash.keccak_256("")
+          code_hash: @null_hash
         }
 
       [acc, proofs] when is_list(acc) ->
@@ -196,7 +197,12 @@ defmodule DiodeClient.Shell do
 
         # Finally ensuring that the proofed value is our account hash
         assert_equal(hash, Account.hash(acc))
-        acc
+
+        if acc.code_hash in [nil, @null_hash] do
+          %Account{acc | storage_root: nil}
+        else
+          acc
+        end
     end
   end
 
