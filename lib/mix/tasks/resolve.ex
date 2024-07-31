@@ -11,15 +11,15 @@ defmodule Mix.Tasks.Resolve do
 
   def resolve(name, level \\ 0)
 
-  def resolve("0x" <> _ = hex, level) do
+  def resolve(hex = "0x" <> _, level) do
     if DiodeClient.Shell.get_account_root(Base16.decode(hex)) do
       owner = Contracts.DriveMember.owner?(DiodeClient.Shell, Base16.decode(hex), nil)
       members = Contracts.DriveMember.members(DiodeClient.Shell, Base16.decode(hex), nil)
 
-      if owner == false do
-        DiodeClient.Shell.get_account_root(Base16.decode(hex)) |> IO.inspect()
-        DiodeClient.Shell.get_account(Base16.decode(hex)) |> IO.inspect()
-      end
+      # if owner == false do
+      #   DiodeClient.Shell.get_account_root(Base16.decode(hex)) |> IO.inspect()
+      #   DiodeClient.Shell.get_account(Base16.decode(hex)) |> IO.inspect()
+      # end
 
       puts(level, "owner", if(owner, do: Base16.encode(owner), else: "nil"))
 
