@@ -248,13 +248,17 @@ defmodule DiodeClient.Manager do
     connected =
       connected(state) |> Enum.reject(fn %Info{peaks: peaks} -> Map.get(peaks, shell) == nil end)
 
+    # Reject single node connections
+    connected = if length(connected) < 2, do: [], else: connected
+
     last_peak = Map.get(last_peaks, shell)
 
     new_peaks =
       Enum.map(connected, fn %Info{peaks: %{^shell => peak}} -> block_number(peak) end)
       |> Enum.sort(:desc)
 
-    min_peak = List.last(Enum.take(new_peaks, div(length(new_peaks), 2) + 1)) || 0
+    # Trying to have at least three nodes available
+    min_peak = List.last(Enum.take(new_peaks, 3)) || 0
     min_peak = max(min_peak, block_number(last_peak))
 
     Enum.filter(connected, fn %Info{peaks: %{^shell => peak}} ->
