@@ -72,6 +72,10 @@ defmodule DiodeClient.Manager do
     GenServer.call(__MODULE__, :get_connection, :infinity)
   end
 
+  def set_connection(conn) do
+    GenServer.cast(__MODULE__, {:set_connection, conn})
+  end
+
   @doc """
     get_connection and get_peak are linked in that peak will never return a block
     higher than any of the connections returned by get_connection has reported.
@@ -116,6 +120,10 @@ defmodule DiodeClient.Manager do
   end
 
   @impl true
+  def handle_cast({:set_connection, cpid}, state = %Manager{conns: _conns}) do
+    {:noreply, %Manager{state | best: cpid}}
+  end
+
   def handle_cast({:update_info, cpid, info}, state = %Manager{conns: conns}) do
     case Map.get(conns, cpid) do
       nil ->

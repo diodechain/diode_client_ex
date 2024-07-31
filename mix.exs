@@ -66,6 +66,7 @@ defmodule DiodeClient.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:oncrash, "~> 0.1"},
       {:debouncer, "~> 0.1"},
       {:ex_sha3, "~> 0.1.1"},
       {:libsecp256k1, "~> 0.1", hex: :libsecp256k1_diode_fork},

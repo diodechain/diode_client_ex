@@ -283,14 +283,31 @@ defmodule DiodeClient.Shell do
   end
 
   def cached_rpc(args) do
-    ETSLru.fetch(ShellCache, args, fn ->
-      c = conn()
+    ret =
+      ETSLru.fetch(ShellCache, args, fn ->
+        c = conn()
 
-      case Connection.rpc(c, args) do
-        [:error, "remote_closed"] -> Connection.rpc(conn(), args)
-        ret -> ret
+        case Connection.rpc(c, args) do
+          [:error, "remote_closed"] -> Connection.rpc(conn(), args)
+          ret -> ret
+        end
+      end)
+
+    # The idea is toe flush teh cached object in case the
+    # result was malformed (e.g. invalid merkle proof) and hence should
+    # be re-fetched
+    OnCrash.call(fn reason ->
+      if reason != :normal do
+        Logger.info("Flushing rpc key involved in crash #{inspect(args)}")
+        uncache_rpc(args)
       end
     end)
+
+    ret
+  end
+
+  def uncache_rpc(args) do
+    ETSLru.delete(ShellCache, args)
   end
 
   def rpc(args) do
