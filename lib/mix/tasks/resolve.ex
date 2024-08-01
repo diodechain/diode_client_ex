@@ -1,4 +1,5 @@
 defmodule Mix.Tasks.Resolve do
+  @moduledoc false
   alias DiodeClient.{Base16, Contracts}
 
   def run([address]) do

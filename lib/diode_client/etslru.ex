@@ -30,8 +30,14 @@ defmodule DiodeClient.ETSLru do
   def put(lru, key, value) do
     filter_fun = filter(lru)
 
-    if filter_fun.(value) do
-      if get(lru, key) != value do
+    cond do
+      not filter_fun.(value) ->
+        delete(lru, key)
+
+      get(lru, key) == value ->
+        nil
+
+      true ->
         key = {:key, key}
         n = :ets.update_counter(lru, :meta, 1)
 
@@ -50,9 +56,6 @@ defmodule DiodeClient.ETSLru do
             _ -> :ok
           end
         end
-      end
-    else
-      delete(lru, key)
     end
 
     value
