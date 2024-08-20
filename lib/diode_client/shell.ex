@@ -33,6 +33,8 @@ defmodule DiodeClient.Shell do
   def prefix(), do: ""
   @gas_limit 10_000_000
   @null_hash DiodeClient.Hash.sha3_256("")
+  @null_root <<67, 138, 144, 64, 93, 170, 135, 101, 57, 8, 44, 208, 186, 246, 205, 218, 163, 191,
+               136, 15, 28, 138, 240, 192, 56, 31, 0, 66, 219, 147, 8, 138>>
 
   def blockexplorer_url(opts \\ []) do
     cond do
@@ -154,9 +156,12 @@ defmodule DiodeClient.Shell do
   def get_account(address, peak \\ peak()) do
     peak_index = Rlpx.bin2uint(peak["number"])
     address = Hash.to_address(address)
-    state_roots = Task.async(fn -> get_state_roots(peak) end)
-    account = cached_rpc(["getaccount", peak_index, address])
-    state_roots = Task.await(state_roots, :infinity)
+
+    [state_roots, account] =
+      await_all([
+        fn -> get_state_roots(peak) end,
+        fn -> cached_rpc(["getaccount", peak_index, address]) end
+      ])
 
     case account do
       # empty needs a proof as well...
@@ -216,20 +221,23 @@ defmodule DiodeClient.Shell do
     peak_index = peak_number(peak)
     address = Hash.to_address(address)
 
-    root = Task.async(fn -> get_account_root(address, peak) end)
+    [root, roots] =
+      await_all([
+        fn -> get_account_root(address, peak) end,
+        fn ->
+          case cached_rpc(["getaccountroots", peak_index, address]) do
+            [roots] ->
+              roots
 
-    roots =
-      case cached_rpc(["getaccountroots", peak_index, address]) do
-        [roots] ->
-          roots
+            other ->
+              raise(
+                "#{Connection.server_url(conn())}: received invalid response #{inspect(other)} at #{inspect(peak_index)}"
+              )
+          end
+        end
+      ])
 
-        other ->
-          throw(
-            "#{Connection.server_url(conn())}: received invalid response #{inspect(other)} at #{inspect(peak_index)}"
-          )
-      end
-
-    assert_equal(Task.await(root, :infinity), signature(roots))
+    assert_equal(root || @null_root, signature(roots))
     roots
   end
 
@@ -242,9 +250,12 @@ defmodule DiodeClient.Shell do
       when is_list(keys) and (is_binary(address) or is_integer(address)) do
     peak_index = peak_number(peak)
     address = Hash.to_address(address)
-    roots = Task.async(fn -> get_account_roots(address, peak) end)
-    values = cached_rpc(["getaccountvalues", peak_index, address | keys])
-    roots = Task.await(roots, :infinity)
+
+    [roots, values] =
+      await_all([
+        fn -> get_account_roots(address, peak) end,
+        fn -> cached_rpc(["getaccountvalues", peak_index, address | keys]) end
+      ])
 
     case values do
       [:error, message] ->
@@ -293,7 +304,7 @@ defmodule DiodeClient.Shell do
         end
       end)
 
-    # The idea is toe flush teh cached object in case the
+    # The idea is to flush the cached object in case the
     # result was malformed (e.g. invalid merkle proof) and hence should
     # be re-fetched
     OnCrash.call(fn reason ->
@@ -399,5 +410,20 @@ defmodule DiodeClient.Shell do
 
   defp signature(list) do
     Hash.sha3_256(BertExt.encode!(list))
+  end
+
+  defp await_all(promises) do
+    me = self()
+
+    pids =
+      for p <- promises do
+        spawn_link(fn -> send(me, {self(), p.()}) end)
+      end
+
+    for pid <- pids do
+      receive do
+        {^pid, result} -> result
+      end
+    end
   end
 end
