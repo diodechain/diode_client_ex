@@ -261,7 +261,7 @@ defmodule DiodeClient.Manager do
       connected(state) |> Enum.reject(fn %Info{peaks: peaks} -> Map.get(peaks, shell) == nil end)
 
     # Reject single node connections
-    connected = if length(connected) < 2, do: [], else: connected
+    connected = if length(connected) < min(2, map_size(seed_list())), do: [], else: connected
 
     last_peak = Map.get(last_peaks, shell)
 
