@@ -10,8 +10,9 @@ defmodule DiodeClient.Hash do
     hash
   end
 
+  @prefix <<0::96>>
   def to_bytes32(hash = <<_::160>>) do
-    <<0::96, hash::binary-size(20)>>
+    @prefix <> hash
   end
 
   def to_bytes32(hash) when is_integer(hash) do
