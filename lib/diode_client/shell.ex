@@ -52,12 +52,16 @@ defmodule DiodeClient.Shell do
   defp maybe_hex(x = "0x" <> _), do: x
   defp maybe_hex(x), do: DiodeClient.Base16.encode(x, false)
 
-  defmacrop assert_equal(a, b) do
+  defmacrop assert_equal(a, b, flush_keys) do
     stra = Macro.to_string(a)
     strb = Macro.to_string(b)
 
     quote do
       if unquote(a) != unquote(b) do
+        for key <- unquote(flush_keys) do
+          uncache_rpc(key)
+        end
+
         throw(
           {:merkle_check_failed,
            "Assert #{inspect(unquote(stra))} == #{inspect(unquote(strb))} failed! (#{inspect(unquote(a))} != #{inspect(unquote(b))})"}
@@ -149,7 +153,7 @@ defmodule DiodeClient.Shell do
   def get_state_roots(%{"number" => number, "state_hash" => hash}) do
     number = Rlpx.bin2uint(number)
     [roots] = cached_rpc(["getstateroots", number])
-    assert_equal(hash, signature(roots))
+    assert_equal(hash, signature(roots), [["getstateroots", number]])
     roots
   end
 
@@ -162,6 +166,8 @@ defmodule DiodeClient.Shell do
         fn -> get_state_roots(peak) end,
         fn -> cached_rpc(["getaccount", peak_index, address]) end
       ])
+
+    flush_keys = [["getaccount", peak_index, address], ["getstateroots", peak_index]]
 
     case account do
       # empty needs a proof as well...
@@ -186,7 +192,7 @@ defmodule DiodeClient.Shell do
         proof = proof(proofs, 0)
         # Checking that this proof connects to the root
         [prefix, pos | values] = value(proofs)
-        assert_equal(proof, Enum.at(state_roots, pos))
+        assert_equal(proof, Enum.at(state_roots, pos), flush_keys)
 
         x = bit_size(prefix)
         k = Hash.sha3_256(address)
@@ -194,14 +200,14 @@ defmodule DiodeClient.Shell do
         <<last_byte>> = binary_part(k, byte_size(k), -1)
 
         # Checking that the provided range is for the given keys prefix
-        assert_equal(prefix, key_prefix)
+        assert_equal(prefix, key_prefix, flush_keys)
 
         # Checking that the provided leaf matches the given key
-        assert_equal(pos, rem(last_byte, 16))
+        assert_equal(pos, rem(last_byte, 16), flush_keys)
         hash = :proplists.get_value(address, values)
 
         # Finally ensuring that the proofed value is our account hash
-        assert_equal(hash, Account.hash(acc))
+        assert_equal(hash, Account.hash(acc), flush_keys)
 
         if acc.code_hash in [nil, @null_hash] do
           %Account{acc | storage_root: nil}
@@ -237,7 +243,13 @@ defmodule DiodeClient.Shell do
         end
       ])
 
-    assert_equal(root || @null_root, signature(roots))
+    flush_keys = [
+      ["getaccountroots", peak_index, address],
+      ["getaccount", peak_index, address],
+      ["getstateroots", peak_index]
+    ]
+
+    assert_equal(root || @null_root, signature(roots), flush_keys)
     roots
   end
 
@@ -257,6 +269,13 @@ defmodule DiodeClient.Shell do
         fn -> cached_rpc(["getaccountvalues", peak_index, address | keys]) end
       ])
 
+    flush_keys = [
+      ["getaccountvalues", peak_index, address | keys],
+      ["getaccountroots", peak_index, address],
+      ["getaccount", peak_index, address],
+      ["getstateroots", peak_index]
+    ]
+
     case values do
       [:error, message] ->
         Logger.debug("getaccountvalues #{inspect(keys)} produced error #{inspect(message)}")
@@ -268,7 +287,7 @@ defmodule DiodeClient.Shell do
           proof = proof(proofs, 0)
           # Checking that this proof connects to the root
           [prefix, pos | values] = value(proofs)
-          assert_equal(proof, Enum.at(roots, pos))
+          assert_equal(proof, Enum.at(roots, pos), flush_keys)
 
           x = bit_size(prefix)
           k = Hash.sha3_256(key)
@@ -276,10 +295,10 @@ defmodule DiodeClient.Shell do
           <<last_byte>> = binary_part(k, byte_size(k), -1)
 
           # Checking that the provided range is for the given keys prefix
-          assert_equal(key_prefix, prefix)
+          assert_equal(key_prefix, prefix, flush_keys)
 
           # Checking that the provided leaf matches the given key
-          assert_equal(pos, rem(last_byte, 16))
+          assert_equal(pos, rem(last_byte, 16), flush_keys)
           :proplists.get_value(key, values)
         end)
     end
@@ -294,27 +313,14 @@ defmodule DiodeClient.Shell do
   end
 
   def cached_rpc(args) do
-    ret =
-      ETSLru.fetch(ShellCache, args, fn ->
-        c = conn()
+    ETSLru.fetch(ShellCache, args, fn ->
+      c = conn()
 
-        case Connection.rpc(c, args) do
-          [:error, "remote_closed"] -> Connection.rpc(conn(), args)
-          ret -> ret
-        end
-      end)
-
-    # The idea is to flush the cached object in case the
-    # result was malformed (e.g. invalid merkle proof) and hence should
-    # be re-fetched
-    OnCrash.call(fn reason ->
-      if reason != :normal do
-        Logger.info("Flushing rpc key involved in crash #{inspect(args)}")
-        uncache_rpc(args)
+      case Connection.rpc(c, args) do
+        [:error, "remote_closed"] -> Connection.rpc(conn(), args)
+        ret -> ret
       end
     end)
-
-    ret
   end
 
   def uncache_rpc(args) do
