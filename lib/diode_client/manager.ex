@@ -72,6 +72,10 @@ defmodule DiodeClient.Manager do
     GenServer.call(__MODULE__, :get_connection, :infinity)
   end
 
+  def get_connection?() do
+    GenServer.call(__MODULE__, :get_connection?, :infinity)
+  end
+
   def set_connection(conn) do
     GenServer.cast(__MODULE__, {:set_connection, conn})
   end
@@ -213,6 +217,14 @@ defmodule DiodeClient.Manager do
     case Map.get(conns, cpid) do
       nil -> {:reply, nil, state}
       %Info{} = info -> {:reply, Map.get(info, key), state}
+    end
+  end
+
+  def handle_call(:get_connection?, _from, state = %Manager{online: online, best: best}) do
+    if online and best != nil do
+      {:reply, best, state}
+    else
+      {:reply, nil, state}
     end
   end
 

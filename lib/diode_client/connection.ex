@@ -378,7 +378,7 @@ defmodule DiodeClient.Connection do
     alt = DiodeClient.connections() |> Enum.find(fn pid -> pid != me end)
 
     local =
-      case DiodeClient.default_conn() do
+      case DiodeClient.Manager.get_connection?() do
         ^me -> <<1>> <> server_address(alt)
         nil -> <<1>> <> server_address(alt)
         pid -> <<0>> <> server_address(pid)
