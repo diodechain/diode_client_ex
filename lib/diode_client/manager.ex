@@ -209,7 +209,8 @@ defmodule DiodeClient.Manager do
     {:reply, Map.keys(conns), state}
   end
 
-  def handle_call({:get_peak, shell}, _from, state = %Manager{peaks: peaks}) do
+  def handle_call({:get_peak, shell}, _from, state = %Manager{peaks: peaks, conns: conns}) do
+    for c <- Map.keys(conns), do: GenServer.cast(c, {:subscribe, shell})
     {:reply, Map.get(peaks, shell), state}
   end
 

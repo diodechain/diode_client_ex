@@ -302,6 +302,15 @@ defmodule DiodeClient.Connection do
   end
 
   @impl true
+  def handle_cast({:subscribe, shell}, state = %Connection{peaks: peaks}) do
+    if not Map.has_key?(peaks, shell) do
+      pid = self()
+      spawn_link(fn -> update_block(pid, shell) end)
+    end
+
+    {:noreply, state}
+  end
+
   def handle_cast({:rpc, cmd, req, rlp, time, pid}, state) do
     cmd = %Cmd{cmd: cmd, reply: nil, time: time, port: pid, size: byte_size(rlp)}
     {:noreply, insert_cmd(state, req, cmd, rlp)}
