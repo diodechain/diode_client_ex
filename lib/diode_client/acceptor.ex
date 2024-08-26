@@ -103,6 +103,9 @@ defmodule DiodeClient.Acceptor do
     ssl
   end
 
+  defp close_socket(pid, reason) when is_pid(pid), do: Process.exit(pid, reason)
+  defp close_socket(ssl, _reason), do: :ssl.close(ssl)
+
   @impl true
   def handle_call(:all_ports, _from, state = %Acceptor{ports: ports}) do
     {:reply, ports, state}
@@ -203,7 +206,7 @@ defmodule DiodeClient.Acceptor do
         list = Map.get(backlog, portnum, [])
 
         if length(list) >= @max_backlog do
-          Process.exit(request, :backlog_full)
+          close_socket(request, :backlog_full)
           {:reply, {:error, :backlog_full}, state}
         else
           backlog = Map.put(backlog, portnum, list ++ [request])
@@ -250,7 +253,7 @@ defmodule DiodeClient.Acceptor do
 
         list ->
           if request in list do
-            Process.exit(request, :backlog_timeout)
+            close_socket(request, :backlog_timeout)
             list = List.delete(list, request)
             Map.put(backlog, portnum, list)
           else
