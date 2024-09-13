@@ -138,15 +138,10 @@ defmodule DiodeClient.Manager do
           ^old_info ->
             {:noreply, state}
 
-          new_info = %{peaks: peaks} ->
+          new_info = %{peaks: _peaks} ->
             state =
-              Enum.reduce(
-                Map.keys(peaks),
-                %Manager{state | conns: Map.put(conns, cpid, new_info)},
-                fn shell, state ->
-                  refresh_best(state, shell)
-                end
-              )
+              %Manager{state | conns: Map.put(conns, cpid, new_info)}
+              |> refresh_best()
 
             {:noreply, state}
         end
@@ -254,6 +249,12 @@ defmodule DiodeClient.Manager do
   defp connected(%Manager{conns: conns, shell: shell}) do
     Enum.filter(Map.values(conns), fn %Info{server_address: addr, peaks: peaks} ->
       addr != nil and Map.get(peaks, shell) != nil
+    end)
+  end
+
+  defp refresh_best(state = %Manager{peaks: peaks}) do
+    Enum.reduce(Map.keys(peaks), state, fn shell, state ->
+      refresh_best(state, shell)
     end)
   end
 

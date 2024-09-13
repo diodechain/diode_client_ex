@@ -694,8 +694,10 @@ defmodule DiodeClient.Connection do
         recv_id: %{},
         conns: conns + 1,
         ticket_count: 0,
-        pending_tickets: %{}
+        pending_tickets: %{},
+        server_wallet: nil
     }
+    |> update_info()
   end
 
   defp update_block(pid, shell, peak \\ nil) do
