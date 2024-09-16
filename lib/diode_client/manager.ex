@@ -104,12 +104,12 @@ defmodule DiodeClient.Manager do
   end
 
   @impl true
-  def handle_info({:EXIT, pid, reason}, state = %Manager{conns: conns, shell: shell}) do
+  def handle_info({:EXIT, pid, reason}, state = %Manager{conns: conns}) do
     if Map.has_key?(conns, pid) do
       %Info{key: key} = Map.fetch!(conns, pid)
       Process.send_after(self(), {:restart_conn, key}, 15_000)
       state = %Manager{state | conns: Map.delete(conns, pid)}
-      {:noreply, refresh_best(state, shell)}
+      {:noreply, refresh_best(state)}
     else
       if reason == :normal do
         {:noreply, state}
@@ -138,7 +138,7 @@ defmodule DiodeClient.Manager do
           ^old_info ->
             {:noreply, state}
 
-          new_info = %{peaks: _peaks} ->
+          new_info = %{peaks: %{}} ->
             state =
               %Manager{state | conns: Map.put(conns, cpid, new_info)}
               |> refresh_best()
@@ -167,7 +167,7 @@ defmodule DiodeClient.Manager do
         {:error, {:already_started, pid}} -> pid
       end
 
-    conns = Map.put(conns, pid, %Info{info | pid: pid, start: System.os_time()})
+    conns = Map.put(conns, pid, %Info{info | pid: pid, start: System.os_time(), peaks: %{}})
     %Manager{state | conns: conns}
   end
 
@@ -228,18 +228,8 @@ defmodule DiodeClient.Manager do
     {:noreply, %Manager{state | waiting: waiting ++ [from]}}
   end
 
-  def handle_call(
-        :get_connection,
-        from,
-        state = %Manager{best: nil, waiting: waiting, shell: shell}
-      ) do
-    %Manager{best: best} = state = refresh_best(state, shell)
-
-    if best == nil do
-      {:noreply, %Manager{state | waiting: waiting ++ [from]}}
-    else
-      {:reply, best, state}
-    end
+  def handle_call(:get_connection, from, state = %Manager{best: nil, waiting: waiting}) do
+    {:noreply, %Manager{state | waiting: waiting ++ [from]}}
   end
 
   def handle_call(:get_connection, _from, state = %Manager{best: best}) do
@@ -252,8 +242,13 @@ defmodule DiodeClient.Manager do
     end)
   end
 
-  defp refresh_best(state = %Manager{peaks: peaks}) do
-    Enum.reduce(Map.keys(peaks), state, fn shell, state ->
+  defp refresh_best(state = %Manager{}) do
+    shells =
+      connected(state)
+      |> Enum.flat_map(fn %Info{peaks: peaks} -> Map.keys(peaks) end)
+      |> Enum.uniq()
+
+    Enum.reduce(shells, state, fn shell, state ->
       refresh_best(state, shell)
     end)
   end
