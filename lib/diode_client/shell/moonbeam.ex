@@ -151,6 +151,12 @@ defmodule DiodeClient.Shell.Moonbeam do
 
   def get_account_values(address, keys, peak \\ peak())
       when is_list(keys) and (is_binary(address) or is_integer(address)) do
+    Enum.chunk_every(keys, 100)
+    |> Enum.flat_map(fn chunk -> do_get_account_values(address, chunk, peak) end)
+  end
+
+  defp do_get_account_values(address, keys, peak)
+       when is_list(keys) and (is_binary(address) or is_integer(address)) do
     peak_index = peak_number(peak)
     address = Hash.to_address(address)
     values = cached_rpc([prefix() <> "getaccountvalues", peak_index, address | keys])
