@@ -1,10 +1,8 @@
 defmodule DiodeClient.Connection do
   @moduledoc false
-  alias Credo.Code.Block
-  alias DiodeClient.Base16
-
   alias DiodeClient.{
     Acceptor,
+    Base16,
     Block,
     Certs,
     Connection,
