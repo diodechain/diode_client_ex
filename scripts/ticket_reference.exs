@@ -29,16 +29,15 @@ defmodule TicketReference do
       )
 
     IO.inspect(tck, label: "Ticket Data")
-    IO.inspect(TicketV2.device_blob(tck), label: "Device Blob")
+    IO.inspect(TicketV2.device_blob(tck), label: "Device Blob", limit: 1000)
     IO.inspect(Hash.keccak_256(TicketV2.device_blob(tck)), label: "Device Blob Digest")
     tck = TicketV2.device_sign(tck, Wallet.privkey!(device_wallet))
-    IO.inspect(TicketV2.device_signature(tck), label: "Device Signature")
-    IO.inspect(TicketV2.message(tck), label: "Ticket Message")
+    IO.inspect(TicketV2.device_signature(tck), label: "Device Signature", limit: 1000)
+    IO.inspect(TicketV2.message(tck), label: "Ticket Message", limit: 1000)
 
     request_id = <<71, 76, 30, 165>>
     msg = Rlp.encode!([request_id, TicketV2.message(tck)])
-    IO.inspect(msg, label: "Ticket Request Package")
-
+    IO.inspect(msg, label: "Ticket Request Package", limit: 1000)
   end
 end
 
