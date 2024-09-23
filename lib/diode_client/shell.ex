@@ -424,17 +424,19 @@ defmodule DiodeClient.Shell do
     Hash.sha3_256(BertExt.encode!(list))
   end
 
-  defp await_all(promises) do
-    me = self()
-
-    pids =
+  def await_all(promises) do
+    refs =
       for p <- promises do
-        spawn_link(fn -> send(me, {self(), p.()}) end)
+        spawn_monitor(fn -> exit({:result, p.()}) end)
       end
 
-    for pid <- pids do
+    for {pid, ref} <- refs do
       receive do
-        {^pid, result} -> result
+        {:DOWN, ^ref, :process, ^pid, {:result, result}} ->
+          result
+
+        {:DOWN, ^ref, :process, ^pid, reason} ->
+          raise "promise failed: #{inspect(reason)}"
       end
     end
   end
