@@ -79,8 +79,12 @@ defmodule DiodeClient.Acceptor do
       {:error, :timeout} ->
         {:error, :timeout}
 
-      ssl ->
-        init_socket(ssl)
+      ssl when is_pid(ssl) ->
+        if Process.alive?(ssl) do
+          init_socket(ssl)
+        else
+          {:error, :retry}
+        end
     end
   end
 
