@@ -13,6 +13,10 @@ defmodule Mix.Tasks.Resolve do
   def resolve(name, level \\ 0)
 
   def resolve(hex = "0x" <> _, level) do
+    with name when name != nil <- Contracts.BNS.resolve_address(Base16.decode(hex)) do
+      puts(level, "reverse-name", name)
+    end
+
     if DiodeClient.Shell.get_account_root(Base16.decode(hex)) do
       owner = Contracts.DriveMember.owner?(DiodeClient.Shell, Base16.decode(hex), nil)
       members = Contracts.DriveMember.members(DiodeClient.Shell, Base16.decode(hex), nil)
@@ -26,7 +30,7 @@ defmodule Mix.Tasks.Resolve do
 
       {hex,
        for name <- members do
-         puts(level, "name", Base16.encode(name))
+         puts(level, "member", Base16.encode(name))
          resolve(Base16.encode(name), level + 1)
        end}
     else
