@@ -65,4 +65,37 @@ defmodule DiodeClient.Contracts.Utils do
       end
     end
   end
+
+  def list_at(shell, address, list_slot, block) do
+    block = block || PeakBlock.number(shell)
+    <<number::256>> = value(shell, address, list_slot, block, <<0::256>>, nil)
+
+    if number > 0 do
+      array_start =
+        Hash.keccak_256(Hash.to_bytes32(list_slot))
+        |> :binary.decode_unsigned()
+
+      slots = Enum.map(0..(number - 1), fn index -> array_start + index end)
+      values(shell, address, slots, block) |> Enum.map(&Hash.to_address/1)
+    else
+      []
+    end
+  end
+
+  # function for getting the value of a hash at a given string or binaries key
+  def hash_at(shell, address, hash_slot, key_string, block) do
+    hash_at_binary(shell, address, hash_slot, Hash.keccak_256(key_string), block)
+  end
+
+  def hash_at_binary(shell, address, hash_slot, key, block) do
+    block = block || PeakBlock.number(shell)
+    hash_slot = hash_slot_binary(hash_slot, key)
+    value(shell, address, hash_slot, block, <<0::256>>, nil)
+  end
+
+  def hash_slot_binary(hash_slot, key) do
+    key = Hash.to_bytes32(key)
+    base = Hash.to_bytes32(hash_slot)
+    Hash.keccak_256(key <> base)
+  end
 end
