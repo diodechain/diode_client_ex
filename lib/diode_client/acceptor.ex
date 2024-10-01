@@ -85,6 +85,9 @@ defmodule DiodeClient.Acceptor do
         else
           {:error, :retry}
         end
+
+      ssl ->
+        init_socket(ssl)
     end
   end
 
