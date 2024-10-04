@@ -67,7 +67,7 @@ defmodule DiodeClient.Contracts.Utils do
   end
 
   def list_at(shell, address, list_slot, block) do
-    block = block || PeakBlock.number(shell)
+    block = block || shell.peak()
     <<number::256>> = value(shell, address, list_slot, block, <<0::256>>, nil)
 
     if number > 0 do
@@ -88,7 +88,7 @@ defmodule DiodeClient.Contracts.Utils do
   end
 
   def hash_at_binary(shell, address, hash_slot, key, block) do
-    block = block || PeakBlock.number(shell)
+    block = block || shell.peak()
     hash_slot = hash_slot_binary(hash_slot, key)
     value(shell, address, hash_slot, block, <<0::256>>, nil)
   end
