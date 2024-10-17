@@ -1,4 +1,5 @@
 defmodule DiodeClient.Contracts.Zone do
+  @moduledoc false
   alias DiodeClient.{Base16, Hash}
   import DiodeClient.Contracts.Utils
 

@@ -144,6 +144,13 @@ defmodule DiodeClient.Shell do
     Connection.rpc(conn(), ["getnode", key])
   end
 
+  def get_nodes(key) do
+    case Connection.rpc(conn(), ["getnodes", key]) do
+      [nodes] -> Enum.map(nodes, &DiodeClient.Object.decode_rlp_list!/1)
+      _other -> []
+    end
+  end
+
   def get_block_header(block_index) do
     case cached_rpc(["getblockheader", block_index]) do
       [block] -> Rlpx.list2map(block)

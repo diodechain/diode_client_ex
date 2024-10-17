@@ -8,7 +8,18 @@ defmodule DiodeClient.Manager do
     @moduledoc false
     # server_address is the diode public key
     # server_url is the url to connect
-    defstruct [:latency, :server_address, :server_url, :ports, :key, :pid, :start, :peaks]
+    defstruct [
+      :latency,
+      :server_address,
+      :server_url,
+      :ports,
+      :key,
+      :pid,
+      :started_at,
+      :peaks,
+      :created_at,
+      :type
+    ]
   end
 
   def start_link([]) do
@@ -18,6 +29,8 @@ defmodule DiodeClient.Manager do
   @impl true
   def init(_arg) do
     Process.flag(:trap_exit, true)
+    :timer.send_interval(60_000, self(), :refresh)
+    send(self(), :refresh)
 
     state = %Manager{
       conns: %{},
@@ -38,13 +51,19 @@ defmodule DiodeClient.Manager do
   defp extra_ports(_), do: []
 
   defp seed_list() do
+    DiodeClient.Store.fetch(:seed_list, &initial_seed_list/0)
+  end
+
+  defp initial_seed_list() do
     if System.get_env("SEED_LIST") == nil do
       Enum.map(default_seed_keys(), fn pre ->
         {pre,
          %Info{
            server_url: "#{pre}.prenet.diode.io",
            ports: [41_046, 993, 1723, 10_000] ++ extra_ports(pre),
-           key: pre
+           key: pre,
+           type: :seed,
+           created_at: System.os_time()
          }}
       end)
     else
@@ -58,10 +77,36 @@ defmodule DiodeClient.Manager do
           end
 
         key = String.to_atom(url)
-        {key, %Info{server_url: url, ports: ports, key: key}}
+
+        {key,
+         %Info{server_url: url, ports: ports, key: key, created_at: System.os_time(), type: :seed}}
       end)
     end
     |> Map.new()
+  end
+
+  def add_connection(server) do
+    ports = [DiodeClient.Object.Server.edge_port(server)]
+    url = DiodeClient.Object.Server.host(server)
+    key = String.to_atom(url)
+
+    conn =
+      {key,
+       %Info{server_url: url, ports: ports, key: key, created_at: System.os_time(), type: :manual}}
+
+    GenServer.call(__MODULE__, {:add_connection, conn})
+  end
+
+  def add_connection() do
+    addr = DiodeClient.Wallet.new() |> DiodeClient.Wallet.address!()
+
+    with [server | _] <- DiodeClient.Shell.get_nodes(addr) do
+      add_connection(server)
+    end
+  end
+
+  def drop_connection(key) do
+    GenServer.call(__MODULE__, {:drop_connection, key})
   end
 
   @doc """
@@ -92,7 +137,52 @@ defmodule DiodeClient.Manager do
   end
 
   def connections() do
+    connection_map()
+    |> Map.keys()
+  end
+
+  def connection_map() do
     GenServer.call(__MODULE__, :connections)
+  end
+
+  def connected_connections() do
+    connection_map()
+    |> Enum.filter(fn {_pid, %Info{server_address: addr, peaks: peaks}} ->
+      addr != nil and map_size(peaks) > 0
+    end)
+  end
+
+  def ranked_connections() do
+    connection_map()
+    |> Enum.sort_by(fn {_pid, %Info{server_address: addr, peaks: peaks, latency: latency}} ->
+      online? = addr != nil and map_size(peaks) > 0
+      {not online?, latency}
+    end)
+    |> Enum.map(fn {pid, %Info{latency: latency, key: key, type: type}} ->
+      {latency, pid, key, type}
+    end)
+  end
+
+  @target_connections 8
+  def refresh() do
+    current = ranked_connections()
+    len = length(current)
+
+    if len >= @target_connections do
+      {_, _, key, type} = List.last(current)
+
+      if type == :manual do
+        drop_connection(key)
+      end
+    end
+
+    len = length(ranked_connections())
+
+    if len < @target_connections do
+      for _ <- (len + 1)..@target_connections do
+        add_connection()
+      end
+    end
   end
 
   def online?() do
@@ -121,6 +211,11 @@ defmodule DiodeClient.Manager do
 
   def handle_info({:restart_conn, key}, state) do
     {:noreply, restart_conn(key, state)}
+  end
+
+  def handle_info(:refresh, state) do
+    spawn(fn -> refresh() end)
+    {:noreply, state}
   end
 
   @impl true
@@ -158,16 +253,23 @@ defmodule DiodeClient.Manager do
     state
   end
 
-  defp restart_conn(key, state = %Manager{server_list: servers, conns: conns}) do
+  defp restart_conn(key, state = %Manager{server_list: servers, conns: conns, peaks: peaks}) do
     info = %Info{server_url: server, ports: ports, key: ^key} = Map.get(servers, key)
 
     pid =
       case Connection.start_link(server, ports, key) do
-        {:ok, pid} -> pid
-        {:error, {:already_started, pid}} -> pid
+        {:ok, pid} ->
+          for {shell, _} <- peaks do
+            GenServer.cast(pid, {:subscribe, shell})
+          end
+
+          pid
+
+        {:error, {:already_started, pid}} ->
+          pid
       end
 
-    conns = Map.put(conns, pid, %Info{info | pid: pid, start: System.os_time(), peaks: %{}})
+    conns = Map.put(conns, pid, %Info{info | pid: pid, started_at: System.os_time(), peaks: %{}})
     %Manager{state | conns: conns}
   end
 
@@ -201,7 +303,7 @@ defmodule DiodeClient.Manager do
   end
 
   def handle_call(:connections, _from, state = %Manager{conns: conns}) do
-    {:reply, Map.keys(conns), state}
+    {:reply, conns, state}
   end
 
   def handle_call({:get_peak, shell}, _from, state = %Manager{peaks: peaks, conns: conns}) do
@@ -234,6 +336,36 @@ defmodule DiodeClient.Manager do
 
   def handle_call(:get_connection, _from, state = %Manager{best: best}) do
     {:reply, best, state}
+  end
+
+  def handle_call(
+        {:add_connection, {key, info}},
+        _from,
+        state = %Manager{server_list: server_list}
+      ) do
+    server_list = Map.put(server_list, key, info)
+    state = %Manager{state | server_list: server_list}
+    {:reply, :ok, restart_conn(key, state)}
+  end
+
+  def handle_call(
+        {:drop_connection, key},
+        _from,
+        state = %Manager{server_list: server_list, conns: conns}
+      ) do
+    server_list = Map.delete(server_list, key)
+    result = Enum.find(conns, fn {_, %Info{key: key2}} -> key2 == key end)
+
+    state =
+      if result do
+        {pid, _info} = result
+        GenServer.cast(pid, :stop)
+        %Manager{state | server_list: server_list, conns: Map.delete(conns, pid)}
+      else
+        %Manager{state | server_list: server_list}
+      end
+
+    {:reply, :ok, state}
   end
 
   defp connected(%Manager{conns: conns, shell: shell}) do
