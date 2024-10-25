@@ -5,7 +5,6 @@ defmodule DiodeClient.Contracts.CallPermit do
   """
   alias DiodeClient.{ABI, Base16, EIP712}
 
-  # @address Base16.decode("0x000000000000000000000000000000000000080A")
   # Moonbase Alpha (0x507)
   # @chain_id 1287
   @domain_separator %{
@@ -14,6 +13,10 @@ defmodule DiodeClient.Contracts.CallPermit do
     DiodeClient.Shell.Moonbeam.chain_id() =>
       Base16.decode("0x4f83a3a1d1a8f42700b988f3d8f4b0a56bd0768a19d045db65158b079b2a0bae")
   }
+
+  def address() do
+    Base16.decode("0x000000000000000000000000000000000000080A")
+  end
 
   # /// @dev Dispatch a call on the behalf of an other user with a EIP712 permit.
   # /// Will revert if the permit is not valid or if the dispatched call reverts or errors (such as

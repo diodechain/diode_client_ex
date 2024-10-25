@@ -22,7 +22,11 @@ defmodule DiodeClient.Wallet do
   Record.defrecord(:wallet, privkey: nil, pubkey: nil, address: nil)
 
   @type t ::
-          record(:wallet, privkey: nil | <<_::256>>, pubkey: nil | <<_::264>>, address: <<_::160>>)
+          record(:wallet,
+            privkey: nil | <<_::256>>,
+            pubkey: nil | <<_::264>>,
+            address: <<_::160>>
+          )
 
   @spec new :: Wallet.t()
   def new() do

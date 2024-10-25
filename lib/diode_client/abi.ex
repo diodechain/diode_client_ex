@@ -10,13 +10,62 @@ defmodule DiodeClient.ABI do
   end
 
   def decode_types(types, data) do
-    {ret, ""} =
+    {ret, _rest} =
       Enum.reduce(types, {[], data}, fn type, {ret, rest} ->
-        {value, rest} = decode(type, rest)
+        {value, rest} =
+          if is_dynamic(type) do
+            decode("uint256", rest)
+          else
+            decode(type, rest)
+          end
+
         {ret ++ [value], rest}
       end)
 
-    ret
+    Enum.zip(types, ret)
+    |> Enum.map(fn {type, value} ->
+      if is_dynamic(type) do
+        # for dynamic types the decoded value in the header is the offset of the data
+        base = binary_part(data, value, byte_size(data) - value)
+
+        cond do
+          type in ["string", "bytes"] ->
+            {len, rest} = decode("uint256", base)
+            slots = div(len, 32) + 1
+            binary_part(rest, slots * 32 - len, len)
+
+          String.starts_with?(type, "(") ->
+            "(" <> tuple_def = type
+            decode_types(tuple_types(tuple_def), base)
+
+          String.ends_with?(type, "[]") ->
+            {slots, rest} = decode("uint256", base)
+            type = String.replace_trailing(type, "[]", "")
+
+            {acc, _rest} =
+              List.duplicate(type, slots)
+              |> Enum.reduce({[], rest}, fn type, {acc, rest} ->
+                {value, rest} = decode(type, rest)
+                {acc ++ [value], rest}
+              end)
+
+            acc
+        end
+      else
+        value
+      end
+    end)
+  end
+
+  defp is_dynamic("string"), do: true
+  defp is_dynamic("bytes"), do: true
+
+  defp is_dynamic("(" <> tuple_def) do
+    Enum.any?(tuple_types(tuple_def), &is_dynamic/1)
+  end
+
+  defp is_dynamic(other) do
+    String.ends_with?(other, "[]")
   end
 
   def decode_revert(<<"">>) do
@@ -24,6 +73,7 @@ defmodule DiodeClient.ABI do
   end
 
   # Decoding "Error(string)" type revert messages
+  # <<8, 195, 121, 160>> = ABI.encode_spec("Error", ["string"])
   def decode_revert(
         <<8, 195, 121, 160, 32::unsigned-size(256), length::unsigned-size(256), rest::binary>>
       ) do
@@ -36,7 +86,10 @@ defmodule DiodeClient.ABI do
   end
 
   def encode_spec(name, types \\ []) do
-    signature = "#{name}(#{Enum.join(types, ",")})"
+    signature =
+      "#{name}(#{Enum.join(types, ",")})"
+      |> String.replace(" ", "")
+
     binary_part(Hash.keccak_256(signature), 0, 4)
   end
 
@@ -47,12 +100,10 @@ defmodule DiodeClient.ABI do
   end
 
   def do_encode_data(type, value) do
-    subtype = subtype(type)
-
-    if subtype != nil do
+    if is_dynamic(type) do
       {types, values, len} = dynamic(type, value)
       ret = encode_data(types, values)
-      {"", [encode("uint", len), ret]}
+      {"", [len, ret]}
     else
       {encode(type, value), ""}
     end
@@ -77,28 +128,22 @@ defmodule DiodeClient.ABI do
     [head, body]
   end
 
-  @doc """
-  subtype returns the individual element type of an dynamic/array
-  """
-  @spec subtype(binary) :: false | binary
-  def subtype(type) do
-    cond do
-      String.ends_with?(type, "[]") -> binary_part(type, 0, byte_size(type) - 2)
-      type == "bytes" -> "uint8"
-      type == "string" -> "uint8"
-      true -> nil
-    end
-  end
-
-  def dynamic(type, values) when is_list(values) do
-    {List.duplicate(subtype(type), length(values)), values, length(values)}
-  end
-
-  def dynamic(type, {:call, name, types, args}) do
+  defp dynamic(type, {:call, name, types, args}) do
     dynamic(type, encode_call(name, types, args))
   end
 
-  def dynamic(_type, value) when is_binary(value) do
+  defp dynamic(type, values) when is_list(values) do
+    cond do
+      String.ends_with?(type, "[]") ->
+        n = length(values)
+        {List.duplicate(String.replace_trailing(type, "[]", ""), n), values, encode("uint", n)}
+
+      String.starts_with?(type, "(") ->
+        {tuple_types(String.trim_leading(type, "(")), values, ""}
+    end
+  end
+
+  defp dynamic(type, value) when is_binary(value) and type in ["string", "bytes"] do
     values = value <> <<0::unsigned-size(248)>>
 
     values =
@@ -107,7 +152,7 @@ defmodule DiodeClient.ABI do
       |> Enum.chunk_every(32)
       |> Enum.map(&:erlang.iolist_to_binary/1)
 
-    {List.duplicate("bytes32", length(values)), values, byte_size(value)}
+    {List.duplicate("bytes32", length(values)), values, encode("uint", byte_size(value))}
   end
 
   def encode(format, nil), do: encode(format, 0)
@@ -151,7 +196,18 @@ defmodule DiodeClient.ABI do
 
   def encode("function", value), do: encode("bytes24", value)
 
-  # next one should be cut off at bit limit
+  def encode("(" <> tuple_def, values) do
+    types = tuple_types(tuple_def)
+    encode_args(types, values)
+  end
+
+  defp tuple_types(tuple_def) do
+    len = byte_size(tuple_def) - 1
+    <<tuple_def::binary-size(len), ")">> = tuple_def
+
+    String.split(tuple_def, ",")
+    |> Enum.map(&String.trim/1)
+  end
 
   for bit <- 1..32 do
     Module.eval_quoted(
@@ -159,13 +215,24 @@ defmodule DiodeClient.ABI do
       Code.string_to_quoted("""
         def decode("uint#{bit * 8}", <<value :: unsigned-size(256), rest :: binary>>), do: {value, rest}
         def decode("int#{bit * 8}", <<value :: signed-size(256), rest :: binary>>), do: {value, rest}
-        def decode("bytes#{bit}", <<value :: binary-size(#{bit}), _ :: binary-size(#{32 - bit}), rest :: binary()>>), do: {value, rest}
+        def decode("bytes#{bit}", <<value :: binary-size(#{bit}), _ :: binary-size(#{32 - bit}), rest :: binary>>), do: {value, rest}
       """)
     )
   end
 
   def decode("uint", value), do: decode("uint256", value)
   def decode("int", value), do: decode("int256", value)
-  def decode("address", value), do: decode("bytes20", value)
   def decode("bool", value), do: decode("uint8", value)
+
+  def decode("address", <<_::binary-size(12), address::binary-size(20), rest::binary>>),
+    do: {address, rest}
+
+  def decode("address[]", value), do: decode("uint256", value)
+  def decode("string", value), do: decode("uint256", value)
+  def decode("bytes", value), do: decode("uint256", value)
+
+  def decode("(" <> tuple_def, value) do
+    types = tuple_types(tuple_def)
+    {decode_types(types, value), ""}
+  end
 end
