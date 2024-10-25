@@ -25,36 +25,40 @@ defmodule DiodeClient.ABI do
     Enum.zip(types, ret)
     |> Enum.map(fn {type, value} ->
       if is_dynamic(type) do
-        # for dynamic types the decoded value in the header is the offset of the data
-        base = binary_part(data, value, byte_size(data) - value)
-
-        cond do
-          type in ["string", "bytes"] ->
-            {len, rest} = decode("uint256", base)
-            slots = div(len, 32) + 1
-            binary_part(rest, slots * 32 - len, len)
-
-          String.starts_with?(type, "(") ->
-            "(" <> tuple_def = type
-            decode_types(tuple_types(tuple_def), base)
-
-          String.ends_with?(type, "[]") ->
-            {slots, rest} = decode("uint256", base)
-            type = String.replace_trailing(type, "[]", "")
-
-            {acc, _rest} =
-              List.duplicate(type, slots)
-              |> Enum.reduce({[], rest}, fn type, {acc, rest} ->
-                {value, rest} = decode(type, rest)
-                {acc ++ [value], rest}
-              end)
-
-            acc
-        end
+        decode_dynamic_type(type, data, value)
       else
         value
       end
     end)
+  end
+
+  defp decode_dynamic_type(type, data, value) do
+    # for dynamic types the decoded value in the header is the offset of the data
+    base = binary_part(data, value, byte_size(data) - value)
+
+    cond do
+      type in ["string", "bytes"] ->
+        {len, rest} = decode("uint256", base)
+        slots = div(len, 32) + 1
+        binary_part(rest, slots * 32 - len, len)
+
+      String.starts_with?(type, "(") ->
+        "(" <> tuple_def = type
+        decode_types(tuple_types(tuple_def), base)
+
+      String.ends_with?(type, "[]") ->
+        {slots, rest} = decode("uint256", base)
+        type = String.replace_trailing(type, "[]", "")
+
+        {acc, _rest} =
+          List.duplicate(type, slots)
+          |> Enum.reduce({[], rest}, fn type, {acc, rest} ->
+            {value, rest} = decode(type, rest)
+            {acc ++ [value], rest}
+          end)
+
+        acc
+    end
   end
 
   defp is_dynamic("string"), do: true
