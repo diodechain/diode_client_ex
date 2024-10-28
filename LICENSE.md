@@ -178,9 +178,3 @@
       of your accepting any such warranty or additional liability.
 
    END OF TERMS AND CONDITIONS
-
-   THIRD-PARTY DEPENDENCIES
-   ========================
-   Convenience copies of some third-party dependencies are distributed with
-   Diode Server files in evm/. Licensing information for
-   these files can be found in the evm/ directory.
