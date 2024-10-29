@@ -194,7 +194,24 @@ defmodule DiodeClient.Manager do
   end
 
   @impl true
+  def handle_info({:DOWN, _ref, :process, pid, reason}, state = %Manager{conns: conns}) do
+    handle_exit(pid, reason, state)
+  end
+
   def handle_info({:EXIT, pid, reason}, state = %Manager{conns: conns}) do
+    handle_exit(pid, reason, state)
+  end
+
+  def handle_info({:restart_conn, key}, state) do
+    {:noreply, restart_conn(key, state)}
+  end
+
+  def handle_info(:refresh, state) do
+    spawn(fn -> refresh() end)
+    {:noreply, state}
+  end
+
+  defp handle_exit(pid, reason, state = %Manager{conns: conns}) do
     if Map.has_key?(conns, pid) do
       %Info{key: key} = Map.fetch!(conns, pid)
       Process.send_after(self(), {:restart_conn, key}, 15_000)
@@ -207,15 +224,6 @@ defmodule DiodeClient.Manager do
         {:stop, reason}
       end
     end
-  end
-
-  def handle_info({:restart_conn, key}, state) do
-    {:noreply, restart_conn(key, state)}
-  end
-
-  def handle_info(:refresh, state) do
-    spawn(fn -> refresh() end)
-    {:noreply, state}
   end
 
   @impl true
@@ -259,6 +267,8 @@ defmodule DiodeClient.Manager do
     pid =
       case Connection.start_link(server, ports, key) do
         {:ok, pid} ->
+          Process.monitor(pid)
+
           for {shell, _} <- peaks do
             GenServer.cast(pid, {:subscribe, shell})
           end
