@@ -96,6 +96,22 @@ defmodule DiodeClient do
   end
 
   @spec port_connect(binary(), integer(), Keyword.t()) :: {:ok, any()} | {:error, any()}
+  @doc """
+  Connect to a port on a remote host.
+
+  ## Parameters
+
+  `destination` is the 20 byte diode address of the remote host.
+  `port` is the diode port number to connect to on the remote host.
+
+  `options` is a keyword list of options to pass to the connection.
+
+  valid options are:
+  - `:access` - Defaults to "rw".
+  - `:local` - Whether to attempt a local connection. Can be `true`, `false`, or `:always`. Defaults to `true`. `:always` can be used to enforce only local connections to a target and avoid relaying.
+
+  Returns `{:ok, pid}` if the connection is successful, or `{:error, reason}` if the connection fails.
+  """
   def port_connect(destination, port, options \\ [])
 
   def port_connect(destination = <<_::336>>, port, options) do

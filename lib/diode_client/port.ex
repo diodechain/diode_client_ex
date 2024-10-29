@@ -410,13 +410,29 @@ defmodule DiodeClient.Port do
     access = Keyword.get(options, :access, "rw")
     local = Keyword.get(options, :local, true)
 
-    if access == "rw" and local do
-      case Control.resolve_local(destination, port) do
-        nil -> do_connect(destination, port, options)
-        ssl -> {:ok, ssl}
-      end
-    else
-      do_connect(destination, port, options)
+    case local do
+      true ->
+        if access == "rw" do
+          case Control.resolve_local(destination, port) do
+            nil -> do_connect(destination, port, options)
+            ssl -> {:ok, ssl}
+          end
+        else
+          do_connect(destination, port, options)
+        end
+
+      :always ->
+        if access == "rw" do
+          case Control.resolve_local(destination, port) do
+            nil -> {:error, "local connection not found"}
+            ssl -> {:ok, ssl}
+          end
+        else
+          {:error, "only 'rw' access is supported for direct connections"}
+        end
+
+      false ->
+        do_connect(destination, port, options)
     end
   end
 

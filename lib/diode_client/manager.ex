@@ -194,11 +194,11 @@ defmodule DiodeClient.Manager do
   end
 
   @impl true
-  def handle_info({:DOWN, _ref, :process, pid, reason}, state = %Manager{conns: conns}) do
+  def handle_info({:DOWN, _ref, :process, pid, reason}, state) do
     handle_exit(pid, reason, state)
   end
 
-  def handle_info({:EXIT, pid, reason}, state = %Manager{conns: conns}) do
+  def handle_info({:EXIT, pid, reason}, state) do
     handle_exit(pid, reason, state)
   end
 

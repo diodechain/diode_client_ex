@@ -9,7 +9,9 @@ defmodule DiodeClient.Acceptor do
   @max_backlog 120
 
   defmodule Listener do
-    @moduledoc false
+    @moduledoc """
+    A listener for incoming connections.
+    """
     defstruct [:portnum, :opts]
 
     @type t :: %__MODULE__{
