@@ -2,6 +2,7 @@ defmodule DiodeClient.Manager do
   @moduledoc false
   alias DiodeClient.{Connection, Manager, Rlpx}
   use GenServer
+  require Logger
   defstruct [:conns, :server_list, :waiting, :best, :peaks, :online, :shell]
 
   defmodule Info do
@@ -218,11 +219,8 @@ defmodule DiodeClient.Manager do
       state = %Manager{state | conns: Map.delete(conns, pid)}
       {:noreply, refresh_best(state)}
     else
-      if reason == :normal do
-        {:noreply, state}
-      else
-        {:stop, reason}
-      end
+      Logger.debug("Connection down: #{inspect(pid)} #{inspect(reason)}")
+      {:noreply, state}
     end
   end
 
