@@ -74,6 +74,7 @@ defmodule DiodeClient.Connection do
             peaks: %{},
             pending_tickets: %{},
             ticket_count: 0,
+            last_ticket: nil,
             blocked: []
 
   def start_link(server, ports, id) when is_list(ports) do
@@ -369,7 +370,8 @@ defmodule DiodeClient.Connection do
            shell: shell,
            server_wallet: server_wallet,
            pending_tickets: pending_tickets,
-           ticket_count: tc
+           ticket_count: tc,
+           last_ticket: last_ticket
          }
        ) do
     peak = Map.get(peaks, shell)
@@ -414,6 +416,10 @@ defmodule DiodeClient.Connection do
         )
       end
 
+    if last_ticket != nil and Ticket.epoch(last_ticket) != Ticket.epoch(tck) do
+      raise "epoch mismatch"
+    end
+
     tck = Ticket.device_sign(tck, Wallet.privkey!(DiodeClient.wallet()))
     req = req_id()
     msg = Rlp.encode!([req, Ticket.message(tck)])
@@ -422,7 +428,8 @@ defmodule DiodeClient.Connection do
       state
       | pending_tickets: Map.put(pending_tickets, req, tck),
         paid_bytes: Ticket.total_bytes(tck),
-        ticket_count: tc + 1
+        ticket_count: tc + 1,
+        last_ticket: tck
     }
 
     {req, ssl_send!(state, msg)}

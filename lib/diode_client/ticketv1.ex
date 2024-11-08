@@ -99,7 +99,7 @@ defmodule DiodeClient.TicketV1 do
     |> :erlang.iolist_to_binary()
   end
 
-  # def epoch(ticket), do: block(ticket) |> Block.epoch()
+  def epoch(ticket), do: div(block_number(ticket), 40_320)
 
   def server_id(ticket(server_id: id)), do: id
   def block_number(ticket(block_number: block)), do: block
