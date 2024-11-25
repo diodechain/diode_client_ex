@@ -53,7 +53,7 @@ defmodule DiodeClient do
   ```
   """
   use Application
-  alias DiodeClient.{ETSLru, Port, Wallet, ShellCache, HashCache, Sup}
+  alias DiodeClient.{Base16, ETSLru, Port, Wallet, ShellCache, HashCache, Sup}
   require Logger
 
   @impl true
@@ -115,7 +115,7 @@ defmodule DiodeClient do
   def port_connect(destination, port, options \\ [])
 
   def port_connect(destination = <<_::336>>, port, options) do
-    port_connect(DiodeClient.Base16.decode(destination), port, options)
+    port_connect(Base16.decode(destination), port, options)
   end
 
   def port_connect(destination = <<_::320>>, port, options) do
@@ -189,11 +189,17 @@ defmodule DiodeClient do
     end
   end
 
+  def set_fleet_address(address = <<_::160>>) do
+    :persistent_term.put({__MODULE__, :fleet_address}, address)
+    address
+  end
+
   def fleet_address() do
     case :persistent_term.get({__MODULE__, :fleet_address}, nil) do
       {module, fun, args} -> apply(module, fun, args)
       cb when is_function(cb) -> cb.()
-      nil -> DiodeClient.Base16.decode("0x8aFe08d333f785C818199a5bdc7A52ac6Ffc492A")
+      address = <<_::160>> -> address
+      nil -> set_fleet_address(Base16.decode("0x8aFe08d333f785C818199a5bdc7A52ac6Ffc492A"))
     end
   end
 

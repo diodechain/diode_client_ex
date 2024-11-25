@@ -27,4 +27,8 @@ defmodule DiodeClient.Ticket do
   def server_signature(tck), do: mod(tck).server_signature(tck)
   def total_bytes(tck), do: mod(tck).total_bytes(tck)
   def total_connections(tck), do: mod(tck).total_connections(tck)
+
+  def too_many_bytes?(tck) do
+    total_bytes(tck) > 1024 * 1024 * 1024 * 1024 * 1024
+  end
 end
