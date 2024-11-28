@@ -7,8 +7,34 @@ defmodule DiodeClient.Contracts.BNS do
   @slot_names 1
   @slot_reverse_names 2
 
+  defmodule Impl do
+    defstruct [:address, :shell, :postfix]
+  end
+
+  alias __MODULE__.Impl
+
+  def impls() do
+    [
+      %Impl{
+        address: Hash.to_address(0xAF60FAA5CD840B724742F1AF116168276112D6A6),
+        shell: DiodeClient.Shell,
+        postfix: "diode"
+      },
+      %Impl{
+        address: Hash.to_address(0x75140F88B0F4B2FBC6DADC16CC51203ADB07FE36),
+        shell: DiodeClient.Shell.MoonbaseAlpha,
+        postfix: "m1"
+      },
+      %Impl{
+        address: Hash.to_address(0x8A093E3A83F63A00FFFC4729AA55482845A49294),
+        shell: DiodeClient.Shell.Moonbeam,
+        postfix: "glmr"
+      }
+    ]
+  end
+
   def is_bns(address) do
-    DiodeClient.Contracts.DiodeBNS.is_bns(address) || DiodeClient.Contracts.M1BNS.is_bns(address)
+    Enum.any?(impls(), fn impl -> impl.address == address end)
   end
 
   def register(name, destination) do
@@ -44,7 +70,7 @@ defmodule DiodeClient.Contracts.BNS do
     base = Hash.to_bytes32(@slot_names)
 
     Hash.keccak_256(name_hash <> base)
-    |> impl.address(block)
+    |> address(impl.shell, impl.address, block)
   end
 
   def resolve_name_owner(name, block \\ nil) do
@@ -56,13 +82,8 @@ defmodule DiodeClient.Contracts.BNS do
     {impl, name} = name_to_impl(name)
     name_hash = Hash.keccak_256(name)
     base = Hash.to_bytes32(@slot_names)
-
-    addr =
-      Hash.keccak_256(name_hash <> base)
-      |> add(1)
-      |> impl.address(block)
-
-    {impl.shell(), addr}
+    addr = address(impl.shell, impl.address, Hash.keccak_256(name_hash <> base) |> add(1), block)
+    {impl.shell, addr}
   end
 
   def resolve_name_all(orig_name, block \\ nil) do
@@ -71,7 +92,7 @@ defmodule DiodeClient.Contracts.BNS do
     base = Hash.to_bytes32(@slot_names)
 
     array_slot = Hash.keccak_256(name_hash <> base) |> add(3)
-    size = impl.number(array_slot, block)
+    size = number(impl.shell, impl.address, array_slot, block)
 
     if size == 0 do
       name = resolve_name(orig_name)
@@ -85,7 +106,7 @@ defmodule DiodeClient.Contracts.BNS do
       array_start = Hash.keccak_256(array_slot)
 
       Enum.map(1..size, fn idx ->
-        impl.address(add(array_start, idx - 1), block)
+        address(impl.shell, impl.address, add(array_start, idx - 1), block)
       end)
     end
   end
@@ -95,13 +116,13 @@ defmodule DiodeClient.Contracts.BNS do
     slot = Hash.keccak_256(Hash.to_bytes32(address) <> base)
 
     # either(:string, [slot, block])
+    Enum.find_value(["diode", "glmr"], fn postfix ->
+      impl = Enum.find(impls(), fn impl -> impl.postfix == postfix end)
 
-    if DiodeClient.Contracts.DiodeBNS.storage_root() != nil do
-      maybe_extend(DiodeClient.Contracts.DiodeBNS.string(slot, block), ".diode")
-    end ||
-      if DiodeClient.Contracts.M1BNS.storage_root() != nil do
-        maybe_extend(DiodeClient.Contracts.M1BNS.string(slot, block), ".m1")
+      if impl.shell.get_account_root(impl.address) != nil do
+        maybe_extend(string(impl.shell, impl.address, slot, block), "." <> postfix)
       end
+    end)
   end
 
   defp maybe_extend("", _), do: nil
@@ -109,22 +130,19 @@ defmodule DiodeClient.Contracts.BNS do
   defp maybe_extend(str, postfix), do: str <> postfix
 
   defp cast(impl, method, types, args) do
-    impl.send_transaction(method, types, args)
+    impl.shell.send_transaction(impl.address, method, types, args)
   end
 
   defp name_to_impl(name) do
-    case String.split(name, ".") do
-      [name, "diode"] -> {DiodeClient.Contracts.DiodeBNS, name}
-      [name, "m1"] -> {DiodeClient.Contracts.M1BNS, name}
-    end
+    [name, postfix] = String.split(name, ".")
+    impl = Enum.find(impls(), fn impl -> impl.postfix == postfix end)
+    {impl, name}
   end
 
   def name_to_shell(name) do
-    case String.split(name, ".") do
-      [_name, "glmr"] -> DiodeClient.Shell.Moonbeam
-      [_name, "diode"] -> DiodeClient.Shell
-      [_name, "m1"] -> DiodeClient.Shell.MoonbaseAlpha
-      _ -> nil
+    with [_name, postfix] <- String.split(name, "."),
+         impl when not is_nil(impl) <- Enum.find(impls(), fn impl -> impl.postfix == postfix end) do
+      impl.shell
     end
   end
 end

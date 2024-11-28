@@ -48,11 +48,11 @@ defmodule Mix.Tasks.Resolve do
 
     names = Contracts.BNS.resolve_name_all(name)
     owner = Contracts.BNS.resolve_name_owner(name)
-    puts(level, "owner", Base16.encode(owner))
+    puts(level, "BNS owner", Base16.encode(owner))
 
     {name,
-     for name <- names do
-       puts(level, "name", Base16.encode(name))
+     for {name, index} <- Enum.with_index(names) do
+       puts(level, "BNS name[#{index}]", Base16.encode(name))
        resolve(Base16.encode(name), level + 1)
      end}
   end
