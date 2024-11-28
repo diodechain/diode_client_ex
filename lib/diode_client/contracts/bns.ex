@@ -65,12 +65,9 @@ defmodule DiodeClient.Contracts.BNS do
 
   def resolve_name(name, block) do
     {impl, name} = name_to_impl(name)
-
     name_hash = Hash.keccak_256(name)
     base = Hash.to_bytes32(@slot_names)
-
-    Hash.keccak_256(name_hash <> base)
-    |> address(impl.shell, impl.address, block)
+    address(impl.shell, impl.address, Hash.keccak_256(name_hash <> base), block)
   end
 
   def resolve_name_owner(name, block \\ nil) do
