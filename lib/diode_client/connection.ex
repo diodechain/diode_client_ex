@@ -489,7 +489,7 @@ defmodule DiodeClient.Connection do
               state
               | conns: new_conns,
                 paid_bytes: new_bytes,
-                unpaid_bytes: new_bytes + unpaid_bytes
+                unpaid_bytes: new_bytes + min(unpaid_bytes, @ticket_size)
             }
           else
             %Connection{state | conns: new_conns + 1}
@@ -525,7 +525,7 @@ defmodule DiodeClient.Connection do
               state
               | conns: new_conns,
                 paid_bytes: new_bytes,
-                unpaid_bytes: new_bytes + unpaid_bytes
+                unpaid_bytes: new_bytes + min(unpaid_bytes, @ticket_size)
             }
           else
             %Connection{state | conns: new_conns + 1}

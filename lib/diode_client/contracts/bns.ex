@@ -8,6 +8,7 @@ defmodule DiodeClient.Contracts.BNS do
   @slot_reverse_names 2
 
   defmodule Impl do
+    @moduledoc false
     defstruct [:address, :shell, :postfix]
   end
 
