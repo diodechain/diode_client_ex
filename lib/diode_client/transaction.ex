@@ -151,12 +151,20 @@ defmodule DiodeClient.Transaction do
   end
 
   def hash(tx = %Transaction{signature: {:fake, _pubkey}}) do
-    to_message(tx) |> Hash.sha3_256()
+    to_message(tx) |> hash(chain_id(tx))
   end
 
   @spec hash(Transaction.t()) :: binary()
   def hash(tx) do
-    to_rlp(tx) |> Rlp.encode!() |> Hash.sha3_256()
+    to_rlp(tx) |> Rlp.encode!() |> hash(chain_id(tx))
+  end
+
+  defp hash(binary, chain_id) do
+    if chain_id in [nil, 0, 13, 15] do
+      Hash.sha3_256(binary)
+    else
+      Hash.keccak_256(binary)
+    end
   end
 
   @spec to_message(DiodeClient.Transaction.t()) :: binary()
