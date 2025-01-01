@@ -17,9 +17,21 @@ defmodule Mix.Tasks.Resolve do
       puts(level, "reverse-name", name)
     end
 
-    if DiodeClient.Shell.get_account_root(Base16.decode(hex)) do
-      owner = Contracts.DriveMember.owner?(DiodeClient.Shell, Base16.decode(hex), nil)
-      members = Contracts.DriveMember.members(DiodeClient.Shell, Base16.decode(hex), nil)
+    shell =
+      cond do
+        DiodeClient.Shell.get_account_root(Base16.decode(hex)) != nil ->
+          DiodeClient.Shell
+
+        DiodeClient.Shell.Moonbeam.get_account_root(Base16.decode(hex)) != nil ->
+          DiodeClient.Shell.Moonbeam
+
+        true ->
+          nil
+      end
+
+    if shell do
+      owner = Contracts.DriveMember.owner?(shell, Base16.decode(hex), nil)
+      members = Contracts.DriveMember.members(shell, Base16.decode(hex), nil)
 
       # if owner == false do
       #   DiodeClient.Shell.get_account_root(Base16.decode(hex)) |> IO.inspect()
