@@ -46,6 +46,15 @@ defmodule DiodeClient.TicketV1 do
     |> Wallet.address!()
   end
 
+  def device_address?(tck = ticket(), wallet) do
+    Secp256k1.verify(
+      Wallet.pubkey!(wallet),
+      device_blob(tck),
+      device_signature(tck),
+      :kec
+    )
+  end
+
   def device_sign(tck = ticket(), private) do
     ticket(tck, device_signature: Secp256k1.sign(private, device_blob(tck), :kec))
   end

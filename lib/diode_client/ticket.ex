@@ -10,6 +10,7 @@ defmodule DiodeClient.Ticket do
 
   def block_number(tck), do: mod(tck).block_number(tck)
   def device_address(tck), do: mod(tck).device_address(tck)
+  def device_address?(tck, wallet), do: mod(tck).device_address?(tck, wallet)
   def device_blob(tck), do: mod(tck).device_blob(tck)
   def device_sign(tck, private), do: mod(tck).device_sign(tck, private)
   def device_signature(tck), do: mod(tck).device_signature(tck)
