@@ -11,7 +11,12 @@ defmodule DiodeClient.Transaction do
             chain_id: nil,
             signature: nil,
             init: nil,
-            data: nil
+            data: nil,
+            # eip-1559,
+            version: 0,
+            max_priority_fee_per_gas: 0,
+            # gasPrice is used as 'max_fee_per_gas'
+            access_list: []
 
   @type t :: %Transaction{}
 
@@ -120,7 +125,39 @@ defmodule DiodeClient.Transaction do
     |> Hash.to_address()
   end
 
+  def to_binary(tx = %Transaction{version: 2}) do
+    rlp = to_rlp(tx) |> Rlp.encode!()
+    <<0x02>> <> rlp
+  end
+
+  def to_binary(tx = %Transaction{version: nil}) do
+    to_rlp(tx) |> Rlp.encode!()
+  end
+
+  def max_fee_per_gas(tx) do
+    tx.gasPrice + tx.max_priority_fee_per_gas
+  end
+
   @spec to_rlp(DiodeClient.Transaction.t()) :: [...]
+  def to_rlp(tx = %Transaction{version: 2}) do
+    <<rec, r::big-unsigned-size(256), s::big-unsigned-size(256)>> = tx.signature
+
+    [
+      tx.chain_id,
+      tx.nonce,
+      tx.max_priority_fee_per_gas,
+      max_fee_per_gas(tx),
+      tx.gasLimit,
+      tx.to,
+      tx.value,
+      payload(tx),
+      tx.access_list,
+      rec,
+      r,
+      s
+    ]
+  end
+
   def to_rlp(tx) do
     [tx.nonce, gas_price(tx), gas_limit(tx), tx.to, tx.value, payload(tx)] ++
       Secp256k1.bitcoin_to_rlp(tx.signature, tx.chain_id)
@@ -156,7 +193,7 @@ defmodule DiodeClient.Transaction do
 
   @spec hash(Transaction.t()) :: binary()
   def hash(tx) do
-    to_rlp(tx) |> Rlp.encode!() |> hash(chain_id(tx))
+    to_binary(tx) |> hash(chain_id(tx))
   end
 
   defp hash(binary, chain_id) do
@@ -168,13 +205,25 @@ defmodule DiodeClient.Transaction do
   end
 
   @spec to_message(DiodeClient.Transaction.t()) :: binary()
-  def to_message(tx = %Transaction{chain_id: nil}) do
-    # pre EIP-155 encoding
-    [tx.nonce, gas_price(tx), gas_limit(tx), tx.to, tx.value, payload(tx)]
-    |> Rlp.encode!()
+  def to_message(tx = %Transaction{version: 2}) do
+    rlp =
+      [
+        tx.chain_id,
+        tx.nonce,
+        tx.max_priority_fee_per_gas,
+        max_fee_per_gas(tx),
+        tx.gasLimit,
+        tx.to,
+        tx.value,
+        tx.data,
+        tx.access_list
+      ]
+      |> Rlp.encode!()
+
+    <<0x02>> <> rlp
   end
 
-  def to_message(tx = %Transaction{chain_id: 0}) do
+  def to_message(tx = %Transaction{chain_id: chain_id}) when chain_id in [nil, 0] do
     # pre EIP-155 encoding
     [tx.nonce, gas_price(tx), gas_limit(tx), tx.to, tx.value, payload(tx)]
     |> Rlp.encode!()
