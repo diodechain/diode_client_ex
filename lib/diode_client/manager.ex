@@ -259,11 +259,19 @@ defmodule DiodeClient.Manager do
     state
   end
 
-  defp restart_conn(key, state = %Manager{server_list: servers, conns: conns, peaks: peaks}) do
-    info = %Info{server_url: server, ports: ports, key: ^key} = Map.get(servers, key)
+  defp restart_conn(key, state = %Manager{server_list: servers}) do
+    do_restart_conn(Map.get(servers, key), key, state)
+  end
 
+  defp do_restart_conn(nil, _key, state) do
+    # Can be nil if the server is not in the seed list and was dropped
+    # with :drop_connection
+    state
+  end
+
+  defp do_restart_conn(info, key, state = %Manager{peaks: peaks, conns: conns}) do
     pid =
-      case Connection.start_link(server, ports, key) do
+      case Connection.start_link(info.server_url, info.ports, key) do
         {:ok, pid} ->
           Process.monitor(pid)
 
