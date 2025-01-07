@@ -130,7 +130,7 @@ defmodule DiodeClient.Transaction do
     <<0x02>> <> rlp
   end
 
-  def to_binary(tx = %Transaction{version: nil}) do
+  def to_binary(tx = %Transaction{version: 0}) do
     to_rlp(tx) |> Rlp.encode!()
   end
 
