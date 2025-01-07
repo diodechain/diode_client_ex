@@ -3,6 +3,10 @@ defmodule DiodeClient.Base16 do
   @spec encode(binary() | non_neg_integer(), any()) :: <<_::16, _::_*8>>
   def encode(int, bigX \\ true)
 
+  def encode(nil, _bigX) do
+    "nil"
+  end
+
   def encode(int, true) when is_integer(int) do
     "0X#{Base.encode16(:binary.encode_unsigned(int), case: :lower)}"
   end
