@@ -33,7 +33,7 @@ defmodule DiodeClient.Certs do
     Keyword.get(keywords(record_def, record), fieldname)
   end
 
-  @types [:OTPCertificate, :OTPTBSCertificate, :OTPSubjectPublicKeyInfo, :ECPoint]
+  @types [:OTPCertificate, :OTPTBSCertificate, :OTPSubjectPublicKeyInfo, :ECPoint, :ECPrivateKey]
   for type <- @types do
     record = Record.extract(type, from_lib: "public_key/include/public_key.hrl")
 
@@ -54,5 +54,13 @@ defmodule DiodeClient.Certs do
     Keyword.new(zip, fn {{key, _default}, idx} ->
       {key, elem(record, idx)}
     end)
+  end
+
+  def private_from_file(filename) do
+    pem = :public_key.pem_decode(File.read!(filename))
+    cert = :proplists.lookup(:PrivateKeyInfo, pem)
+
+    :public_key.der_decode(:PrivateKeyInfo, :erlang.element(2, cert))
+    |> getfield(:ECPrivateKey, :privateKey)
   end
 end
