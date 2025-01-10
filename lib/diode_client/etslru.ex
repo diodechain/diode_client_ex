@@ -114,6 +114,10 @@ defmodule DiodeClient.ETSLru do
     :ets.lookup_element(lru, :meta, 4)
   end
 
+  def update_filter(lru, fun) do
+    :ets.update_element(lru, :meta, [{4, fun}])
+  end
+
   def max_size(lru) do
     :ets.lookup_element(lru, :meta, 3)
   end

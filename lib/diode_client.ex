@@ -59,6 +59,7 @@ defmodule DiodeClient do
   @impl true
   def start(_start_type, _start_args) do
     ETSLru.new(ShellCache, 10_000, fn
+      :undefined -> false
       [:error | _] -> false
       _other -> true
     end)
