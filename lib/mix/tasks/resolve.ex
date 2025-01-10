@@ -42,7 +42,9 @@ defmodule Mix.Tasks.Resolve do
 
       {hex,
        for name <- members do
-         puts(level, "member", Base16.encode(name))
+         role = Contracts.Zone.role(shell, Base16.decode(hex), name, nil)
+
+         puts(level, "member", Base16.encode(name) <> " #{inspect(role)}")
          resolve(Base16.encode(name), level + 1)
        end}
     else
@@ -61,6 +63,7 @@ defmodule Mix.Tasks.Resolve do
     names = Contracts.BNS.resolve_name_all(name)
     owner = Contracts.BNS.resolve_name_owner(name)
     puts(level, "BNS owner", Base16.encode(owner))
+    resolve(Base16.encode(owner), level + 1)
 
     {name,
      for {name, index} <- Enum.with_index(names) do
