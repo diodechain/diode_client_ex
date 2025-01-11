@@ -30,6 +30,10 @@ defmodule DiodeClient.Base16 do
   end
 
   @spec decode(<<_::16, _::_*8>>) :: binary() | non_neg_integer()
+  def decode("nil") do
+    nil
+  end
+
   def decode(<<"0x", hex::binary>>) do
     do_decode(hex)
   end
