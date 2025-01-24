@@ -54,7 +54,7 @@ defmodule DiodeClient.Control do
           nil
 
         {address, port} = addr ->
-          Logger.info("resolve_local: #{inspect(addr)}")
+          # Logger.info("resolve_local: #{inspect(addr)}")
           address = String.to_charlist(address)
 
           case :ssl.connect(address, port, Connection.ssl_options(role: :client), 5_000) do
@@ -63,8 +63,8 @@ defmodule DiodeClient.Control do
               :ssl.controlling_process(ssl, self())
               ssl
 
-            {:error, reason} ->
-              Logger.info("resolve_local failed for #{inspect(reason)}")
+            {:error, _reason} ->
+              # Logger.info("resolve_local failed for #{inspect(reason)}")
               nil
           end
       end
