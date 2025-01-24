@@ -53,7 +53,7 @@ defmodule DiodeClient.Control do
         {"", _port} ->
           nil
 
-        {address, port} = addr ->
+        {address, port} = _addr ->
           # Logger.info("resolve_local: #{inspect(addr)}")
           address = String.to_charlist(address)
 
