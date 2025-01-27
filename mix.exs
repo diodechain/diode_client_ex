@@ -71,6 +71,7 @@ defmodule DiodeClient.MixProject do
       {:ex_sha3, "~> 0.1.1"},
       {:libsecp256k1, "~> 0.1", hex: :libsecp256k1_diode_fork},
       {:network_monitor, "~> 1.1"},
+      {:profiler, "~> 0.1"},
       # {:libsecp256k1, github: "diodechain/libsecp256k1"},
 
       # Linting

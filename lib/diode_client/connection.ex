@@ -925,7 +925,10 @@ defmodule DiodeClient.Connection do
 
   defp ssl_send!(state = %Connection{socket: socket, unpaid_bytes: up, server: server}, msg) do
     # IO.puts("send size: #{byte_size(msg)}")
-    :ok = :ssl.send(socket, msg)
+    with {:error, reason} <- :ssl.send(socket, msg) do
+      Logger.warning("SSL send error: #{inspect(reason)}")
+    end
+
     DiodeClient.Stats.submit(:relay, :self, server, byte_size(msg) + @packet_header)
     %Connection{state | unpaid_bytes: up + byte_size(msg) + @packet_header}
   end

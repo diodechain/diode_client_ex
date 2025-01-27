@@ -84,7 +84,14 @@ defmodule DiodeClient.Port do
   end
 
   def close(pid) when is_pid(pid) do
+    # Profiler.print_stacktrace()
     GenServer.cast(pid, :stop)
+  end
+
+  def close(ssl) when is_tuple(ssl) do
+    # IO.inspect(Process.info(self()))
+    # Profiler.print_stacktrace()
+    :ssl.close(ssl)
   end
 
   def peer(pid) when is_pid(pid) do
