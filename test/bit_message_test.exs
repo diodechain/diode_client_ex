@@ -1,6 +1,6 @@
 defmodule BitMessageTest do
   use ExUnit.Case
-  alias DiodeClient.{BitMessage, Base16, Wallet}
+  alias DiodeClient.{BitMessage, Base16, Wallet, Rlp}
 
   test "point multiply equivalence" do
     receiver = Wallet.new()
@@ -93,5 +93,34 @@ defmodule BitMessageTest do
     out = BitMessage.decrypt(bm, receiver)
 
     assert :binary.part(out, 0, byte_size(message)) == message
+  end
+
+  test "encode size" do
+    message = "This is a super secret message just for you"
+    bm = BitMessage.encrypt(message, Wallet.new())
+    data = Rlp.encode!([bm.iv, bm.pubkey, bm.cipher_text, bm.mac])
+    data_without_mac = Rlp.encode!([bm.iv, bm.pubkey, bm.cipher_text])
+
+    assert byte_size(message) == 43
+    assert byte_size(data) == 135
+    assert byte_size(data_without_mac) == 102
+    overhead = byte_size(data) - byte_size(message)
+    assert overhead == 92
+
+    # Typical udp limit is 1472 bytes
+    message =
+      "This is a super secret message just for you"
+      |> String.duplicate(30)
+      |> String.pad_trailing(1376)
+
+    bm = BitMessage.encrypt(message, Wallet.new())
+    data = Rlp.encode!([bm.iv, bm.pubkey, bm.cipher_text, bm.mac])
+    data_without_mac = Rlp.encode!([bm.iv, bm.pubkey, bm.cipher_text])
+
+    assert byte_size(message) == 1376
+    assert byte_size(data) == 1466
+    assert byte_size(data_without_mac) == 1433
+    overhead = byte_size(data) - byte_size(message)
+    assert overhead == 90
   end
 end

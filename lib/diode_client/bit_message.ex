@@ -23,7 +23,7 @@ defmodule DiodeClient.BitMessage do
     message = pkcs7_pad(message, @padding)
     state = :crypto.crypto_init(:aes_256_cbc, key_e, iv, true)
     cipher_text = :crypto.crypto_update(state, message)
-    hmac = :crypto.mac(:hmac, :sha512, key_m, iv <> Wallet.pubkey!(tmp_key_r) <> cipher_text)
+    hmac = :crypto.mac(:hmac, :sha256, key_m, iv <> Wallet.pubkey!(tmp_key_r) <> cipher_text)
 
     %BitMessage{iv: iv, pubkey: Wallet.pubkey!(tmp_key_r), cipher_text: cipher_text, mac: hmac}
   end
@@ -35,15 +35,31 @@ defmodule DiodeClient.BitMessage do
     public_p = point_multiply(pubkey_r, Wallet.privkey!(to_privkey_k))
     <<4, x::binary-size(32), _y::binary-size(32)>> = public_p
     <<key_e::binary-size(32), key_m::binary-size(32)>> = :crypto.hash(:sha512, x)
+    hmac_data = iv <> pubkey_r <> cipher_text
 
-    case :crypto.mac(:hmac, :sha512, key_m, iv <> pubkey_r <> cipher_text) do
-      ^hmac ->
+    case validate_hmac(hmac, hmac_data, key_m) do
+      true ->
         state = :crypto.crypto_init(:aes_256_cbc, key_e, iv, false)
         :crypto.crypto_update(state, cipher_text)
 
-      _other ->
+      false ->
         {:error, :hmac_mismatch}
+
+      {:error, reason} ->
+        {:error, reason}
     end
+  end
+
+  defp validate_hmac(hmac, hmac_data, key_m) when byte_size(hmac) == 32 do
+    :crypto.mac(:hmac, :sha256, key_m, hmac_data) == hmac
+  end
+
+  defp validate_hmac(hmac, hmac_data, key_m) when byte_size(hmac) == 64 do
+    :crypto.mac(:hmac, :sha512, key_m, hmac_data) == hmac
+  end
+
+  defp validate_hmac(hmac, _hmac_data, _key_m) do
+    {:error, {:invalid_hmac_size, byte_size(hmac)}}
   end
 
   defp pkcs7_pad(message, pad_length) do
