@@ -97,7 +97,7 @@ defmodule BitMessageTest do
 
   test "encode size" do
     message = "This is a super secret message just for you"
-    bm = BitMessage.encrypt(message, Wallet.new())
+    bm = BitMessage.encrypt(message, Wallet.new(), :sha256)
     data = Rlp.encode!([bm.iv, bm.pubkey, bm.cipher_text, bm.mac])
     data_without_mac = Rlp.encode!([bm.iv, bm.pubkey, bm.cipher_text])
 
@@ -113,7 +113,7 @@ defmodule BitMessageTest do
       |> String.duplicate(30)
       |> String.pad_trailing(1376)
 
-    bm = BitMessage.encrypt(message, Wallet.new())
+    bm = BitMessage.encrypt(message, Wallet.new(), :sha256)
     data = Rlp.encode!([bm.iv, bm.pubkey, bm.cipher_text, bm.mac])
     data_without_mac = Rlp.encode!([bm.iv, bm.pubkey, bm.cipher_text])
 

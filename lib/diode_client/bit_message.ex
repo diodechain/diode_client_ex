@@ -12,7 +12,7 @@ defmodule DiodeClient.BitMessage do
   defstruct [:iv, :pubkey, :cipher_text, :mac]
   @padding 16
 
-  def encrypt(message, to_pubkey_k) do
+  def encrypt(message, to_pubkey_k, hmac_type \\ :sha512) when hmac_type in [:sha256, :sha512] do
     iv = :crypto.strong_rand_bytes(16)
     tmp_key_r = Wallet.new()
     public_p = point_multiply(Wallet.pubkey!(to_pubkey_k), Wallet.privkey!(tmp_key_r))
@@ -23,7 +23,7 @@ defmodule DiodeClient.BitMessage do
     message = pkcs7_pad(message, @padding)
     state = :crypto.crypto_init(:aes_256_cbc, key_e, iv, true)
     cipher_text = :crypto.crypto_update(state, message)
-    hmac = :crypto.mac(:hmac, :sha256, key_m, iv <> Wallet.pubkey!(tmp_key_r) <> cipher_text)
+    hmac = :crypto.mac(:hmac, hmac_type, key_m, iv <> Wallet.pubkey!(tmp_key_r) <> cipher_text)
 
     %BitMessage{iv: iv, pubkey: Wallet.pubkey!(tmp_key_r), cipher_text: cipher_text, mac: hmac}
   end
