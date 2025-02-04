@@ -162,7 +162,7 @@ defmodule DiodeClient.Shell.Moonbeam do
     values = cached_rpc([prefix() <> "getaccountvalues", peak_index, address | keys])
 
     case values do
-      [:error, message] ->
+      {:error, message} ->
         Logger.debug(
           "getaccountvalues #{inspect({peak_index, address, keys})} produced error #{inspect(message)}"
         )

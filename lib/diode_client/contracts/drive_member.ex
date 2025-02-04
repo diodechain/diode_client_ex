@@ -3,7 +3,8 @@ defmodule DiodeClient.Contracts.DriveMember do
   Imported contract to read group memberships. Useful to recursively resolve
   BNS names to individual devices.
   """
-  alias DiodeClient.Hash
+  alias DiodeClient.{Base16, Hash}
+  alias DiodeClient.Contracts, as: Contract
 
   @slot_owner 51
   @slot_members_list 53
@@ -39,75 +40,52 @@ defmodule DiodeClient.Contracts.DriveMember do
   end
 
   def owner(shell, address, block) do
-    DiodeClient.Contracts.Utils.value(shell, address, @slot_owner, block, :undefined, nil)
-    |> Hash.to_address()
+    case owner?(shell, address, block) do
+      false ->
+        raise(
+          "DriveMember: owner=nil invalid for member contract #{Base16.encode(address)} in block: #{inspect(block)}"
+        )
+
+      owner ->
+        Hash.to_address(owner)
+    end
   end
 
   def owner?(shell, address, block) do
-    DiodeClient.Contracts.Utils.address(shell, address, @slot_owner, block) || false
+    Contract.Utils.address(shell, address, @slot_owner, block) || false
   end
 
   def drive_address(shell, address, block) do
-    DiodeClient.Contracts.Utils.address(shell, address, @slot_drive_address, block) || <<0::256>>
+    Contract.Utils.address(shell, address, @slot_drive_address, block) || <<0::256>>
   end
 
   def addtl_drive_addresses(shell, address, block) do
-    block = block || shell.peak()
-
-    <<number::256>> =
-      DiodeClient.Contracts.Utils.value(
-        shell,
-        address,
-        @slot_addtl_drive_addresses,
-        block,
-        <<0::256>>,
-        nil
-      )
-
-    array_start =
-      Hash.keccak_256(Hash.to_bytes32(@slot_addtl_drive_addresses))
-      |> :binary.decode_unsigned()
-
-    range = if number > 0, do: 0..(number - 1), else: []
-
-    Enum.map(range, fn index ->
-      DiodeClient.Contracts.Utils.address(shell, address, array_start + index, block)
-    end)
+    Contract.Utils.list_at(shell, address, @slot_addtl_drive_addresses, block)
   end
 
   def proxy_factory(shell, address, block) do
-    DiodeClient.Contracts.Utils.address(shell, address, @slot_factory, block)
+    Contract.Utils.address(shell, address, @slot_factory, block)
   end
 
   def proxy_target(shell, address, block) do
-    DiodeClient.Contracts.Utils.address(shell, address, @slot_target, block)
+    Contract.Utils.address(shell, address, @slot_target, block)
   end
 
   def members(shell, address, block) do
-    [owner, member_list] =
-      DiodeClient.Contracts.Utils.values(shell, address, [@slot_owner, @slot_members_list], block)
+    block = block || shell.peak()
 
-    case owner do
-      :undefined ->
+    case owner?(shell, address, block) do
+      false ->
         []
 
       owner ->
-        owner = Hash.to_address(owner)
-        <<number::256>> = if is_binary(member_list), do: member_list, else: <<0::256>>
+        members = Contract.Utils.list_at(shell, address, @slot_members_list, block)
 
-        if number > 0 do
-          array_start =
-            Hash.keccak_256(Hash.to_bytes32(@slot_members_list))
-            |> :binary.decode_unsigned()
-
-          list = Enum.map(0..(number - 1), fn index -> array_start + index end)
-
-          DiodeClient.Contracts.Utils.values(shell, address, list, block)
-          |> Enum.map(&Hash.to_address/1)
+        if Enum.member?(members, owner) do
+          members
         else
-          []
-        end ++
-          [owner]
+          [owner | members]
+        end
     end
   end
 
@@ -116,13 +94,13 @@ defmodule DiodeClient.Contracts.DriveMember do
       Hash.keccak_256(Hash.to_bytes32(@slot_members_list))
       |> :binary.decode_unsigned()
 
-    DiodeClient.Contracts.Utils.value(shell, address, array_start + index, block, :undefined, nil)
+    Contract.Utils.value(shell, address, array_start + index, block, :undefined, nil)
     |> Hash.to_address()
   end
 
-  # helpfull to track changes to the contract state
+  # helpful to track changes to the contract state
   def root(shell, address, block) do
-    shell.get_account(address, block || shell.peak()).storage_root
+    shell.get_account_root(address, block)
   end
 
   defp cast(shell, address, name, types, args) do

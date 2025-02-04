@@ -33,12 +33,19 @@ defmodule Mix.Tasks.Resolve do
       owner = Contracts.DriveMember.owner?(shell, Base16.decode(hex), nil)
       members = Contracts.DriveMember.members(shell, Base16.decode(hex), nil)
 
+      addtl_drive_addresses =
+        Contracts.DriveMember.addtl_drive_addresses(shell, Base16.decode(hex), nil)
+
       # if owner == false do
       #   DiodeClient.Shell.get_account_root(Base16.decode(hex)) |> IO.inspect()
       #   DiodeClient.Shell.get_account(Base16.decode(hex)) |> IO.inspect()
       # end
 
       puts(level, "owner", if(owner, do: Base16.encode(owner), else: "nil"))
+
+      for {addtl_drive_address, idx} <- Enum.with_index(addtl_drive_addresses) do
+        puts(level, "addtl_drive_address[#{idx}]", Base16.encode(addtl_drive_address))
+      end
 
       {hex,
        for name <- members do

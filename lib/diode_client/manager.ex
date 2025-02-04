@@ -55,8 +55,12 @@ defmodule DiodeClient.Manager do
     DiodeClient.Store.fetch(:seed_list, &initial_seed_list/0)
   end
 
+  def seed_list_override() do
+    System.get_env("SEED_LIST")
+  end
+
   defp initial_seed_list() do
-    if System.get_env("SEED_LIST") == nil do
+    if seed_list_override() == nil do
       Enum.map(default_seed_keys(), fn pre ->
         {pre,
          %Info{
@@ -68,7 +72,7 @@ defmodule DiodeClient.Manager do
          }}
       end)
     else
-      System.get_env("SEED_LIST")
+      seed_list_override()
       |> String.split(",")
       |> Enum.map(fn url ->
         {url, ports} =
@@ -179,7 +183,7 @@ defmodule DiodeClient.Manager do
 
     len = length(ranked_connections())
 
-    if len < @target_connections do
+    if seed_list_override() == nil and len < @target_connections do
       for _ <- (len + 1)..@target_connections do
         add_connection()
       end
@@ -401,7 +405,7 @@ defmodule DiodeClient.Manager do
     end)
   end
 
-  defp refresh_best(state = %Manager{waiting: waiting, peaks: last_peaks}, shell) do
+  defp refresh_best(state = %Manager{waiting: waiting, peaks: last_peaks, best: prev_best}, shell) do
     connected =
       connected(state) |> Enum.reject(fn %Info{peaks: peaks} -> Map.get(peaks, shell) == nil end)
 
@@ -431,10 +435,14 @@ defmodule DiodeClient.Manager do
           state
         end
 
-      %Info{pid: pid, peaks: %{^shell => new_peak}} ->
+      %Info{pid: pid, peaks: %{^shell => new_peak}, server_url: url} ->
         peak = if block_number(new_peak) > block_number(last_peak), do: new_peak, else: last_peak
 
         if shell == state.shell do
+          if prev_best != pid do
+            Logger.info("Best connection changed to #{inspect(url)}")
+          end
+
           for from <- waiting, do: GenServer.reply(from, pid)
           %Manager{state | best: pid, waiting: [], peaks: Map.put(last_peaks, shell, peak)}
         else

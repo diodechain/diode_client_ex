@@ -844,10 +844,13 @@ defmodule DiodeClient.Connection do
           "DiodeClient remote_closed during RPC(#{inspect(cmd)}) from #{server_url(pid)}"
         )
 
-        [:error, "remote_closed"]
+        {:error, "remote_closed"}
+
+      [^req, ["error", reason]] ->
+        {:error, reason}
 
       [^req, ["error" | rest]] ->
-        [:error | rest]
+        {:error, rest}
 
       [^req, ["response" | rest]] ->
         rest

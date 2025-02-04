@@ -178,7 +178,7 @@ defmodule DiodeClient.Shell do
 
     case account do
       # empty needs a proof as well...
-      [:error, "account does not exist"] ->
+      {:error, "account does not exist"} ->
         %Account{
           nonce: 0,
           balance: 0,
@@ -290,7 +290,7 @@ defmodule DiodeClient.Shell do
     ]
 
     case values do
-      [:error, message] ->
+      {:error, message} ->
         Logger.debug("getaccountvalues #{inspect(keys)} produced error #{inspect(message)}")
         raise "getaccountvalues #{inspect(keys)} produced error #{inspect(message)}"
 
@@ -327,10 +327,9 @@ defmodule DiodeClient.Shell do
 
   def cached_rpc(args) do
     ETSLru.fetch(ShellCache, args, fn ->
-      c = conn()
-
-      case Connection.rpc(c, args) do
-        [:error, "remote_closed"] -> Connection.rpc(conn(), args)
+      # Single retry for remote_closed
+      case Connection.rpc(conn(), args) do
+        {:error, "remote_closed"} -> Connection.rpc(conn(), args)
         ret -> ret
       end
     end)

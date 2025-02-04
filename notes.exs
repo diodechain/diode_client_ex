@@ -1,3 +1,18 @@
+# Feb 4th 2025
+
+┗━BNS owner         : 0x0530f2dfdab4860f4c0bde8a7bced46b1b76038d
+┗━BNS name[0]       : 0x5849ea89593cf65e13110690d9339c121801a45c
+  ┗━reverse-name    : knusperhaus.glmr
+  ┗━owner           : 0x0530f2dfdab4860f4c0bde8a7bced46b1b76038d
+  ┗━member          : 0x2f9881d85483f7973d80107866bec842abfc7504 Role.None
+  ┗━member          : 0x40cb2d1d56aa2a856c9998d5bbf8011e5a25b026 Role.None
+    ┗━reverse-name  : knusperhaus.diode
+  ┗━member          : 0x77aeebfbaa1a1ac390ab46b7c9e35a5bc46f07ad Role.None
+  ┗━member          : 0xa6d41640d29d9e032c9db85ddc51d6197c9bfbd1 Role.None
+  ┗━member          : 0xee5fe238bb487b8cfbffdb753c15d90697500425 Role.None
+  ┗━member          : 0x51c67925853b11be65afe9cfe2fd2313fff80b73 Role.None
+  ┗━member          : 0x0530f2dfdab4860f4c0bde8a7bced46b1b76038d Role.Owner
+
 # Aug 22nd
 DiodeClient.interface_add("example_server_interface")
 DiodeClient.Manager.get_peak(DiodeClient.Shell)
