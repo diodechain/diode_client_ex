@@ -21,7 +21,6 @@ defmodule DiodeClient.Shell do
     ETSLru,
     Hash,
     Transaction,
-    Rlp,
     Rlpx,
     ShellCache,
     Wallet
@@ -77,8 +76,7 @@ defmodule DiodeClient.Shell do
   end
 
   def send_transaction(tx = %Transaction{}) do
-    rlp = Transaction.to_rlp(tx) |> Rlp.encode!()
-    {Connection.rpc(conn(), ["sendtransaction", rlp]), tx}
+    DiodeClient.Shell.Common.send_transaction(__MODULE__, tx)
   end
 
   def create_transaction(address, function_name, types, values, opts \\ [])
@@ -357,6 +355,11 @@ defmodule DiodeClient.Shell do
 
   defp conn() do
     DiodeClient.default_conn()
+  end
+
+  def sticky_conn() do
+    DiodeClient.Manager.await()
+    DiodeClient.Manager.get_sticky_connection()
   end
 
   defp create_transaction(data, opts) do

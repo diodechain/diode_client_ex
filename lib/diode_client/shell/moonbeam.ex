@@ -15,10 +15,8 @@ defmodule DiodeClient.Shell.Moonbeam do
   alias DiodeClient.{
     ABI,
     Account,
-    Connection,
     Hash,
     MetaTransaction,
-    Rlp,
     Rlpx,
     Shell,
     Transaction,
@@ -54,13 +52,7 @@ defmodule DiodeClient.Shell.Moonbeam do
   end
 
   def send_transaction(tx = %Transaction{}) do
-    rlp = Transaction.to_rlp(tx) |> Rlp.encode!()
-    {Connection.rpc(conn(), [prefix() <> "sendtransaction", rlp]), tx}
-  end
-
-  def send_transaction(tx = %MetaTransaction{}) do
-    rlp = MetaTransaction.to_rlp(tx) |> Rlp.encode!()
-    {Connection.rpc(conn(), [prefix() <> "sendmetatransaction", rlp]), tx}
+    Shell.Common.send_transaction(__MODULE__, tx)
   end
 
   def create_transaction(address, function_name, types, values, opts \\ [])
@@ -194,10 +186,6 @@ defmodule DiodeClient.Shell.Moonbeam do
 
   defdelegate cached_rpc(args), to: DiodeClient.Shell
   defdelegate rpc(args), to: DiodeClient.Shell
-
-  defp conn() do
-    DiodeClient.default_conn()
-  end
 
   defp create_transaction(data, opts) do
     wallet = Map.get(opts, :wallet) || DiodeClient.ensure_wallet()

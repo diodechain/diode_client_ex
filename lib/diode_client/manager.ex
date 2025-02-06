@@ -3,7 +3,7 @@ defmodule DiodeClient.Manager do
   alias DiodeClient.{Connection, Manager, Rlpx}
   use GenServer
   require Logger
-  defstruct [:conns, :server_list, :waiting, :best, :peaks, :online, :shell]
+  defstruct [:conns, :server_list, :waiting, :best, :peaks, :online, :shell, :sticky]
 
   defmodule Info do
     @moduledoc false
@@ -43,6 +43,13 @@ defmodule DiodeClient.Manager do
     }
 
     {:ok, state, {:continue, :init}}
+  end
+
+  def await() do
+    if Process.whereis(__MODULE__) == nil do
+      Process.sleep(1_000)
+      await()
+    end
   end
 
   defp default_seed_keys(), do: [:eu1, :us1, :as1, :eu2, :us2, :as2]
@@ -120,6 +127,25 @@ defmodule DiodeClient.Manager do
   """
   def get_connection() do
     GenServer.call(__MODULE__, :get_connection, :infinity)
+  end
+
+  @doc """
+    get_sticky_connection is special as it will always return the same connection
+    once it has returned a connection.
+  """
+  def get_sticky_connection() do
+    Process.whereis(__MODULE__.Sticky) || resolve_sticky_connection()
+  end
+
+  defp resolve_sticky_connection() do
+    conn = GenServer.call(__MODULE__, :get_sticky_connection?)
+
+    if conn == nil do
+      Process.sleep(1_000)
+      resolve_sticky_connection()
+    else
+      conn
+    end
   end
 
   def get_connection?() do
@@ -264,18 +290,18 @@ defmodule DiodeClient.Manager do
   end
 
   defp restart_conn(key, state = %Manager{server_list: servers}) do
-    do_restart_conn(Map.get(servers, key), key, state)
+    do_restart_conn(Map.get(servers, key), state)
   end
 
-  defp do_restart_conn(nil, _key, state) do
+  defp do_restart_conn(nil, state) do
     # Can be nil if the server is not in the seed list and was dropped
     # with :drop_connection
     state
   end
 
-  defp do_restart_conn(info, key, state = %Manager{peaks: peaks, conns: conns}) do
+  defp do_restart_conn(info, state = %Manager{peaks: peaks, conns: conns}) do
     pid =
-      case Connection.start_link(info.server_url, info.ports, key) do
+      case Connection.start_link(info.server_url, info.ports) do
         {:ok, pid} ->
           Process.monitor(pid)
 
@@ -356,6 +382,32 @@ defmodule DiodeClient.Manager do
 
   def handle_call(:get_connection, _from, state = %Manager{best: best}) do
     {:reply, best, state}
+  end
+
+  def handle_call(
+        :get_sticky_connection?,
+        _from,
+        state = %Manager{sticky: sticky, online: online, best: best, conns: conns}
+      ) do
+    pid = Process.whereis(__MODULE__.Sticky)
+
+    cond do
+      pid != nil ->
+        {:reply, pid, state}
+
+      sticky != nil ->
+        Enum.find(conns, fn {_, %Info{server_url: url}} -> url == sticky end)
+        |> set_sticky(state)
+
+      best == nil or online == false ->
+        {:reply, nil, state}
+
+      true ->
+        Enum.filter(conns, fn {_, %Info{type: type}} -> type == :seed end)
+        |> Enum.sort_by(fn {_, %Info{latency: latency}} -> latency end)
+        |> List.first()
+        |> set_sticky(state)
+    end
   end
 
   def handle_call(
@@ -465,5 +517,14 @@ defmodule DiodeClient.Manager do
 
   def update_info(cpid, info) do
     GenServer.cast(__MODULE__, {:update_info, cpid, info})
+  end
+
+  defp set_sticky(nil, state) do
+    {:reply, nil, state}
+  end
+
+  defp set_sticky({pid, info}, state) do
+    Process.register(pid, __MODULE__.Sticky)
+    {:reply, pid, %Manager{state | sticky: info.server_url}}
   end
 end

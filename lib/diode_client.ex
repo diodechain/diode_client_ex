@@ -219,14 +219,8 @@ defmodule DiodeClient do
 
   @doc false
   def default_conn() do
-    case Process.whereis(DiodeClient.Manager) do
-      nil ->
-        Process.sleep(1_000)
-        default_conn()
-
-      _pid ->
-        DiodeClient.Manager.get_connection()
-    end
+    DiodeClient.Manager.await()
+    DiodeClient.Manager.get_connection()
   end
 
   @doc false

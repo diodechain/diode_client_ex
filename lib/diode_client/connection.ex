@@ -77,11 +77,8 @@ defmodule DiodeClient.Connection do
             last_ticket: nil,
             blocked: []
 
-  def start_link(server, ports, id) when is_list(ports) do
-    GenServer.start_link(__MODULE__, [server, ports],
-      name: id,
-      hibernate_after: 5_000
-    )
+  def start_link(server, ports) when is_list(ports) do
+    GenServer.start_link(__MODULE__, [server, ports], hibernate_after: 5_000)
   end
 
   @impl true
