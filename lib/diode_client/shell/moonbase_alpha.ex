@@ -19,7 +19,6 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
     MetaTransaction,
     Rlpx,
     Shell,
-    Transaction,
     Wallet
   }
 
@@ -51,9 +50,7 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
     |> send_transaction()
   end
 
-  def send_transaction(tx = %Transaction{}) do
-    Shell.Common.send_transaction(__MODULE__, tx)
-  end
+  def send_transaction(tx), do: Shell.Common.send_transaction(__MODULE__, tx)
 
   def create_transaction(address, function_name, types, values, opts \\ [])
       when is_list(types) and is_list(values) do
@@ -66,7 +63,7 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
 
     # https://solidity.readthedocs.io/en/v0.4.24/abi-spec.html
     callcode = ABI.encode_call(function_name, types, values)
-    create_transaction(callcode, opts)
+    Shell.Common.create_transaction(__MODULE__, callcode, opts)
   end
 
   @deadline 1_800_000_000
@@ -129,7 +126,12 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
   def get_account_root(address, peak \\ peak()) do
     peak_index = Rlpx.bin2uint(peak["number"])
     address = Hash.to_address(address)
-    cached_rpc([prefix() <> "getaccountroot", peak_index, address])
+
+    case cached_rpc([prefix() <> "getaccountroot", peak_index, address]) do
+      nil -> nil
+      [""] -> nil
+      [root] -> root
+    end
   end
 
   def get_account_value(address, key = <<_::256>>, peak \\ peak())
@@ -172,9 +174,7 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
     end
   end
 
-  def peak() do
-    DiodeClient.Manager.get_peak(__MODULE__)
-  end
+  def peak(), do: DiodeClient.Manager.get_peak(__MODULE__)
 
   def peak_number(peak \\ peak()) do
     Rlpx.bin2uint(peak["number"])
@@ -182,31 +182,4 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
 
   defdelegate cached_rpc(args), to: DiodeClient.Shell
   defdelegate rpc(args), to: DiodeClient.Shell
-
-  defp create_transaction(data, opts) do
-    wallet = DiodeClient.ensure_wallet()
-
-    from = Wallet.address!(wallet)
-    gas = Map.get(opts, :gas, 0x15F90)
-    gas_price = Map.get(opts, :gas_price, 0x3B9ACA00)
-    value = Map.get(opts, :value, 0x0)
-    nonce = Map.get_lazy(opts, :nonce, fn -> get_account(from).nonce end)
-
-    tx = %Transaction{
-      to: nil,
-      nonce: nonce,
-      gasPrice: gas_price,
-      gasLimit: gas,
-      value: value,
-      chain_id: chain_id()
-    }
-
-    case Map.get(opts, :to) do
-      # Contract creation
-      nil -> %Transaction{tx | init: data}
-      # Normal transaction
-      to -> %Transaction{tx | to: to, data: data}
-    end
-    |> Transaction.sign(Wallet.privkey!(wallet))
-  end
 end
