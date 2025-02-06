@@ -22,8 +22,7 @@ defmodule DiodeClient.Shell do
     Hash,
     Transaction,
     Rlpx,
-    ShellCache,
-    Wallet
+    ShellCache
   }
 
   require Logger
