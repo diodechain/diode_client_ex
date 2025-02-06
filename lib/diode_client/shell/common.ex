@@ -1,4 +1,8 @@
 defmodule DiodeClient.Shell.Common do
+  @moduledoc """
+  Common functions for the shell implementations.
+  """
+
   alias DiodeClient.{Connection, Shell, Transaction, MetaTransaction, Rlp}
 
   def send_transaction(shell, tx = %Transaction{}) do
