@@ -22,7 +22,7 @@ defmodule DiodeClient.Shell.Common do
     gas_price = Map.get(opts, :gas_price, 0x3B9ACA00)
     value = Map.get(opts, :value, 0x0)
     nonce = Map.get_lazy(opts, :nonce, fn -> shell.get_account(from).nonce end)
-    version = Map.get(opts, :version, nil)
+    version = Map.get(opts, :version, 0)
     access_list = Map.get(opts, :access_list, [])
     max_priority_fee_per_gas = Map.get(opts, :max_priority_fee_per_gas, 0)
 
