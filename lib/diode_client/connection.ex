@@ -706,11 +706,13 @@ defmodule DiodeClient.Connection do
     case rpc(pid, [shell.prefix() <> "getblockpeak"]) do
       [num] ->
         if peak == nil or to_num(num) > Block.number(peak) do
-          [block] = rpc(pid, [shell.prefix() <> "getblockheader", max(0, to_num(num) - 3)])
-          send(pid, {:peak, shell, Rlpx.list2map(block)})
+          with [block] <- rpc(pid, [shell.prefix() <> "getblockheader", max(0, to_num(num) - 3)]) do
+            send(pid, {:peak, shell, Rlpx.list2map(block)})
+            :ok
+          end
+        else
+          :ok
         end
-
-        :ok
 
       error ->
         error
