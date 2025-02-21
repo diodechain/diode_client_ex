@@ -134,6 +134,21 @@ defmodule DiodeClient.Wallet do
   def equal?(_, _) do
     false
   end
+
+  def sign(wallet, msg, algo \\ :sha) do
+    Secp256k1.sign(privkey!(wallet), msg, algo)
+  end
+
+  def verify(wallet, msg, signature, algo \\ :sha) do
+    case pubkey(wallet) do
+      {:ok, signer} ->
+        Secp256k1.verify(signer, msg, signature, algo)
+
+      {:error, nil} ->
+        signer = Secp256k1.recover!(signature, msg, algo)
+        address!(from_pubkey(signer)) == address!(wallet)
+    end
+  end
 end
 
 defimpl Inspect, for: DiodeClient.Wallet do

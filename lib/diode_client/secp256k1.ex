@@ -2,7 +2,6 @@ defmodule DiodeClient.Secp256k1 do
   @moduledoc false
   alias DiodeClient.Base16
   alias DiodeClient.{Hash, Wallet}
-  import Wallet
 
   @type private_key :: <<_::256>>
   @type compressed_public_key :: <<_::264>>
@@ -120,11 +119,8 @@ defmodule DiodeClient.Secp256k1 do
     ])
   end
 
-  def verify(public = wallet(), msg, signature, algo) do
-    signer = recover!(signature, msg, algo)
-
-    verify(signer, msg, signature, algo) &&
-      Wallet.address!(Wallet.from_pubkey(signer)) == Wallet.address!(public)
+  def verify(wallet, msg, signature, algo) when is_tuple(wallet) do
+    Wallet.verify(wallet, msg, signature, algo)
   end
 
   @spec recover!(signature(), binary(), :sha | :kec | :none) :: public_key()
