@@ -9,6 +9,18 @@ defmodule DiodeClient.ABI do
     |> :erlang.iolist_to_binary()
   end
 
+  def decode_call(name, types, encoded_call) do
+    signature = encode_spec(name, types)
+
+    case encoded_call do
+      <<^signature::binary-size(4), rest::binary>> ->
+        {:ok, decode_types(types, rest)}
+
+      _ ->
+        {:error, "Invalid signature"}
+    end
+  end
+
   def decode_types(types, data) do
     {ret, _rest} =
       Enum.reduce(types, {[], data}, fn type, {ret, rest} ->
@@ -39,8 +51,7 @@ defmodule DiodeClient.ABI do
     cond do
       type in ["string", "bytes"] ->
         {len, rest} = decode("uint256", base)
-        slots = div(len, 32) + 1
-        binary_part(rest, slots * 32 - len, len)
+        binary_part(rest, 0, len)
 
       String.starts_with?(type, "(") ->
         "(" <> tuple_def = type
@@ -162,7 +173,7 @@ defmodule DiodeClient.ABI do
   def encode(format, nil), do: encode(format, 0)
 
   # uint<M>: unsigned integer type of M bits, 0 < M <= 256, M % 8 == 0. e.g. uint32, uint8, uint256.
-  # int<M>: two’s complement signed integer type of M bits, 0 < M <= 256, M % 8 == 0.
+  # int<M>: two's complement signed integer type of M bits, 0 < M <= 256, M % 8 == 0.
   # address: equivalent to uint160, except for the assumed interpretation and language typing. For computing the function selector, address is used.
   # uint, int: synonyms for uint256, int256 respectively. For computing the function selector, uint256 and int256 have to be used.
   # bool: equivalent to uint8 restricted to the values 0 and 1. For computing the function selector, bool is used.

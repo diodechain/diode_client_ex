@@ -37,19 +37,40 @@ defmodule DiodeClient.Contracts.CallPermit do
   def dispatch(from, to, value, data, gaslimit, deadline, {v, r, s}) do
     ABI.encode_call(
       "dispatch",
-      [
-        "address",
-        "address",
-        "uint256",
-        "bytes",
-        "uint64",
-        "uint256",
-        "uint8",
-        "bytes32",
-        "bytes32"
-      ],
+      dispatch_types(),
       [from, to, value, data, gaslimit, deadline, v, r, s]
     )
+  end
+
+  def decode_dispatch(encoded_call) do
+    with {:ok, [from, to, value, data, gaslimit, deadline, v, r, s]} <-
+           ABI.decode_call("dispatch", dispatch_types(), encoded_call) do
+      %{
+        from: from,
+        to: to,
+        value: value,
+        data: data,
+        gaslimit: gaslimit,
+        deadline: deadline,
+        v: v,
+        r: r,
+        s: s
+      }
+    end
+  end
+
+  defp dispatch_types() do
+    [
+      "address",
+      "address",
+      "uint256",
+      "bytes",
+      "uint64",
+      "uint256",
+      "uint8",
+      "bytes32",
+      "bytes32"
+    ]
   end
 
   def nonces(owner) do
