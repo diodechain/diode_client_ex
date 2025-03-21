@@ -10,6 +10,7 @@ defmodule DiodeClient.ABI do
   end
 
   def decode_call(name, types, encoded_call) do
+    types = Enum.map(types, &encode_sub_spec/1)
     signature = encode_spec(name, types)
 
     case encoded_call do
@@ -102,10 +103,17 @@ defmodule DiodeClient.ABI do
 
   def encode_spec(name, types \\ []) do
     signature =
-      "#{name}(#{Enum.join(types, ",")})"
+      "#{name}#{encode_sub_spec(types)}"
       |> String.replace(" ", "")
 
     binary_part(Hash.keccak_256(signature), 0, 4)
+  end
+
+  defp encode_sub_spec(type) do
+    case type do
+      name when is_binary(name) -> name
+      list when is_list(list) -> "(" <> Enum.join(Enum.map(list, &encode_sub_spec/1), ",") <> ")"
+    end
   end
 
   def encode_call(name, types \\ [], values \\ []) do
