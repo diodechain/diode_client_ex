@@ -1,26 +1,30 @@
 defmodule DiodeClient.Base16 do
   @moduledoc false
   @spec encode(binary() | non_neg_integer(), any()) :: <<_::16, _::_*8>>
-  def encode(int, bigX \\ true)
+  def encode(int, opts \\ [])
 
-  def encode(nil, _bigX) do
+  def encode(nil, _opts) do
     "nil"
   end
 
-  def encode(int, true) when is_integer(int) do
-    "0X#{Base.encode16(:binary.encode_unsigned(int), case: :lower)}"
+  def encode(int, opts) when is_integer(int) do
+    casing = Keyword.get(opts, :case, :lower)
+    big_x = Keyword.get(opts, :big_x, false)
+
+    if big_x do
+      "0X#{Base.encode16(:binary.encode_unsigned(int), case: casing)}"
+    else
+      "0x#{Base.encode16(:binary.encode_unsigned(int), case: casing)}"
+    end
   end
 
-  def encode(int, false) when is_integer(int) do
-    "0x#{Base.encode16(:binary.encode_unsigned(int), case: :lower)}"
-  end
-
-  def encode(hex, _bigX) do
-    "0x#{Base.encode16(hex, case: :lower)}"
+  def encode(hex, opts) do
+    casing = Keyword.get(opts, :case, :lower)
+    "0x#{Base.encode16(hex, case: casing)}"
   end
 
   def prefix(some, length) do
-    case encode(some, false) do
+    case encode(some) do
       <<"0x", head::binary-size(length), _::binary>> ->
         head
 
@@ -56,11 +60,8 @@ defmodule DiodeClient.Base16 do
 
   defp do_decode(bin) do
     case rem(String.length(bin), 2) do
-      0 ->
-        Base.decode16!(bin, case: :mixed)
-
-      1 ->
-        Base.decode16!("0" <> bin, case: :mixed)
+      0 -> Base.decode16!(bin, case: :mixed)
+      1 -> Base.decode16!("0" <> bin, case: :mixed)
     end
   end
 end
