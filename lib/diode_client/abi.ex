@@ -112,7 +112,7 @@ defmodule DiodeClient.ABI do
   defp encode_sub_spec(type) do
     case type do
       name when is_binary(name) -> name
-      list when is_list(list) -> "(" <> Enum.join(Enum.map(list, &encode_sub_spec/1), ",") <> ")"
+      list when is_list(list) -> "(" <> Enum.map_join(list, ",", &encode_sub_spec/1) <> ")"
     end
   end
 
