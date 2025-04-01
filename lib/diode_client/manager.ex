@@ -3,7 +3,18 @@ defmodule DiodeClient.Manager do
   alias DiodeClient.{Connection, Manager, Rlpx}
   use GenServer
   require Logger
-  defstruct [:conns, :server_list, :waiting, :best, :peaks, :online, :shell, :sticky]
+
+  defstruct [
+    :conns,
+    :server_list,
+    :waiting,
+    :best,
+    :peaks,
+    :online,
+    :shells,
+    :sticky,
+    :best_timestamp
+  ]
 
   defmodule Info do
     @moduledoc false
@@ -38,7 +49,7 @@ defmodule DiodeClient.Manager do
       online: true,
       peaks: %{},
       server_list: seed_list(),
-      shell: DiodeClient.Shell.Moonbeam,
+      shells: MapSet.new([DiodeClient.Shell.Moonbeam, DiodeClient.Shell]),
       waiting: []
     }
 
@@ -247,7 +258,7 @@ defmodule DiodeClient.Manager do
       %Info{key: key} = Map.fetch!(conns, pid)
       Process.send_after(self(), {:restart_conn, key}, 15_000)
       state = %Manager{state | conns: Map.delete(conns, pid)}
-      {:noreply, refresh_best(state)}
+      {:noreply, update(state)}
     else
       Logger.debug("Connection down: #{inspect(pid)} #{inspect(reason)}")
       {:noreply, state}
@@ -272,7 +283,7 @@ defmodule DiodeClient.Manager do
           new_info = %{peaks: %{}} ->
             state =
               %Manager{state | conns: Map.put(conns, cpid, new_info)}
-              |> refresh_best()
+              |> update()
 
             {:noreply, state}
         end
@@ -440,66 +451,75 @@ defmodule DiodeClient.Manager do
     {:reply, :ok, state}
   end
 
-  defp connected(%Manager{conns: conns, shell: shell}) do
-    Enum.filter(Map.values(conns), fn %Info{server_address: addr, peaks: peaks} ->
-      addr != nil and Map.get(peaks, shell) != nil
+  defp connected(%Manager{conns: conns, shells: shells, peaks: peaks}) do
+    Enum.filter(Map.values(conns), fn %Info{server_address: addr, peaks: conn_peaks} ->
+      addr != nil and
+        Enum.all?(shells, fn shell ->
+          block_number(conn_peaks[shell]) >= block_number(peaks[shell])
+        end)
     end)
   end
 
-  defp refresh_best(state = %Manager{}) do
-    shells =
-      connected(state)
-      |> Enum.flat_map(fn %Info{peaks: peaks} -> Map.keys(peaks) end)
-      |> Enum.uniq()
+  def update(state) do
+    state = update_peaks(state)
+    pids = Enum.map(connected(state), fn %Info{pid: pid} -> pid end)
 
-    Enum.reduce(shells, state, fn shell, state ->
-      refresh_best(state, shell)
-    end)
+    if state.best == nil or
+         state.best not in pids or
+         System.os_time(:second) - state.best_timestamp > 30 do
+      update_best(state)
+    else
+      state
+    end
   end
 
-  defp refresh_best(state = %Manager{waiting: waiting, peaks: last_peaks, best: prev_best}, shell) do
-    connected =
-      connected(state) |> Enum.reject(fn %Info{peaks: peaks} -> Map.get(peaks, shell) == nil end)
+  defp update_peaks(state = %Manager{peaks: last_peaks, shells: shells}) do
+    connected = connected(state)
 
     # Reject single node connections
     connected = if length(connected) < min(2, map_size(seed_list())), do: [], else: connected
 
-    last_peak = Map.get(last_peaks, shell)
+    # Get the highest peak for each shell
+    peaks =
+      for shell <- shells do
+        peak =
+          Enum.map(connected, fn %Info{peaks: peaks} -> peaks[shell] end)
+          |> Enum.sort_by(&block_number/1, :desc)
+          # Security factor, we chose the lowest peak of the top 3 (e.g. 3 nodes have seen this)
+          |> Enum.take(3)
+          |> List.last()
 
-    new_peaks =
-      Enum.map(connected, fn %Info{peaks: %{^shell => peak}} -> block_number(peak) end)
-      |> Enum.sort(:desc)
-
-    # Trying to have at least three nodes available
-    min_peak = List.last(Enum.take(new_peaks, 3)) || 0
-    min_peak = max(min_peak, block_number(last_peak))
-
-    Enum.filter(connected, fn %Info{peaks: %{^shell => peak}} ->
-      block_number(peak) >= min_peak
-    end)
-    |> Enum.sort(fn %Info{latency: a}, %Info{latency: b} -> a < b end)
-    |> List.first()
-    |> case do
-      nil ->
-        if shell == state.shell do
-          %Manager{state | best: nil}
+        if block_number(peak) > block_number(last_peaks[shell]) do
+          {shell, peak}
         else
-          state
+          {shell, last_peaks[shell]}
         end
+      end
+      |> Map.new()
 
-      %Info{pid: pid, peaks: %{^shell => new_peak}, server_url: url} ->
-        peak = if block_number(new_peak) > block_number(last_peak), do: new_peak, else: last_peak
+    %Manager{state | peaks: peaks}
+  end
 
-        if shell == state.shell do
-          if prev_best != pid do
-            Logger.info("Best connection changed to #{inspect(url)}")
-          end
+  defp update_best(state = %Manager{waiting: waiting, best: prev_best}) do
+    {pid, url} =
+      connected(state)
+      # Sort by latency and return the first one
+      |> Enum.sort_by(fn %Info{latency: latency} -> latency end)
+      |> List.first()
+      |> case do
+        nil -> {nil, nil}
+        %Info{pid: pid, server_url: url} -> {pid, url}
+      end
 
-          for from <- waiting, do: GenServer.reply(from, pid)
-          %Manager{state | best: pid, waiting: [], peaks: Map.put(last_peaks, shell, peak)}
-        else
-          %Manager{state | peaks: Map.put(last_peaks, shell, peak)}
-        end
+    if prev_best != pid do
+      Logger.info("Best connection changed to #{inspect(url)}")
+    end
+
+    if pid != nil do
+      for from <- waiting, do: GenServer.reply(from, pid)
+      %Manager{state | best: pid, waiting: [], best_timestamp: System.os_time(:second)}
+    else
+      %Manager{state | best: nil}
     end
   end
 
