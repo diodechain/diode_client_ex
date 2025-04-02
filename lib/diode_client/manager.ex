@@ -500,24 +500,22 @@ defmodule DiodeClient.Manager do
     %Manager{state | peaks: peaks}
   end
 
-  defp update_best(state = %Manager{waiting: waiting, best: prev_best}) do
-    {pid, url} =
+  defp update_best(state = %Manager{waiting: waiting, best: prev_best_pid}) do
+    new_best =
       connected(state)
       # Sort by latency and return the first one
       |> Enum.sort_by(fn %Info{latency: latency} -> latency end)
-      |> List.first()
-      |> case do
-        nil -> {nil, nil}
-        %Info{pid: pid, server_url: url} -> {pid, url}
-      end
+      |> List.first() || %Info{}
 
-    if prev_best != pid do
-      Logger.info("Best connection changed to #{inspect(url)}")
+    if prev_best_pid != new_best.pid do
+      Logger.info(
+        "Best connection changed to #{inspect(new_best.server_url)} with latency #{inspect(new_best.latency)}"
+      )
     end
 
-    if pid != nil do
-      for from <- waiting, do: GenServer.reply(from, pid)
-      %Manager{state | best: pid, waiting: [], best_timestamp: System.os_time(:second)}
+    if new_best.pid != nil do
+      for from <- waiting, do: GenServer.reply(from, new_best.pid)
+      %Manager{state | best: new_best.pid, waiting: [], best_timestamp: System.os_time(:second)}
     else
       %Manager{state | best: nil}
     end

@@ -126,7 +126,7 @@ defmodule DiodeClient.Connection do
   @impl true
   def handle_continue(:init, state = %Connection{}) do
     debug("creating connection")
-    {:ok, socket} = connect(state)
+    {:ok, state, socket} = connect(state)
     server_wallet = Wallet.from_pubkey(Certs.extract(socket))
 
     :ok = :ssl.setopts(socket, active: true)
@@ -157,11 +157,14 @@ defmodule DiodeClient.Connection do
       Process.sleep(backoff)
     end
 
+    now = System.os_time(:millisecond)
+
     :ssl.connect(String.to_charlist(server), port, ssl_options(role: :client), 25_000)
     |> case do
       {:ok, socket} ->
         NetworkMonitor.close_on_down(socket, :ssl)
-        {:ok, socket}
+        state = %{state | latency: System.os_time(:millisecond) - now}
+        {:ok, state, socket}
 
       {:error, reason} ->
         debug("connect() failed: #{inspect(reason)}")
