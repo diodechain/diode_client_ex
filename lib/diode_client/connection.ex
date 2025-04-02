@@ -37,12 +37,13 @@ defmodule DiodeClient.Connection do
 
   defmodule Channel do
     @moduledoc false
+    alias DiodeClient.Connection
     defstruct [:times, :backlog]
 
     def latency(%Channel{times: queue}) do
       case :queue.peek(queue) do
         :empty -> 0
-        {:value, t} -> System.monotonic_time() - t
+        {:value, t} -> Connection.timestamp() - t
       end
     end
 
@@ -162,13 +163,13 @@ defmodule DiodeClient.Connection do
       Process.sleep(backoff)
     end
 
-    now = System.os_time(:millisecond)
+    now = timestamp()
 
     :ssl.connect(String.to_charlist(server), port, ssl_options(role: :client), 25_000)
     |> case do
       {:ok, socket} ->
         NetworkMonitor.close_on_down(socket, :ssl)
-        state = %{state | latency: System.os_time(:millisecond) - now}
+        state = %{state | latency: timestamp() - now}
         {:ok, state, socket}
 
       {:error, reason} ->
@@ -178,6 +179,10 @@ defmodule DiodeClient.Connection do
         |> update_info()
         |> connect(count + 1)
     end
+  end
+
+  def timestamp() do
+    System.os_time(:millisecond)
   end
 
   # 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584, 4181, 6765, 10946, 17711, 28657, 46368, 75025, 121393, 196418, 317811
@@ -231,9 +236,9 @@ defmodule DiodeClient.Connection do
     latency =
       if String.ends_with?(cmd, "getblockpeak") do
         if state.latency == @inital_latency do
-          System.monotonic_time() - time
+          timestamp() - time
         else
-          (9 * state.latency + (System.monotonic_time() - time)) / 10
+          (9 * state.latency + (timestamp() - time)) / 10
         end
       else
         state.latency
@@ -838,7 +843,7 @@ defmodule DiodeClient.Connection do
     req = req_id()
     rlp = Rlp.encode!([req | [data]])
 
-    call(pid, {:rpc, cmd, req, rlp, System.monotonic_time(), self()}, 120_000)
+    call(pid, {:rpc, cmd, req, rlp, timestamp(), self()}, 120_000)
     |> case do
       [^req, ["error", "remote_closed"]] ->
         Logger.warning(
@@ -861,7 +866,7 @@ defmodule DiodeClient.Connection do
   def rpc_async(pid, data = [cmd | _rest], id \\ self()) do
     req = req_id()
     rlp = Rlp.encode!([req | [data]])
-    call(pid, {:rpc_async, cmd, req, rlp, System.monotonic_time(), id})
+    call(pid, {:rpc_async, cmd, req, rlp, timestamp(), id})
   end
 
   defp call(pid, args, timeout \\ :infinity) do
@@ -883,7 +888,7 @@ defmodule DiodeClient.Connection do
   def rpc_cast(pid, data = [cmd | _rest]) do
     req = req_id()
     rlp = Rlp.encode!([req | [data]])
-    GenServer.cast(pid, {:rpc, cmd, req, rlp, System.monotonic_time(), self()})
+    GenServer.cast(pid, {:rpc, cmd, req, rlp, timestamp(), self()})
   end
 
   defp req_id() do
