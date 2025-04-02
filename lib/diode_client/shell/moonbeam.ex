@@ -24,6 +24,7 @@ defmodule DiodeClient.Shell.Moonbeam do
 
   require Logger
 
+  def block_time(), do: :timer.seconds(6)
   def chain_id(), do: 1284
   def prefix(), do: "glmr:"
   @gas_limit 10_000_000
@@ -46,7 +47,16 @@ defmodule DiodeClient.Shell.Moonbeam do
 
   def send_transaction(address, function_name, types, values, opts \\ [])
       when is_list(types) and is_list(values) do
-    create_transaction(address, function_name, types, values, opts)
+    meta_transaction = Keyword.get(opts, :meta_transaction, false)
+
+    if meta_transaction do
+      wallet = DiodeClient.ensure_wallet()
+      from = Wallet.address!(wallet)
+      nonce = Keyword.get(opts, :nonce) || get_meta_nonce(from)
+      create_meta_transaction(address, function_name, types, values, nonce, opts)
+    else
+      create_transaction(address, function_name, types, values, opts)
+    end
     |> send_transaction()
   end
 

@@ -27,6 +27,7 @@ defmodule DiodeClient.Shell do
 
   require Logger
 
+  def block_time(), do: :timer.seconds(12)
   def chain_id(), do: 15
   def prefix(), do: ""
   @gas_limit 10_000_000

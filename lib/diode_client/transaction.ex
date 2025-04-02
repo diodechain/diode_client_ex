@@ -1,6 +1,6 @@
 defmodule DiodeClient.Transaction do
   @moduledoc false
-  alias DiodeClient.{Base16, Hash, Rlp, Rlpx, Secp256k1, Transaction, Wallet}
+  alias DiodeClient.{Base16, Hash, Rlp, Rlpx, Secp256k1, Transaction, Wallet, MetaTransaction}
 
   @enforce_keys [:chain_id]
   defstruct nonce: 1,
@@ -21,6 +21,7 @@ defmodule DiodeClient.Transaction do
   @type t :: %Transaction{}
 
   def nonce(%Transaction{nonce: nonce}), do: nonce
+  def nonce(%MetaTransaction{nonce: nonce}), do: nonce
   def data(%Transaction{data: nil}), do: ""
   def data(%Transaction{data: data}), do: data
   def gas_price(%Transaction{gasPrice: gas_price}), do: gas_price
@@ -163,10 +164,8 @@ defmodule DiodeClient.Transaction do
       Secp256k1.bitcoin_to_rlp(tx.signature, tx.chain_id)
   end
 
-  @spec from(DiodeClient.Transaction.t()) :: <<_::160>>
-  def from(tx) do
-    Wallet.address!(origin(tx))
-  end
+  def from(tx = %Transaction{}), do: Wallet.address!(origin(tx))
+  def from(%MetaTransaction{from: from}), do: from
 
   @spec recover(DiodeClient.Transaction.t()) :: binary()
   def recover(tx) do
@@ -234,4 +233,10 @@ defmodule DiodeClient.Transaction do
     [tx.nonce, gas_price(tx), gas_limit(tx), tx.to, tx.value, payload(tx), chain_id, 0, 0]
     |> Rlp.encode!()
   end
+
+  def shell(%Transaction{chain_id: chain_id}), do: DiodeClient.shell_for_chain_id(chain_id)
+  def shell(%MetaTransaction{chain_id: chain_id}), do: DiodeClient.shell_for_chain_id(chain_id)
+
+  def user_nonce(tx = %Transaction{}), do: shell(tx).get_account(from(tx)).nonce
+  def user_nonce(tx = %MetaTransaction{}), do: shell(tx).get_meta_nonce(from(tx))
 end

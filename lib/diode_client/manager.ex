@@ -49,11 +49,15 @@ defmodule DiodeClient.Manager do
       online: true,
       peaks: %{},
       server_list: seed_list(),
-      shells: MapSet.new([DiodeClient.Shell.Moonbeam, DiodeClient.Shell]),
+      shells: MapSet.new(default_shells()),
       waiting: []
     }
 
     {:ok, state, {:continue, :init}}
+  end
+
+  def default_shells() do
+    [DiodeClient.Shell.Moonbeam, DiodeClient.Shell]
   end
 
   def await() do
@@ -363,7 +367,13 @@ defmodule DiodeClient.Manager do
     {:reply, conns, state}
   end
 
-  def handle_call({:get_peak, shell}, _from, state = %Manager{peaks: peaks, conns: conns}) do
+  def handle_call(
+        {:get_peak, shell},
+        _from,
+        state = %Manager{peaks: peaks, conns: conns, shells: shells}
+      ) do
+    state = %{state | shells: MapSet.put(shells, shell)}
+
     for c <- Map.keys(conns), do: GenServer.cast(c, {:subscribe, shell})
     {:reply, Map.get(peaks, shell), state}
   end
@@ -542,6 +552,7 @@ defmodule DiodeClient.Manager do
   end
 
   defp set_sticky({pid, info}, state) do
+    Logger.info("Setting sticky connection to #{inspect(info.server_url)}")
     Process.register(pid, __MODULE__.Sticky)
     {:reply, pid, %Manager{state | sticky: info.server_url}}
   end

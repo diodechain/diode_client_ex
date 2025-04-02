@@ -24,6 +24,7 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
 
   require Logger
 
+  def block_time(), do: :timer.seconds(6)
   def chain_id(), do: 1287
   def prefix(), do: "m1:"
   @gas_limit 10_000_000

@@ -128,7 +128,7 @@ defmodule DiodeClient.Contracts.BNS do
   defp maybe_extend(str, postfix), do: str <> postfix
 
   defp cast(impl, method, types, args) do
-    impl.shell.send_transaction(impl.address, method, types, args)
+    impl.shell.send_transaction(impl.address, method, types, args, meta_transaction: true)
   end
 
   defp name_to_impl(name) do
