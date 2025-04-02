@@ -7,20 +7,31 @@ defmodule DiodeClient.Base16 do
     "nil"
   end
 
-  def encode(int, opts) when is_integer(int) do
+  def encode(input, opts) do
+    opts = opts(opts)
     casing = Keyword.get(opts, :case, :lower)
     big_x = Keyword.get(opts, :big_x, false)
 
-    if big_x do
-      "0X#{Base.encode16(:binary.encode_unsigned(int), case: casing)}"
+    binary =
+      if is_integer(input) do
+        :binary.encode_unsigned(input)
+      else
+        input
+      end
+
+    if is_integer(input) and big_x do
+      "0X#{Base.encode16(binary, case: casing)}"
     else
-      "0x#{Base.encode16(:binary.encode_unsigned(int), case: casing)}"
+      "0x#{Base.encode16(binary, case: casing)}"
     end
   end
 
-  def encode(hex, opts) do
-    casing = Keyword.get(opts, :case, :lower)
-    "0x#{Base.encode16(hex, case: casing)}"
+  def opts(opts) do
+    case opts do
+      true -> [big_x: true]
+      false -> [big_x: false]
+      opts when is_list(opts) -> opts
+    end
   end
 
   def prefix(some, length) do
