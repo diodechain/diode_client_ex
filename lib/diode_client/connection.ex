@@ -128,7 +128,6 @@ defmodule DiodeClient.Connection do
 
   @impl true
   def handle_continue(:init, state = %Connection{}) do
-    debug("creating connection")
     {:ok, state, socket} = connect(state)
     server_wallet = Wallet.from_pubkey(Certs.extract(socket))
 
@@ -140,7 +139,10 @@ defmodule DiodeClient.Connection do
 
     spawn_link(fn ->
       ["ok"] = rpc(pid, ["hello", @vsn])
-      :ok = update_block(pid, state.ticket_shell, nil)
+
+      for shell <- state.shells do
+        :ok = update_block(pid, shell, nil)
+      end
     end)
 
     # Updating ets state cache
@@ -839,11 +841,12 @@ defmodule DiodeClient.Connection do
     end
   end
 
-  def rpc(pid, data = [cmd | _rest]) do
+  def rpc(pid, data = [cmd | _rest], opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 120_000)
     req = req_id()
     rlp = Rlp.encode!([req | [data]])
 
-    call(pid, {:rpc, cmd, req, rlp, timestamp(), self()}, 120_000)
+    call(pid, {:rpc, cmd, req, rlp, timestamp(), self()}, timeout)
     |> case do
       [^req, ["error", "remote_closed"]] ->
         Logger.warning(
