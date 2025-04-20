@@ -115,6 +115,7 @@ defmodule DiodeClient.Wallet do
     privkey
   end
 
+  def privkey(key) when byte_size(key) == 32, do: privkey(Wallet.from_privkey(key))
   def privkey(wallet(privkey: nil)), do: {:error, nil}
   def privkey(wallet(privkey: privkey)), do: {:ok, privkey}
 

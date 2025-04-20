@@ -1,9 +1,123 @@
 defmodule DiodeClient.EIP712 do
   @moduledoc """
     EIP-712 implementation
+
+  ## Examples
+
+      # Example 1: Using separate arguments
+      iex> domain_data = %{
+      ...>   "name" => "Ether Mail",
+      ...>   "version" => "1",
+      ...>   "chainId" => 1,
+      ...>   "verifyingContract" => DiodeClient.Base16.decode("0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"),
+      ...>   "salt" => DiodeClient.Base16.decode("0xdecafbeef")
+      ...> }
+      iex> message_types = %{
+      ...>   "Person" => [
+      ...>     %{"name" => "name", "type" => "string"},
+      ...>     %{"name" => "wallet", "type" => "address"}
+      ...>   ],
+      ...>   "Mail" => [
+      ...>     %{"name" => "from", "type" => "Person"},
+      ...>     %{"name" => "to", "type" => "Person"},
+      ...>     %{"name" => "contents", "type" => "string"}
+      ...>   ]
+      ...> }
+      iex> message_data = %{
+      ...>   "from" => %{
+      ...>     "name" => "Cow",
+      ...>     "wallet" => DiodeClient.Base16.decode("0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826")
+      ...>   },
+      ...>   "to" => %{
+      ...>     "name" => "Bob",
+      ...>     "wallet" => DiodeClient.Base16.decode("0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB")
+      ...>   },
+      ...>   "contents" => "Hello, Bob!"
+      ...> }
+      iex> hashed_message = DiodeClient.EIP712.hash_typed_data(%{
+      ...>   "types" => message_types,
+      ...>   "primaryType" => "Mail",
+      ...>   "domain" => domain_data,
+      ...>   "message" => message_data
+      ...> })
+      iex> DiodeClient.Base16.encode(hashed_message)
+      "0xc5bb16ccc59ae9a3ad1cb8343d4e3351f057c994a97656e1aff8c134e56f7530"
+
+      # Example 2: Using a single full message
+      iex> full_message = %{
+      ...>   "types" => %{
+      ...>     "EIP712Domain" => [
+      ...>       %{"name" => "name", "type" => "string"},
+      ...>       %{"name" => "version", "type" => "string"},
+      ...>       %{"name" => "chainId", "type" => "uint256"},
+      ...>       %{"name" => "verifyingContract", "type" => "address"},
+      ...>       %{"name" => "salt", "type" => "bytes32"}
+      ...>     ],
+      ...>     "Person" => [
+      ...>       %{"name" => "name", "type" => "string"},
+      ...>       %{"name" => "wallet", "type" => "address"}
+      ...>     ],
+      ...>     "Mail" => [
+      ...>       %{"name" => "from", "type" => "Person"},
+      ...>       %{"name" => "to", "type" => "Person"},
+      ...>       %{"name" => "contents", "type" => "string"}
+      ...>     ]
+      ...>   },
+      ...>   "primaryType" => "Mail",
+      ...>   "domain" => %{
+      ...>     "name" => "Ether Mail",
+      ...>     "version" => "1",
+      ...>     "chainId" => 1,
+      ...>     "verifyingContract" => DiodeClient.Base16.decode("0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"),
+      ...>     "salt" => DiodeClient.Base16.decode("0xdecafbeef")
+      ...>   },
+      ...>   "message" => %{
+      ...>     "from" => %{
+      ...>       "name" => "Cow",
+      ...>       "wallet" => DiodeClient.Base16.decode("0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826")
+      ...>     },
+      ...>     "to" => %{
+      ...>       "name" => "Bob",
+      ...>       "wallet" => DiodeClient.Base16.decode("0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB")
+      ...>     },
+      ...>     "contents" => "Hello, Bob!"
+      ...>   }
+      ...> }
+      iex> hashed_message = DiodeClient.EIP712.hash_typed_data(full_message)
+      iex> DiodeClient.Base16.encode(hashed_message)
+      "0xc5bb16ccc59ae9a3ad1cb8343d4e3351f057c994a97656e1aff8c134e56f7530"
+
+  .. _EIP-712: https://eips.ethereum.org/EIPS/eip-712
   """
-  alias DiodeClient.{ABI, Hash}
+  alias DiodeClient.{ABI, Hash, Wallet}
   defstruct [:primary_type, :types, :message]
+
+  def sign_typed_data(account_wallet, %{
+        "types" => types,
+        "primaryType" => primary_type,
+        "domain" => domain,
+        "message" => message
+      }) do
+    digest =
+      hash_typed_data(%{
+        "types" => types,
+        "primaryType" => primary_type,
+        "domain" => domain,
+        "message" => message
+      })
+
+    Wallet.sign(account_wallet, digest, :none)
+  end
+
+  def hash_typed_data(%{
+        "types" => types,
+        "primaryType" => primary_type,
+        "domain" => domain,
+        "message" => message
+      }) do
+    domain_separator = hash_domain_separator(domain)
+    encode(domain_separator, primary_type, types, message)
+  end
 
   def encode(domain_separator, primary_type, type_data, message) do
     Hash.keccak_256(
@@ -21,9 +135,12 @@ defmodule DiodeClient.EIP712 do
     prefix = encode_single_type(primary_type, Map.get(type_data, primary_type))
 
     types =
-      Enum.map(type_data[primary_type], fn
-        {_name, type} -> type
-        {_name, type, _value} -> type
+      Enum.map(type_data[primary_type], fn field ->
+        case field do
+          %{"type" => type} -> type
+          {_, type} -> type
+          {_, type, _} -> type
+        end
       end)
       |> Enum.uniq()
 
@@ -40,9 +157,12 @@ defmodule DiodeClient.EIP712 do
 
   def encode_single_type(type, fields) do
     names =
-      Enum.map(fields, fn
-        {name, type} -> "#{type} #{name}"
-        {name, type, _value} -> "#{type} #{name}"
+      Enum.map(fields, fn field ->
+        case field do
+          %{"name" => name, "type" => type} -> "#{type} #{name}"
+          {name, type} -> "#{type} #{name}"
+          {name, type, _} -> "#{type} #{name}"
+        end
       end)
 
     type <> "(" <> Enum.join(names, ",") <> ")"
@@ -60,10 +180,19 @@ defmodule DiodeClient.EIP712 do
 
   def hash_struct(primary_type, type_data, message) do
     encode_data =
-      Enum.map_join(type_data[primary_type], fn {name, type} when is_binary(type) ->
+      Enum.map(type_data[primary_type], fn field ->
+        {name, type} =
+          case field do
+            %{"name" => name, "type" => type} -> {name, type}
+            {name, type} -> {name, type}
+          end
+
         value = Map.get(message, name)
 
         cond do
+          value == nil ->
+            raise "value for #{name} is required"
+
           type == "bytes" or type == "string" ->
             ABI.encode("bytes32", Hash.keccak_256(value))
 
@@ -74,19 +203,44 @@ defmodule DiodeClient.EIP712 do
             ABI.encode(type, value)
         end
       end)
+      |> Enum.filter(fn data -> data != nil end)
+      |> Enum.join()
 
     Hash.keccak_256(type_hash(primary_type, type_data) <> encode_data)
+  end
+
+  def hash_domain_separator(values) do
+    domain_fields =
+      [
+        {"name", "string"},
+        {"version", "string"},
+        {"chainId", "uint256"},
+        {"verifyingContract", "address"},
+        {"salt", "bytes32"}
+      ]
+      |> Enum.filter(fn {name, _} -> Map.has_key?(values, name) end)
+
+    hash_struct("EIP712Domain", %{"EIP712Domain" => domain_fields}, values)
   end
 
   def hash_domain_separator(name, version, chain_id, verifying_contract)
       when is_binary(name) and is_binary(version) and is_integer(chain_id) and
              is_binary(verifying_contract) do
-    hash_struct("EIP712Domain", [
-      {"name", "string", name},
-      {"version", "string", version},
-      {"chainId", "uint256", chain_id},
-      {"verifyingContract", "address", verifying_contract}
-    ])
+    hash_domain_separator(%{
+      "name" => name,
+      "version" => version,
+      "chainId" => chain_id,
+      "verifyingContract" => verifying_contract
+    })
+  end
+
+  def hash_domain_separator(name, version, chain_id)
+      when is_binary(name) and is_binary(version) and is_integer(chain_id) do
+    hash_domain_separator(%{
+      "name" => name,
+      "version" => version,
+      "chainId" => chain_id
+    })
   end
 
   defp split_fields(fields) do

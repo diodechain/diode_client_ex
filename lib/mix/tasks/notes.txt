@@ -1,0 +1,15 @@
+https://diode.foundation/docs/programs/bandwidth_growth_program.html
+
+
+=100 DIODE
+= 10 DIODE + Bandwidth
+= 10 DIODE
+
+
+
+=>user_data.txt hierarchy.txt
+=>
+
+....
+
+... | 

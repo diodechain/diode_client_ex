@@ -73,6 +73,10 @@ defmodule DiodeClient.MixProject do
       {:network_monitor, "~> 1.1"},
       {:profiler, "~> 0.1"},
       # {:libsecp256k1, github: "diodechain/libsecp256k1"},
+      {:deoxysii, "~> 1.0"},
+      {:curve25519, "~> 1.0"},
+      {:cbor, "~> 1.0"},
+      {:pure_erlsha2, "~> 2.2"},
 
       # Linting
       {:credo, "~> 1.5", only: [:dev, :test], runtime: false},
