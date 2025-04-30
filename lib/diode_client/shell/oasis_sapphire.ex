@@ -6,7 +6,10 @@ defmodule DiodeClient.Shell.OasisSapphire do
   alias DiodeClient.{
     ABI,
     Account,
+    Base16,
+    Block,
     Hash,
+    Transaction,
     MetaTransaction,
     Rlpx,
     Shell,
@@ -15,7 +18,8 @@ defmodule DiodeClient.Shell.OasisSapphire do
 
   require Logger
 
-  def chain_id(), do: 23294
+  def block_time(), do: :timer.seconds(6)
+  def chain_id(), do: 23_294
   def prefix(), do: "sapphire:"
   @gas_limit 10_000_000
 
@@ -161,6 +165,77 @@ defmodule DiodeClient.Shell.OasisSapphire do
             value
           end
         end)
+    end
+  end
+
+  def oasis_call_data_public_key() do
+    with [json] <- rpc([prefix() <> "rpc", "oasis_callDataPublicKey", "[]"]) do
+      Jason.decode!(json)["result"]
+    end
+  end
+
+  def oasis_call(transaction, block \\ nil) do
+    block = block || peak()
+    block = get_block_header(Block.number(block) - 1)
+    block_number = Rlpx.bin2uint(block["number"]) + 1
+    block_hash = block["block_hash"]
+
+    opts = [
+      gasLimit: transaction.gasLimit,
+      to: transaction.to,
+      nonce: transaction.nonce,
+      block_number: block_number,
+      block_hash: block_hash,
+      from: Transaction.from(transaction)
+    ]
+
+    call =
+      DiodeClient.OasisSapphire.new_signed_call_data_pack(
+        DiodeClient.ensure_wallet(),
+        transaction.data,
+        opts
+      )
+
+    params =
+      [
+        %{
+          from: Base16.encode(Transaction.from(transaction)),
+          to: Base16.encode(transaction.to),
+          value: Base16.encode(transaction.value, short: true),
+          data: Base16.encode(call.data_pack),
+          gas: Base16.encode(call.msg["gasLimit"], short: true),
+          gasPrice: Base16.encode(call.msg["gasPrice"], short: true)
+        },
+        Base16.encode(block_number + 1)
+      ]
+      |> Jason.encode!()
+
+    with [json] <- cached_rpc([prefix() <> "rpc", "eth_call", params]),
+         {:ok, %{"result" => result}} <- Jason.decode(json),
+         cbor <-
+           DiodeClient.OasisSapphire.decrypt_data_pack_response(call, Base16.decode(result)),
+         {:ok, %{"ok" => %CBOR.Tag{value: data}}, ""} <- CBOR.decode(cbor) do
+      Base16.encode(data)
+    end
+  end
+
+  def call(transaction) do
+    params =
+      [
+        %{
+          from: Base16.encode(Transaction.from(transaction)),
+          to: Base16.encode(transaction.to),
+          value: Base16.encode(transaction.value, short: true),
+          data: Base16.encode(transaction.data),
+          gas: Base16.encode(transaction.gasLimit, short: true),
+          gasPrice: Base16.encode(transaction.gasPrice, short: true)
+        },
+        "latest"
+      ]
+      |> Jason.encode!()
+
+    with [json] <- cached_rpc([prefix() <> "rpc", "eth_call", params]) do
+      Jason.decode!(json)["result"]
     end
   end
 

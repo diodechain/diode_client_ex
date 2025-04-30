@@ -178,6 +178,15 @@ defmodule DiodeClient.ABI do
     {List.duplicate("bytes32", length(values)), values, encode("uint", byte_size(value))}
   end
 
+  def optimal_type_size(type) do
+    case type do
+      "bytes" -> nil
+      "bytes" <> size -> String.to_integer(size)
+      "address" -> 20
+      _ -> nil
+    end
+  end
+
   def encode(format, nil), do: encode(format, 0)
 
   # uint<M>: unsigned integer type of M bits, 0 < M <= 256, M % 8 == 0. e.g. uint32, uint8, uint256.
@@ -196,7 +205,7 @@ defmodule DiodeClient.ABI do
       Code.string_to_quoted("""
         def encode("uint#{bit * 8}", value), do: <<value :: unsigned-size(256)>>
         def encode("int#{bit * 8}", value), do: <<value :: signed-size(256)>>
-        def encode("bytes#{bit}", <<value :: binary>>), do: <<:binary.decode_unsigned(value) :: unsigned-size(256)>>
+        def encode("bytes#{bit}", <<value :: binary>>) when byte_size(value) <= #{bit}, do: <<:binary.decode_unsigned(value) :: unsigned-size(256)>>
         def encode("bytes#{bit}", value) when is_integer(value), do: <<value :: unsigned-size(256)>>
       """)
     )
@@ -205,7 +214,10 @@ defmodule DiodeClient.ABI do
   def encode("uint", value), do: encode("uint256", value)
   def encode("int", value), do: encode("int256", value)
   def encode("address", value) when is_integer(value), do: encode("uint160", value)
-  def encode("address", value) when is_binary(value), do: encode("bytes20", value)
+
+  def encode("address", value) when is_binary(value) and byte_size(value) <= 20,
+    do: encode("bytes20", value)
+
   def encode("address", value = wallet()), do: encode("bytes20", Wallet.address!(value))
   def encode("bool", true), do: encode("uint8", 1)
   def encode("bool", false), do: encode("uint8", 0)

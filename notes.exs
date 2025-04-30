@@ -1,3 +1,18 @@
+# May 2nd 2025
+
+contract = DiodeClient.Base16.decode("0xBc07eF1b0B79e2D41D82CD940C1e79DCf3F1A0F9")
+tx = DiodeClient.Shell.OasisSapphire.create_transaction(contract, "Version", [], [])
+DiodeClient.Shell.OasisSapphire.oasis_call(tx)
+
+
+```bash
+export host=https://sapphire.oasis.io
+curl -k -H "Content-Type: application/json"  -X POST --data '{"jsonrpc":"2.0","method":"eth_call","params":[{"from": "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A", "value": "0x0", "to": "0xBc07eF1b0B79e2D41D82CD940C1e79DCf3F1A0F9", "data": "0xa36464617461a264626f6479a462706b5820774605fdf528dfa0cc7da0c92daf2a6cc711bc45a422311b378d031c82c19c506464617461581b344d40cf5152fa41f385b1f938f74c6d3bf4936e4435757ff762af6565706f6368199ed6656e6f6e63654ff4070095899c96c4e767d329f526b466666f726d617401656c65617368a4656e6f6e6365006a626c6f636b5f6861736858204a90b69a09be2bc87c7b6371f6c78be8aeb42d001341ffa98ac993811527ae606b626c6f636b5f72616e67650f6c626c6f636b5f6e756d6265721a0084aada697369676e617475726558414a45b184c2feaecde6246feabae2e9843d8c7b1ac448af3223c15b6d4b9e768619089e1178ac87f13a75f1db74ad266c12ab8656639741e93c16f16cff6ded461c", "gas": "0x1c9c380", "gasPrice": "0x174876e800"}, "0x84AADB"],"id":74}' $host
+
+curl -k -H "Content-Type: application/json"  -X POST --data '{"jsonrpc":"2.0","method":"eth_call","params":[{"from": "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A", "value": "0x0", "to": "0xBc07eF1b0B79e2D41D82CD940C1e79DCf3F1A0F9", "data": "0xa36464617461a264626f6479a46464617461581b344d40cf5152fa41f385b1f938f74c6d3bf4936e4435757ff762af6565706f6368199ed6656e6f6e63654ff4070095899c96c4e767d329f526b462706b5820774605fdf528dfa0cc7da0c92daf2a6cc711bc45a422311b378d031c82c19c5066666f726d617401656c65617368a46a626c6f636b5f6861736858204a90b69a09be2bc87c7b6371f6c78be8aeb42d001341ffa98ac993811527ae606c626c6f636b5f6e756d6265721a0084aada6b626c6f636b5f72616e67650f656e6f6e636500697369676e617475726558414a45b184c2feaecde6246feabae2e9843d8c7b1ac448af3223c15b6d4b9e768619089e1178ac87f13a75f1db74ad266c12ab8656639741e93c16f16cff6ded461c", "gas": "0x1c9c380", "gasPrice": "0x174876e800"}, "0x84AADB"],"id":74}' $host
+
+```
+
 {'types': {'EIP712Domain': [{'name': 'name', 'type': 'string'}, {'name': 'version', 'type': 'string'}, {'name': 'chainId', 'type': 'uint256'}], 'Call': [{'name': 'from', 'type': 'address'}, {'name': 'to', 'type': 'address'}, {'name': 'gasLimit', 'type': 'uint64'}, {'name': 'gasPrice', 'type': 'uint256'}, {'name': 'value', 'type': 'uint256'}, {'name': 'data', 'type': 'bytes'}, {'name': 'leash', 'type': 'Leash'}], 'Leash': [{'name': 'nonce', 'type': 'uint64'}, {'name': 'blockNumber', 'type': 'uint64'}, {'name': 'blockHash', 'type': 'bytes32'}, {'name': 'blockRange', 'type': 'uint64'}]}, 'primaryType': 'Call', 'domain': {'name': 'oasis-runtime-sdk/evm: signed query', 'version': '1.0.0', 'chainId': 23294}, 'message': {'from': '0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A', 'to': '0xBc07eF1b0B79e2D41D82CD940C1e79DCf3F1A0F9', 'value': '0x0', 'gasLimit': 30000000, 'gasPrice': 100000000000, 'data': b'\xbbb\x86\r', 'leash': {'nonce': 0, 'blockNumber': 8664283, 'blockHash': b'\x0f/\xab\xc0\xd2\xff\x12N6\xa6\x90\x85X\xd7\x92aG\xa0\xe7\x83ra\xd9\xdb\x86\xaaz2\x043\xb9\x89', 'blockRange': 15}}}
 
 # Apr 29th 2025
@@ -27,8 +42,8 @@ client = DiodeClient.address()
 client_hex = DiodeClient.Base16.encode(client)
 
 nonce = 0
-block_number = 8664039
-block_hash = <<41, 60, 197, 40, 221, 31, 127, 70, 206, 237, 184, 134, 161, 201, 188, 130, 6, 94, 17, 110, 184, 71, 46, 72, 35, 112, 15, 123, 240, 188, 232, 207>>
+block_number = 8694491
+block_hash = DiodeClient.Base16.decode("0x4a90b69a09be2bc87c7b6371f6c78be8aeb42d001341ffa98ac993811527ae60")
 opts = [
   gasLimit: 10_000_000,
   to: contract,
@@ -43,6 +58,8 @@ call = DiodeClient.Contracts.OasisSapphire.new_signed_call_data_pack(DiodeClient
 call_hex = DiodeClient.Base16.encode(call.data_pack)
 CBOR.decode(call.data_pack)
 rpc = "https://sapphire.oasis.io"
+
+IO.puts("cast " <> Enum.join(["call", contract_hex, "--data", call_hex, "--rpc-url", rpc, "--from", client_hex, "-b", "#{block_number}", "--gas-limit", "#{call.msg["gasLimit"]}", "--gas-price", "#{call.msg["gasPrice"]}"], " "))
 System.cmd("cast", ["call", contract_hex, "--data", call_hex, "--rpc-url", rpc, "--from", client_hex, "-b", "#{block_number}", "--gas-limit", "#{call.msg["gasLimit"]}", "--gas-price", "#{call.msg["gasPrice"]}"])
 
 System.cmd("cast", ["call", contract_hex, "--data", data_hex, "--rpc-url", rpc, "--from", client_hex, "-b", "#{block_number}", "--gas-limit", "#{call.msg["gasLimit"]}", "--gas-price", "#{call.msg["gasPrice"]}"])

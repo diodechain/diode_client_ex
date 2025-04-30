@@ -9,8 +9,8 @@ defmodule DiodeClient.EIP712 do
       ...>   "name" => "Ether Mail",
       ...>   "version" => "1",
       ...>   "chainId" => 1,
-      ...>   "verifyingContract" => DiodeClient.Base16.decode("0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"),
-      ...>   "salt" => DiodeClient.Base16.decode("0xdecafbeef")
+      ...>   "verifyingContract" => "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC",
+      ...>   "salt" => "decafbeef"
       ...> }
       iex> message_types = %{
       ...>   "Person" => [
@@ -26,11 +26,11 @@ defmodule DiodeClient.EIP712 do
       iex> message_data = %{
       ...>   "from" => %{
       ...>     "name" => "Cow",
-      ...>     "wallet" => DiodeClient.Base16.decode("0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826")
+      ...>     "wallet" => "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"
       ...>   },
       ...>   "to" => %{
       ...>     "name" => "Bob",
-      ...>     "wallet" => DiodeClient.Base16.decode("0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB")
+      ...>     "wallet" => "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
       ...>   },
       ...>   "contents" => "Hello, Bob!"
       ...> }
@@ -68,17 +68,17 @@ defmodule DiodeClient.EIP712 do
       ...>     "name" => "Ether Mail",
       ...>     "version" => "1",
       ...>     "chainId" => 1,
-      ...>     "verifyingContract" => DiodeClient.Base16.decode("0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"),
-      ...>     "salt" => DiodeClient.Base16.decode("0xdecafbeef")
+      ...>     "verifyingContract" => "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC",
+      ...>     "salt" => "decafbeef"
       ...>   },
       ...>   "message" => %{
       ...>     "from" => %{
       ...>       "name" => "Cow",
-      ...>       "wallet" => DiodeClient.Base16.decode("0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826")
+      ...>       "wallet" => "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"
       ...>     },
       ...>     "to" => %{
       ...>       "name" => "Bob",
-      ...>       "wallet" => DiodeClient.Base16.decode("0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB")
+      ...>       "wallet" => "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
       ...>     },
       ...>     "contents" => "Hello, Bob!"
       ...>   }
@@ -89,7 +89,7 @@ defmodule DiodeClient.EIP712 do
 
   .. _EIP-712: https://eips.ethereum.org/EIPS/eip-712
   """
-  alias DiodeClient.{ABI, Hash, Wallet}
+  alias DiodeClient.{ABI, Base16, Hash, Wallet}
   defstruct [:primary_type, :types, :message]
 
   def sign_typed_data(account_wallet, %{
@@ -109,20 +109,27 @@ defmodule DiodeClient.EIP712 do
     Wallet.sign(account_wallet, digest, :none)
   end
 
-  def hash_typed_data(%{
-        "types" => types,
-        "primaryType" => primary_type,
-        "domain" => domain,
-        "message" => message
-      }) do
+  def hash_typed_data(
+        %{
+          "types" => types,
+          "primaryType" => primary_type,
+          "domain" => domain,
+          "message" => message
+        },
+        opts \\ []
+      ) do
     domain_separator = hash_domain_separator(domain)
-    encode(domain_separator, primary_type, types, message)
+    encode(domain_separator, primary_type, types, message, opts)
   end
 
-  def encode(domain_separator, primary_type, type_data, message) do
-    Hash.keccak_256(
-      "\x19\x01" <> domain_separator <> hash_struct(primary_type, type_data, message)
-    )
+  def encode(domain_separator, primary_type, type_data, message, opts \\ []) do
+    raw = "\x19\x01" <> domain_separator <> hash_struct(primary_type, type_data, message)
+
+    if opts[:dump] == true do
+      raw
+    else
+      Hash.keccak_256(raw)
+    end
   end
 
   # Special case for a flat EIP712 (no nested user types)
@@ -188,6 +195,7 @@ defmodule DiodeClient.EIP712 do
           end
 
         value = Map.get(message, name)
+        optimal_size = ABI.optimal_type_size(type)
 
         cond do
           value == nil ->
@@ -195,6 +203,13 @@ defmodule DiodeClient.EIP712 do
 
           type == "bytes" or type == "string" ->
             ABI.encode("bytes32", Hash.keccak_256(value))
+
+          optimal_size != nil and byte_size(value) == optimal_size * 2 + 2 ->
+            ABI.encode(type, Base16.decode(value))
+
+          optimal_size != nil and type != "address" and byte_size(value) < optimal_size ->
+            value = value <> :binary.copy(<<0>>, optimal_size - byte_size(value))
+            ABI.encode(type, value)
 
           Map.has_key?(type_data, type) ->
             hash_struct(type, type_data, value)

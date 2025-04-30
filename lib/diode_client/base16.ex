@@ -11,6 +11,7 @@ defmodule DiodeClient.Base16 do
     opts = opts(opts)
     casing = Keyword.get(opts, :case, :lower)
     big_x = Keyword.get(opts, :big_x, false)
+    short = Keyword.get(opts, :short, false)
 
     binary =
       if is_integer(input) do
@@ -19,11 +20,26 @@ defmodule DiodeClient.Base16 do
         input
       end
 
-    if is_integer(input) and big_x do
-      "0X#{Base.encode16(binary, case: casing)}"
-    else
-      "0x#{Base.encode16(binary, case: casing)}"
-    end
+    data = Base.encode16(binary, case: casing)
+
+    data =
+      if short do
+        case String.trim_leading(data, "0") do
+          "" -> "0"
+          data -> data
+        end
+      else
+        data
+      end
+
+    prefix =
+      if is_integer(input) and big_x do
+        "0X"
+      else
+        "0x"
+      end
+
+    prefix <> data
   end
 
   def opts(opts) do
