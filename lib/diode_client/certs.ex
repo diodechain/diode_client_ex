@@ -49,7 +49,7 @@ defmodule DiodeClient.Certs do
 
   @spec keywords([any()], any()) :: keyword()
   def keywords(record_def, record) do
-    zip = List.zip([record_def, :lists.seq(1, length(record_def))])
+    zip = Enum.zip([record_def, :lists.seq(1, length(record_def))])
 
     Keyword.new(zip, fn {{key, _default}, idx} ->
       {key, elem(record, idx)}

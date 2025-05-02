@@ -89,7 +89,7 @@ defmodule DiodeClient.Contracts.Zone do
 
     owner = owner(shell, address, block)
 
-    List.zip([members, roles])
+    Enum.zip([members, roles])
     |> Map.new()
     |> Map.put(owner, Role.Owner)
     |> Map.to_list()
