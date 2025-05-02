@@ -73,6 +73,7 @@ defmodule DiodeClient.MixProject do
       {:network_monitor, "~> 1.1"},
       {:profiler, "~> 0.1"},
       # {:libsecp256k1, github: "diodechain/libsecp256k1"},
+      {:jason, "~> 1.2"},
       {:deoxysii, "~> 1.0"},
       {:curve25519, "~> 1.0"},
       {:cbor, "~> 1.0"},
