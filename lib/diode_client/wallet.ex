@@ -78,6 +78,7 @@ defmodule DiodeClient.Wallet do
   @spec address(Wallet.t()) :: {:error, nil} | {:ok, <<_::160>>}
   def address(wallet(address: nil)), do: {:error, nil}
   def address(wallet(address: address)), do: {:ok, address}
+  def address(address = <<_::160>>), do: {:ok, address}
 
   def printable(nil), do: "nil"
 
@@ -98,6 +99,7 @@ defmodule DiodeClient.Wallet do
     pubkey
   end
 
+  def pubkey(<<_::160>>), do: {:error, nil}
   def pubkey(wallet(pubkey: nil)), do: {:error, nil}
   def pubkey(wallet(pubkey: pubkey)), do: {:ok, pubkey}
 
