@@ -1,3 +1,24 @@
+# May 6th 2025
+DiodeClient.ensure_wallet()
+addr = DiodeClient.Contracts.Factory.identity_address(DiodeClient.Shell.OasisSapphire)
+addr2 = DiodeClient.Contracts.Factory.identity_address_call(DiodeClient.Shell.OasisSapphire)
+DiodeClient.Contracts.BNS.register("diodetest-sapphire.sapphire", addr)
+
+identity = DiodeClient.Contracts.Factory.identity_address(DiodeClient.Shell.OasisSapphire)
+identity_hex = DiodeClient.Base16.encode(identity)
+DiodeClient.Shell.OasisSapphire.call(identity, "Version", [], [])
+
+
+DiodeClient.Shell.OasisSapphire.get_meta_nonce(DiodeClient.address())
+
+
+DiodeClient.Shell.OasisSapphire.get_meta_nonce(DiodeClient.address())
+
+
+DiodeClient.Contracts.BNS.resolve_name("diodetest-sapphire.sapphire")
+
+
+
 # May 2nd 2025
 
 contract = DiodeClient.Base16.decode("0xBc07eF1b0B79e2D41D82CD940C1e79DCf3F1A0F9")

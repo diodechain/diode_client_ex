@@ -3,7 +3,24 @@ defmodule DiodeClient.Shell.Common do
   Common functions for the shell implementations.
   """
 
-  alias DiodeClient.{Connection, Shell, Transaction, MetaTransaction, Rlp, Wallet}
+  require Logger
+
+  alias DiodeClient.{
+    ABI,
+    Base16,
+    Connection,
+    Shell,
+    Transaction,
+    MetaTransaction,
+    Rlp,
+    Wallet,
+    IdentityRequest
+  }
+
+  def send_transaction(shell, tx = %IdentityRequest{}) do
+    rlp = IdentityRequest.to_rlp(tx) |> Rlp.encode!()
+    {Connection.rpc(Shell.sticky_conn(), [shell.prefix() <> "sendmetatransaction", rlp]), tx}
+  end
 
   def send_transaction(shell, tx = %Transaction{}) do
     rlp = Transaction.to_rlp(tx) |> Rlp.encode!()
@@ -18,7 +35,7 @@ defmodule DiodeClient.Shell.Common do
   def create_transaction(shell, data, opts) do
     wallet = Map.get(opts, :wallet) || DiodeClient.ensure_wallet()
     from = Wallet.address!(wallet)
-    gas = Map.get(opts, :gas, 0x15F90)
+    gas = Map.get(opts, :gas, 0x15F900)
     gas_price = Map.get(opts, :gas_price, 0x3B9ACA00)
     value = Map.get(opts, :value, 0x0)
     nonce = Map.get_lazy(opts, :nonce, fn -> shell.get_account(from).nonce end)
@@ -38,12 +55,67 @@ defmodule DiodeClient.Shell.Common do
       max_priority_fee_per_gas: max_priority_fee_per_gas
     }
 
-    case Map.get(opts, :to) do
-      # Contract creation
-      nil -> %Transaction{tx | init: data}
-      # Normal transaction
-      to -> %Transaction{tx | to: to, data: data}
+    tx =
+      case Map.get(opts, :to) do
+        # Contract creation
+        nil -> %Transaction{tx | init: data}
+        # Normal transaction
+        to -> %Transaction{tx | to: to, data: data}
+      end
+
+    if Map.get(opts, :sign, true) do
+      Transaction.sign(tx, Wallet.privkey!(wallet))
+    else
+      tx
     end
-    |> Transaction.sign(Wallet.privkey!(wallet))
+  end
+
+  def call(shell, address, method, types, args, opts \\ []) do
+    opts = Map.merge(Map.new(opts), %{to: address, sign: false})
+    tx = create_transaction(shell, ABI.encode_call(method, types, args), opts)
+    call(shell, tx, Map.get(opts, :block, "latest"))
+  end
+
+  def call(shell, transaction, block) do
+    block =
+      case block do
+        nil ->
+          "latest"
+
+        "latest" ->
+          "latest"
+
+        block when is_integer(block) ->
+          Base16.encode(block, short: true)
+
+        block when is_map(block) ->
+          Base16.encode(DiodeClient.Block.number(block), short: true)
+          # block -> block
+      end
+
+    params =
+      [
+        %{
+          from: Base16.encode(Transaction.from(transaction) || DiodeClient.address()),
+          to: Base16.encode(transaction.to),
+          value: Base16.encode(transaction.value, short: true),
+          data: Base16.encode(transaction.data),
+          gas: Base16.encode(transaction.gasLimit, short: true),
+          gasPrice: Base16.encode(transaction.gasPrice, short: true)
+        },
+        block
+      ]
+      |> Jason.encode!()
+
+    with [json] <- DiodeClient.Shell.cached_rpc([shell.prefix() <> "rpc", "eth_call", params]) do
+      case Jason.decode!(json) do
+        %{"result" => result} ->
+          result
+
+        %{"error" => error} ->
+          Logger.error("Error #{shell.prefix()}.eth_call: #{inspect(error)}")
+          nil
+      end
+    end
   end
 end

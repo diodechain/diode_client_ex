@@ -30,8 +30,20 @@ defmodule DiodeClient.Contracts.BNS do
         address: Hash.to_address(0x8A093E3A83F63A00FFFC4729AA55482845A49294),
         shell: DiodeClient.Shell.Moonbeam,
         postfix: "glmr"
+      },
+      %Impl{
+        address: Hash.to_address(0xBC7A66A80E760DD0D84F6E39DF6CFD937C6C94F6),
+        shell: DiodeClient.Shell.OasisSapphire,
+        postfix: "sapphire"
       }
     ]
+  end
+
+  def all_names_length(shell, block \\ nil) do
+    impl = Enum.find(impls(), fn impl -> impl.shell == shell end)
+
+    call(impl, "AllNamesLength", [], [], block: block)
+    |> :binary.decode_unsigned()
   end
 
   def is_bns(address) do
@@ -66,9 +78,14 @@ defmodule DiodeClient.Contracts.BNS do
 
   def resolve_name(name, block) do
     {impl, name} = name_to_impl(name)
-    name_hash = Hash.keccak_256(name)
-    base = Hash.to_bytes32(@slot_names)
-    address(impl.shell, impl.address, Hash.keccak_256(name_hash <> base), block)
+
+    if impl.shell == DiodeClient.Shell do
+      name_hash = Hash.keccak_256(name)
+      base = Hash.to_bytes32(@slot_names)
+      address(impl.shell, impl.address, Hash.keccak_256(name_hash <> base), block)
+    else
+      call(impl, "Resolve", ["string"], [name], block: block)
+    end
   end
 
   def resolve_name_owner(name, block \\ nil) do
@@ -129,6 +146,11 @@ defmodule DiodeClient.Contracts.BNS do
 
   defp cast(impl, method, types, args) do
     impl.shell.send_transaction(impl.address, method, types, args, meta_transaction: true)
+  end
+
+  defp call(impl, method, types, args, opts) do
+    impl.shell.call(impl.address, method, types, args, opts)
+    |> DiodeClient.Base16.decode()
   end
 
   defp name_to_impl(name) do

@@ -181,6 +181,10 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
     Rlpx.bin2uint(peak["number"])
   end
 
+  def call(address, method, types, args, opts \\ []) do
+    DiodeClient.Shell.Common.call(__MODULE__, address, method, types, args, opts)
+  end
+
   defdelegate cached_rpc(args), to: DiodeClient.Shell
   defdelegate rpc(args), to: DiodeClient.Shell
 end

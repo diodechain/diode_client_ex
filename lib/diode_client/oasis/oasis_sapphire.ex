@@ -3,7 +3,7 @@ defmodule DiodeClient.OasisSapphire do
     Oasis Sapphire Query Call Signing
     https://github.com/oasisprotocol/sapphire-contracts/blob/main/contracts/CallPermit.sol
   """
-  alias DiodeClient.{Base16, EIP712, TestValues}
+  alias DiodeClient.{EIP712, TestValues}
   alias DiodeClient.Oasis.{OrderedMap, TransportCipher}
 
   @default_gas_limit 30_000_000
@@ -122,7 +122,7 @@ defmodule DiodeClient.OasisSapphire do
 
     key =
       TestValues.get(:oasis_peer_pubkey) ||
-        Base16.decode(DiodeClient.Shell.OasisSapphire.oasis_call_data_public_key()["key"])
+        DiodeClient.Shell.OasisSapphire.oasis_call_data_public_key()["key"]
 
     {key, epoch}
   end

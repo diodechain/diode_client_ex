@@ -231,7 +231,18 @@ defmodule DiodeClient do
     end
   end
 
-  for shell <- [DiodeClient.Shell, DiodeClient.Shell.Moonbeam, DiodeClient.Shell.MoonbaseAlpha] do
+  @shells [
+    DiodeClient.Shell,
+    DiodeClient.Shell.Moonbeam,
+    DiodeClient.Shell.MoonbaseAlpha,
+    DiodeClient.Shell.OasisSapphire
+  ]
+
+  def shells() do
+    @shells
+  end
+
+  for shell <- @shells do
     def shell_for_chain_id(unquote(shell.chain_id())), do: unquote(shell)
   end
 end

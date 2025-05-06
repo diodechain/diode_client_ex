@@ -323,6 +323,10 @@ defmodule DiodeClient.Shell do
     Rlpx.bin2uint(peak["number"])
   end
 
+  def call(address, method, types, args, opts \\ []) do
+    DiodeClient.Shell.Common.call(__MODULE__, address, method, types, args, opts)
+  end
+
   def cached_rpc(args) do
     ETSLru.fetch(ShellCache, args, fn ->
       # Single retry for remote_closed

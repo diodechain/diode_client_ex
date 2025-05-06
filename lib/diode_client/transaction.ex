@@ -164,6 +164,7 @@ defmodule DiodeClient.Transaction do
       Secp256k1.bitcoin_to_rlp(tx.signature, tx.chain_id)
   end
 
+  def from(%Transaction{signature: nil}), do: nil
   def from(tx = %Transaction{}), do: Wallet.address!(origin(tx))
   def from(%MetaTransaction{from: from}), do: from
 
