@@ -96,7 +96,7 @@ defmodule DiodeClient.MetaTransaction do
   end
 
   def simulate(
-        mtx = %MetaTransaction{
+        %MetaTransaction{
           from: from,
           to: to,
           call: data,
