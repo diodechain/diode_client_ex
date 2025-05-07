@@ -42,8 +42,7 @@ defmodule DiodeClient.Contracts.BNS do
   def all_names_length(shell, block \\ nil) do
     impl = Enum.find(impls(), fn impl -> impl.shell == shell end)
 
-    call(impl, "AllNamesLength", [], [], block: block)
-    |> :binary.decode_unsigned()
+    call(impl, "AllNamesLength", [], [], block: block, result_types: "uint256")
   end
 
   def is_bns(address) do
@@ -70,6 +69,24 @@ defmodule DiodeClient.Contracts.BNS do
     cast(impl, "RegisterReverse", ["address", "string"], [destination, name])
   end
 
+  def resolve_entry(name, block) do
+    {impl, name} = name_to_impl(name)
+
+    [[destination, owner, name, lock_end, lease_end]] =
+      call(impl, "ResolveEntry", ["string"], [name],
+        block: block,
+        result_types: ["(address,address,string,uint256,uint256)"]
+      )
+
+    %{
+      destination: destination,
+      owner: owner,
+      name: name,
+      lock_end: lock_end,
+      lease_end: lease_end
+    }
+  end
+
   def resolve_name(name, block \\ nil)
 
   def resolve_name("", _block) do
@@ -84,7 +101,7 @@ defmodule DiodeClient.Contracts.BNS do
       base = Hash.to_bytes32(@slot_names)
       address(impl.shell, impl.address, Hash.keccak_256(name_hash <> base), block)
     else
-      call(impl, "Resolve", ["string"], [name], block: block)
+      resolve_entry(name, block).destination
     end
   end
 
@@ -95,10 +112,18 @@ defmodule DiodeClient.Contracts.BNS do
 
   def resolve_name_owner_ext(name, block \\ nil) do
     {impl, name} = name_to_impl(name)
-    name_hash = Hash.keccak_256(name)
-    base = Hash.to_bytes32(@slot_names)
-    addr = address(impl.shell, impl.address, Hash.keccak_256(name_hash <> base) |> add(1), block)
-    {impl.shell, addr}
+
+    if impl.shell == DiodeClient.Shell do
+      name_hash = Hash.keccak_256(name)
+      base = Hash.to_bytes32(@slot_names)
+
+      addr =
+        address(impl.shell, impl.address, Hash.keccak_256(name_hash <> base) |> add(1), block)
+
+      {impl.shell, addr}
+    else
+      resolve_entry(name, block).owner
+    end
   end
 
   def resolve_name_all(orig_name, block \\ nil) do
@@ -150,7 +175,6 @@ defmodule DiodeClient.Contracts.BNS do
 
   defp call(impl, method, types, args, opts) do
     impl.shell.call(impl.address, method, types, args, opts)
-    |> DiodeClient.Base16.decode()
   end
 
   defp name_to_impl(name) do

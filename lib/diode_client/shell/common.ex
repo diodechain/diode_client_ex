@@ -73,7 +73,11 @@ defmodule DiodeClient.Shell.Common do
   def call(shell, address, method, types, args, opts \\ []) do
     opts = Map.merge(Map.new(opts), %{to: address, sign: false})
     tx = create_transaction(shell, ABI.encode_call(method, types, args), opts)
-    call_tx(shell, tx, block: Map.get(opts, :block, "latest"))
+
+    call_tx(shell, tx,
+      block: Map.get(opts, :block, "latest"),
+      result_types: Map.get(opts, :result_types)
+    )
   end
 
   def call_tx(shell, transaction, opts \\ []) do
