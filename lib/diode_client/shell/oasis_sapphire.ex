@@ -196,11 +196,7 @@ defmodule DiodeClient.Shell.OasisSapphire do
 
     opts = %{to: contract, sign: false}
     tx = DiodeClient.Shell.Common.create_transaction(__MODULE__, data, opts)
-
-    ret =
-      DiodeClient.Shell.Common.call(__MODULE__, tx, "latest")
-      |> DiodeClient.Base16.decode()
-
+    ret = DiodeClient.Shell.Common.call(__MODULE__, tx, "latest")
     [status, cbor] = DiodeClient.ABI.decode_types(["uint", "bytes"], ret)
 
     if status == 0 do
@@ -266,7 +262,7 @@ defmodule DiodeClient.Shell.OasisSapphire do
          cbor <-
            DiodeClient.OasisSapphire.decrypt_data_pack_response(call, Base16.decode(result)),
          {:ok, %{"ok" => %CBOR.Tag{value: data}}, ""} <- CBOR.decode(cbor) do
-      Base16.encode(data)
+      data
     end
   end
 

@@ -110,7 +110,7 @@ defmodule DiodeClient.Shell.Common do
     with [json] <- DiodeClient.Shell.cached_rpc([shell.prefix() <> "rpc", "eth_call", params]) do
       case Jason.decode!(json) do
         %{"result" => result} ->
-          result
+          Base16.decode(result)
 
         %{"error" => error} ->
           Logger.error("Error #{shell.prefix()}.eth_call: #{inspect(error)}")
