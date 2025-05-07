@@ -107,8 +107,11 @@ defmodule DiodeClient.Shell.OasisSapphire do
   end
 
   def get_meta_nonce(address, peak \\ peak()) do
-    call(identity_address(), "Nonce", ["address"], [address], block: peak)
-    |> DiodeClient.Base16.decode_int()
+    call(identity_address(), "Nonce", ["address"], [address], block: peak, result_types: "uint")
+    |> case do
+      nonce when is_integer(nonce) -> nonce
+      :revert -> 0
+    end
   end
 
   def get_account(address, peak \\ peak()) do
@@ -196,8 +199,12 @@ defmodule DiodeClient.Shell.OasisSapphire do
 
     opts = %{to: contract, sign: false}
     tx = DiodeClient.Shell.Common.create_transaction(__MODULE__, data, opts)
-    ret = DiodeClient.Shell.Common.call(__MODULE__, tx, "latest")
-    [status, cbor] = DiodeClient.ABI.decode_types(["uint", "bytes"], ret)
+
+    [status, cbor] =
+      DiodeClient.Shell.Common.call_tx(__MODULE__, tx,
+        block: "latest",
+        result_types: ["uint", "bytes"]
+      )
 
     if status == 0 do
       {:ok,
@@ -227,7 +234,7 @@ defmodule DiodeClient.Shell.OasisSapphire do
     block_number = Rlpx.bin2uint(block["number"]) + 1
     block_hash = block["block_hash"]
 
-    opts = [
+    sig_opts = [
       gasLimit: transaction.gasLimit,
       to: transaction.to,
       nonce: transaction.nonce,
@@ -240,7 +247,7 @@ defmodule DiodeClient.Shell.OasisSapphire do
       DiodeClient.OasisSapphire.new_signed_call_data_pack(
         DiodeClient.ensure_wallet(),
         transaction.data,
-        opts
+        sig_opts
       )
 
     params =
@@ -262,7 +269,7 @@ defmodule DiodeClient.Shell.OasisSapphire do
          cbor <-
            DiodeClient.OasisSapphire.decrypt_data_pack_response(call, Base16.decode(result)),
          {:ok, %{"ok" => %CBOR.Tag{value: data}}, ""} <- CBOR.decode(cbor) do
-      data
+      DiodeClient.Shell.Common.decode_result(data, Keyword.get(opts, :result_types))
     end
   end
 

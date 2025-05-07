@@ -73,12 +73,12 @@ defmodule DiodeClient.Shell.Common do
   def call(shell, address, method, types, args, opts \\ []) do
     opts = Map.merge(Map.new(opts), %{to: address, sign: false})
     tx = create_transaction(shell, ABI.encode_call(method, types, args), opts)
-    call(shell, tx, Map.get(opts, :block, "latest"))
+    call_tx(shell, tx, block: Map.get(opts, :block, "latest"))
   end
 
-  def call(shell, transaction, block) do
+  def call_tx(shell, transaction, opts \\ []) do
     block =
-      case block do
+      case Keyword.get(opts, :block) do
         nil ->
           "latest"
 
@@ -111,11 +111,23 @@ defmodule DiodeClient.Shell.Common do
       case Jason.decode!(json) do
         %{"result" => result} ->
           Base16.decode(result)
+          |> decode_result(Keyword.get(opts, :result_types))
 
         %{"error" => error} ->
           Logger.error("Error #{shell.prefix()}.eth_call: #{inspect(error)}")
           nil
       end
+    end
+  end
+
+  def decode_result("", _types), do: :revert
+  def decode_result(nil, _types), do: nil
+
+  def decode_result(result, types) do
+    case types do
+      nil -> result
+      types when is_list(types) -> DiodeClient.ABI.decode_types(types, result)
+      type when is_binary(type) -> List.first(DiodeClient.ABI.decode_types([type], result))
     end
   end
 end
