@@ -528,20 +528,22 @@ defmodule DiodeClient.Manager do
       new_best =
         Enum.filter(new_best, fn %Info{latency: latency} -> latency < 2 * peak.latency end)
 
-      if prev_best != new_best do
+      new_best_pids = Enum.map(new_best, fn %{pid: pid} -> pid end)
+
+      if prev_best != new_best_pids do
         servers =
           Enum.map_join(new_best, ", ", fn %{server_url: url, latency: latency} ->
             "#{url}: #{trunc(latency)}"
           end)
 
-        Logger.info("Best connection changed to [#{servers}] #{length(new_best)}")
+        Logger.info("Best connection changed to [#{servers}]")
       end
 
       for from <- waiting, do: GenServer.reply(from, peak.pid)
 
       %Manager{
         state
-        | best: Enum.map(new_best, fn %Info{pid: pid} -> pid end),
+        | best: new_best_pids,
           waiting: [],
           best_timestamp: System.os_time(:second)
       }
