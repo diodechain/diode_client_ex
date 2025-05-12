@@ -539,7 +539,7 @@ defmodule DiodeClient.Manager do
         Logger.info("Best connection changed to [#{servers}]")
       end
 
-      for from <- waiting, do: GenServer.reply(from, peak.pid)
+      for from <- waiting, do: GenServer.reply(from, new_best_pids)
 
       %Manager{
         state
