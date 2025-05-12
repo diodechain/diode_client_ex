@@ -475,10 +475,15 @@ defmodule DiodeClient.Manager do
 
   def update(state) do
     state = update_peaks(state)
-    pids = Enum.map(connected(state), fn %Info{pid: pid} -> pid end)
+
+    pids =
+      Map.values(state.conns)
+      |> Enum.filter(fn %Info{server_address: addr} -> addr != nil end)
+      |> Enum.map(fn %{pid: pid} -> pid end)
+
     best = Enum.filter(state.best, fn pid -> pid in pids end)
 
-    if length(best) == 0 or
+    if best == [] or
          System.os_time(:second) - state.best_timestamp > 30 do
       update_best(state)
     else
