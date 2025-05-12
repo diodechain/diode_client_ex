@@ -50,7 +50,8 @@ defmodule DiodeClient.Manager do
       peaks: %{},
       server_list: seed_list(),
       shells: MapSet.new(default_shells()),
-      waiting: []
+      waiting: [],
+      best: []
     }
 
     {:ok, state, {:continue, :init}}
@@ -142,6 +143,7 @@ defmodule DiodeClient.Manager do
   """
   def get_connection() do
     GenServer.call(__MODULE__, :get_connection, :infinity)
+    |> Enum.random()
   end
 
   @doc """
@@ -165,6 +167,7 @@ defmodule DiodeClient.Manager do
 
   def get_connection?() do
     GenServer.call(__MODULE__, :get_connection?, :infinity)
+    |> Enum.random()
   end
 
   def set_connection(conn) do
@@ -271,7 +274,7 @@ defmodule DiodeClient.Manager do
 
   @impl true
   def handle_cast({:set_connection, cpid}, state = %Manager{conns: _conns}) do
-    {:noreply, %Manager{state | best: cpid}}
+    {:noreply, %Manager{state | best: [cpid]}}
   end
 
   def handle_cast({:update_info, cpid, info}, state = %Manager{conns: conns}) do
@@ -357,7 +360,7 @@ defmodule DiodeClient.Manager do
 
         not new_online ->
           for pid <- pids, do: GenServer.cast(pid, :stop)
-          %Manager{state | server_list: seed_list(), conns: %{}, best: nil}
+          %Manager{state | server_list: seed_list(), conns: %{}, best: []}
       end
 
     {:reply, :ok, state}
@@ -386,7 +389,7 @@ defmodule DiodeClient.Manager do
   end
 
   def handle_call(:get_connection?, _from, state = %Manager{online: online, best: best}) do
-    if online and best != nil do
+    if online and length(best) > 0 do
       {:reply, best, state}
     else
       {:reply, nil, state}
@@ -397,7 +400,7 @@ defmodule DiodeClient.Manager do
     {:noreply, %Manager{state | waiting: waiting ++ [from]}}
   end
 
-  def handle_call(:get_connection, from, state = %Manager{best: nil, waiting: waiting}) do
+  def handle_call(:get_connection, from, state = %Manager{best: [], waiting: waiting}) do
     {:noreply, %Manager{state | waiting: waiting ++ [from]}}
   end
 
@@ -420,7 +423,7 @@ defmodule DiodeClient.Manager do
         Enum.find(conns, fn {_, %Info{server_url: url}} -> url == sticky end)
         |> set_sticky(state)
 
-      best == nil or online == false ->
+      best == [] or online == false ->
         {:reply, nil, state}
 
       true ->
@@ -473,13 +476,13 @@ defmodule DiodeClient.Manager do
   def update(state) do
     state = update_peaks(state)
     pids = Enum.map(connected(state), fn %Info{pid: pid} -> pid end)
+    best = Enum.filter(state.best, fn pid -> pid in pids end)
 
-    if state.best == nil or
-         state.best not in pids or
+    if length(best) == 0 or
          System.os_time(:second) - state.best_timestamp > 30 do
       update_best(state)
     else
-      state
+      %{state | best: best}
     end
   end
 
@@ -510,24 +513,35 @@ defmodule DiodeClient.Manager do
     %Manager{state | peaks: peaks}
   end
 
-  defp update_best(state = %Manager{waiting: waiting, best: prev_best_pid}) do
+  defp update_best(state = %Manager{waiting: waiting, best: prev_best}) do
     new_best =
       connected(state)
       # Sort by latency and return the first one
       |> Enum.sort_by(fn %Info{latency: latency} -> latency end)
-      |> List.first() || %Info{}
 
-    if prev_best_pid != new_best.pid do
-      Logger.info(
-        "Best connection changed to #{inspect(new_best.server_url)} with latency #{inspect(new_best.latency)}"
-      )
-    end
+    if peak = List.first(new_best) do
+      new_best =
+        Enum.filter(new_best, fn %Info{latency: latency} -> latency < 2 * peak.latency end)
 
-    if new_best.pid != nil do
-      for from <- waiting, do: GenServer.reply(from, new_best.pid)
-      %Manager{state | best: new_best.pid, waiting: [], best_timestamp: System.os_time(:second)}
+      if prev_best != new_best do
+        servers =
+          Enum.map_join(new_best, ", ", fn %{server_url: url, latency: latency} ->
+            "#{url}: #{trunc(latency)}"
+          end)
+
+        Logger.info("Best connection changed to [#{servers}] #{length(new_best)}")
+      end
+
+      for from <- waiting, do: GenServer.reply(from, peak.pid)
+
+      %Manager{
+        state
+        | best: Enum.map(new_best, fn %Info{pid: pid} -> pid end),
+          waiting: [],
+          best_timestamp: System.os_time(:second)
+      }
     else
-      %Manager{state | best: nil}
+      %Manager{state | best: []}
     end
   end
 
