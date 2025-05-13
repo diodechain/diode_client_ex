@@ -166,8 +166,10 @@ defmodule DiodeClient.Manager do
   end
 
   def get_connection?() do
-    GenServer.call(__MODULE__, :get_connection?, :infinity)
-    |> Enum.random()
+    case GenServer.call(__MODULE__, :get_connection?, :infinity) do
+      [] -> nil
+      conns -> Enum.random(conns)
+    end
   end
 
   def set_connection(conn) do
@@ -389,11 +391,7 @@ defmodule DiodeClient.Manager do
   end
 
   def handle_call(:get_connection?, _from, state = %Manager{online: online, best: best}) do
-    if online and length(best) > 0 do
-      {:reply, best, state}
-    else
-      {:reply, nil, state}
-    end
+    {:reply, if(online, do: best, else: []), state}
   end
 
   def handle_call(:get_connection, from, state = %Manager{online: false, waiting: waiting}) do
