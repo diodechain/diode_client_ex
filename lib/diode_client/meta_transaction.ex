@@ -92,7 +92,7 @@ defmodule DiodeClient.MetaTransaction do
         nonce: nonce,
         signature: {v, r, s}
       }) do
-    ["dm1", from, nonce, deadline, dst, data, v, r, s]
+    ["dm1", DiodeClient.address(), from, nonce, deadline, dst, data, v, r, s]
   end
 
   def simulate(
