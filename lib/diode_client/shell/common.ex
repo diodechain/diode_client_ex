@@ -75,7 +75,7 @@ defmodule DiodeClient.Shell.Common do
     tx = create_transaction(shell, ABI.encode_call(method, types, args), opts)
 
     call_tx(shell, tx,
-      block: Map.get(opts, :block, "latest"),
+      block: Map.get(opts, :block, shell.peak()),
       result_types: Map.get(opts, :result_types)
     )
   end
@@ -84,10 +84,10 @@ defmodule DiodeClient.Shell.Common do
     block =
       case Keyword.get(opts, :block) do
         nil ->
-          "latest"
+          Base16.encode(shell.peak_number(), short: true)
 
         "latest" ->
-          "latest"
+          Base16.encode(shell.peak_number(), short: true)
 
         block when is_integer(block) ->
           Base16.encode(block, short: true)
@@ -111,7 +111,9 @@ defmodule DiodeClient.Shell.Common do
       ]
       |> Jason.encode!()
 
-    with [json] <- DiodeClient.Shell.cached_rpc([shell.prefix() <> "rpc", "eth_call", params]) do
+    cmd = [shell.prefix() <> "rpc", "eth_call", params]
+
+    with [json] <- DiodeClient.Shell.cached_rpc(cmd) do
       case Jason.decode!(json) do
         %{"result" => result} ->
           Base16.decode(result)
