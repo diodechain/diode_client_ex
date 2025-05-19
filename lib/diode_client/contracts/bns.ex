@@ -111,10 +111,10 @@ defmodule DiodeClient.Contracts.BNS do
   end
 
   def resolve_name_owner_ext(name, block \\ nil) do
-    {impl, name} = name_to_impl(name)
+    {impl, domain} = name_to_impl(name)
 
     if impl.shell == DiodeClient.Shell do
-      name_hash = Hash.keccak_256(name)
+      name_hash = Hash.keccak_256(domain)
       base = Hash.to_bytes32(@slot_names)
 
       addr =
@@ -122,7 +122,7 @@ defmodule DiodeClient.Contracts.BNS do
 
       {impl.shell, addr}
     else
-      resolve_entry(name, block).owner
+      {impl.shell, resolve_entry(name, block).owner}
     end
   end
 
