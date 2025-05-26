@@ -37,6 +37,7 @@ defmodule Mix.Tasks.Nodes do
       )
     end
   end
+
   def process(["get"]) do
     addr = DiodeClient.Wallet.new() |> DiodeClient.Wallet.address!()
     process(["get", Base16.encode(addr)])
