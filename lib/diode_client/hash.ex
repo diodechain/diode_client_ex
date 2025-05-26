@@ -46,7 +46,7 @@ defmodule DiodeClient.Hash do
   def keccak_256(string) do
     case Application.get_env(:diode_client, :keccak_256) do
       {module, function} ->
-        if function_exported?(module, function, 1) do
+        if Code.ensure_loaded?(module) and function_exported?(module, function, 1) do
           apply(module, function, [string])
         else
           keccak_256_fallback(string)
