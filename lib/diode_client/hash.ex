@@ -45,17 +45,25 @@ defmodule DiodeClient.Hash do
 
   def keccak_256(string) do
     case Application.get_env(:diode_client, :keccak_256) do
-      nil ->
-        DiodeClient.ETSLru.fetch(DiodeClient.HashCache, string, fn ->
-          ExSha3.keccak_256(string)
-        end)
-
       {module, function} ->
-        apply(module, function, [string])
+        if function_exported?(module, function, 1) do
+          apply(module, function, [string])
+        else
+          keccak_256_fallback(string)
+        end
 
       fun when is_function(fun, 1) ->
         fun.(string)
+
+      nil ->
+        keccak_256_fallback(string)
     end
+  end
+
+  defp keccak_256_fallback(string) do
+    DiodeClient.ETSLru.fetch(DiodeClient.HashCache, string, fn ->
+      ExSha3.keccak_256(string)
+    end)
   end
 
   def sha3_256(string) do
