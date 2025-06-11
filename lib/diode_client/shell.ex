@@ -95,43 +95,18 @@ defmodule DiodeClient.Shell do
 
   def get_object(key) do
     case cached_rpc(["getobject", key]) do
-      [
-        [
-          "ticket",
-          server_id,
-          block_number,
-          fleet_contract,
-          total_connections,
-          total_bytes,
-          local_address,
-          device_signature,
-          server_signature
-        ]
-      ] ->
-        block_number = Rlpx.bin2uint(block_number)
-        block_hash = get_block_header(block_number)["block_hash"]
+      [""] ->
+        nil
 
-        {:ticket, server_id, block_number, block_hash, fleet_contract,
-         Rlpx.bin2uint(total_connections), Rlpx.bin2uint(total_bytes), local_address,
-         device_signature, server_signature}
+      [rlp_list] ->
+        case DiodeClient.Object.decode_rlp_list(rlp_list) do
+          nil ->
+            Logger.warning("getobject returned invalid RLP list: #{inspect(rlp_list)}")
+            nil
 
-      [
-        [
-          "ticketv2",
-          server_id,
-          chain_id,
-          epoch,
-          fleet_contract,
-          total_connections,
-          total_bytes,
-          local_address,
-          device_signature,
-          server_signature
-        ]
-      ] ->
-        {:ticketv2, server_id, Rlpx.bin2uint(chain_id), Rlpx.bin2uint(epoch), fleet_contract,
-         Rlpx.bin2uint(total_connections), Rlpx.bin2uint(total_bytes), local_address,
-         device_signature, server_signature}
+          object ->
+            object
+        end
 
       _other ->
         nil

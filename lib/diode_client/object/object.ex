@@ -22,7 +22,17 @@ defmodule DiodeClient.Object do
     |> List.to_tuple()
   end
 
-  def decode_rlp_list!([
+  def decode_rlp_list!(rlp_list) do
+    case decode_rlp_list(rlp_list) do
+      nil ->
+        raise "Invalid RLP list: #{inspect(rlp_list)}"
+
+      result ->
+        result
+    end
+  end
+
+  def decode_rlp_list([
         ext = "ticketv2",
         server_id,
         chain_id,
@@ -39,7 +49,7 @@ defmodule DiodeClient.Object do
      device_signature, server_signature}
   end
 
-  def decode_rlp_list!([
+  def decode_rlp_list([
         ext = "ticket",
         server_id,
         block_num,
@@ -55,11 +65,11 @@ defmodule DiodeClient.Object do
      device_signature, server_signature}
   end
 
-  def decode_rlp_list!([ext = "server", host, edge_port, peer_port, signature]) do
+  def decode_rlp_list([ext = "server", host, edge_port, peer_port, signature]) do
     {recordname(ext), host, Rlpx.bin2uint(edge_port), Rlpx.bin2uint(peer_port), signature}
   end
 
-  def decode_rlp_list!([ext = "server", host, edge_port, peer_port, version, extra, signature]) do
+  def decode_rlp_list([ext = "server", host, edge_port, peer_port, version, extra, signature]) do
     extra =
       Enum.map(extra, fn
         ["name", value] -> ["name", value]
@@ -70,7 +80,7 @@ defmodule DiodeClient.Object do
      signature}
   end
 
-  def decode_rlp_list!([
+  def decode_rlp_list([
         ext = "channel",
         server_id,
         chain_id,
@@ -85,8 +95,12 @@ defmodule DiodeClient.Object do
      fleet_contract, type, name, params, signature}
   end
 
-  def decode_rlp_list!([ext = "data", block_num, name, value, signature]) do
+  def decode_rlp_list([ext = "data", block_num, name, value, signature]) do
     {recordname(ext), Rlpx.bin2uint(block_num), name, value, signature}
+  end
+
+  def decode_rlp_list(_other) do
+    nil
   end
 
   def encode!(record) do

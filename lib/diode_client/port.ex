@@ -1,6 +1,8 @@
 defmodule DiodeClient.Port do
   @moduledoc false
   alias DiodeClient.{Acceptor, Control, Port, Certs, Connection, Wallet}
+  alias DiodeClient.Object.Channel
+  import Channel
   use GenServer
   require Logger
 
@@ -412,6 +414,46 @@ defmodule DiodeClient.Port do
     connect_address(addr, port, options, timeout)
   end
 
+  def connect_channel(channel_name, options \\ []) do
+    ch = make_channel(channel_name, options)
+    port = Channel.key(ch)
+    connect_address(port, 0, local: false, default_conn: false)
+  end
+
+  def create_channel(channel_name, options \\ []) do
+    conn = DiodeClient.Manager.get_sticky_connection()
+
+    ch =
+      make_channel(channel_name, options)
+      |> Channel.sign(DiodeClient.wallet())
+
+    DiodeClient.rpc(conn, [
+      "channel",
+      Channel.chain_id(ch),
+      Channel.block_number(ch),
+      Channel.fleet_contract(ch),
+      Channel.type(ch),
+      Channel.name(ch),
+      Channel.params(ch),
+      Channel.signature(ch)
+    ])
+  end
+
+  defp make_channel(channel_name, opts) do
+    shell = Keyword.get(opts, :shell, DiodeClient.Shell.Moonbeam)
+    conn = DiodeClient.Manager.get_sticky_connection()
+    server_id = DiodeClient.Connection.server_address(conn)
+
+    channel(
+      chain_id: shell.chain_id(),
+      server_id: server_id,
+      block_number: shell.peak_number(),
+      fleet_contract: DiodeClient.fleet_address(),
+      type: "broadcast",
+      name: channel_name
+    )
+  end
+
   def connect_address(destination, port, options \\ [], _timeout \\ 5_000)
       when is_integer(port) do
     access = Keyword.get(options, :access, "rw")
@@ -446,10 +488,24 @@ defmodule DiodeClient.Port do
   defp do_connect(destination, port, options) do
     access = Keyword.get(options, :access, "rw")
 
+    default_conn =
+      if Keyword.get(options, :default_conn, true) do
+        [DiodeClient.default_conn()]
+      else
+        []
+      end
+
     conns =
       case DiodeClient.Shell.get_object(destination) do
         nil ->
-          [DiodeClient.default_conn()]
+          default_conn
+
+        channel(server_id: addr) ->
+          DiodeClient.connections()
+          |> Enum.find(fn pid ->
+            DiodeClient.Connection.server_address(pid) == addr
+          end)
+          |> List.wrap()
 
         ticket ->
           all_conns = DiodeClient.connections()
@@ -461,7 +517,7 @@ defmodule DiodeClient.Port do
             end)
           end)
           |> Enum.filter(fn conn -> conn != nil end)
-          |> Enum.concat([DiodeClient.default_conn()])
+          |> Enum.concat(default_conn)
           |> Enum.uniq()
       end
 
