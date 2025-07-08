@@ -388,7 +388,7 @@ defmodule DiodeClient.Manager do
     {:reply, Map.get(peaks, shell), state}
   end
 
-  @legal_keys [:server_address, :latency, :server_url, :open_port_count]
+  @legal_keys [:server_address, :latency, :server_url, :open_port_count, :peaks]
   def handle_call({:get_info, cpid}, _from, state = %Manager{conns: conns}) do
     case Map.get(conns, cpid) do
       nil ->
