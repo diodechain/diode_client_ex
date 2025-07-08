@@ -262,12 +262,16 @@ defmodule DiodeClient.Manager do
     {:noreply, state}
   end
 
+  def handle_info(:update, state) do
+    {:noreply, update(state)}
+  end
+
   defp handle_exit(pid, reason, state = %Manager{conns: conns}) do
     if Map.has_key?(conns, pid) do
       %Info{key: key} = Map.fetch!(conns, pid)
       Process.send_after(self(), {:restart_conn, key}, 15_000)
       state = %Manager{state | conns: Map.delete(conns, pid)}
-      {:noreply, update(state)}
+      {:noreply, schedule_update(state)}
     else
       Logger.debug("Connection down: #{inspect(pid)} #{inspect(reason)}")
       {:noreply, state}
@@ -292,7 +296,7 @@ defmodule DiodeClient.Manager do
           new_info = %{peaks: %{}} ->
             state =
               %Manager{state | conns: Map.put(conns, cpid, new_info)}
-              |> update()
+              |> schedule_update()
 
             {:noreply, state}
         end
@@ -471,7 +475,17 @@ defmodule DiodeClient.Manager do
     end)
   end
 
-  def update(state) do
+  defp schedule_update(state) do
+    pid = self()
+
+    Debouncer.immediate({__MODULE__, :update}, fn ->
+      send(pid, :update)
+    end)
+
+    state
+  end
+
+  defp update(state) do
     state = update_peaks(state)
 
     pids =
