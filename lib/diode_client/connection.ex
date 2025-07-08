@@ -150,9 +150,18 @@ defmodule DiodeClient.Connection do
     {:noreply, state}
   end
 
-  defp update_info(state = %Connection{server_wallet: wallet, latency: latency, peaks: peaks}) do
+  defp update_info(
+         state = %Connection{server_wallet: wallet, latency: latency, peaks: peaks, ports: ports}
+       ) do
     address = if wallet == nil, do: nil, else: Wallet.address!(wallet)
-    Manager.update_info(self(), %{latency: latency, server_address: address, peaks: peaks})
+
+    Manager.update_info(self(), %{
+      latency: latency,
+      server_address: address,
+      peaks: peaks,
+      open_port_count: map_size(ports)
+    })
+
     state
   end
 

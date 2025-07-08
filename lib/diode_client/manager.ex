@@ -25,6 +25,7 @@ defmodule DiodeClient.Manager do
       :server_address,
       :server_url,
       :ports,
+      :open_port_count,
       :key,
       :pid,
       :started_at,
@@ -387,10 +388,17 @@ defmodule DiodeClient.Manager do
     {:reply, Map.get(peaks, shell), state}
   end
 
-  def handle_call({:get_info, cpid, key}, _from, state = %Manager{conns: conns}) do
+  @legal_keys [:server_address, :latency, :server_url, :open_port_count]
+  def handle_call({:get_info, cpid}, _from, state = %Manager{conns: conns}) do
     case Map.get(conns, cpid) do
-      nil -> {:reply, nil, state}
-      %Info{} = info -> {:reply, Map.get(info, key), state}
+      nil ->
+        {:reply, %{}, state}
+
+      %Info{} = info ->
+        {:reply,
+         Map.from_struct(info)
+         |> Enum.filter(fn {key, _value} -> key in @legal_keys end)
+         |> Map.new(), state}
     end
   end
 
@@ -572,8 +580,12 @@ defmodule DiodeClient.Manager do
     {:noreply, restart_all(state)}
   end
 
-  def get_connection_info(cpid, key) when key in [:server_address, :latency, :server_url] do
-    GenServer.call(__MODULE__, {:get_info, cpid, key})
+  def get_connection_info(cpid, key) when key in @legal_keys do
+    get_connection_info(cpid) |> Map.get(key)
+  end
+
+  def get_connection_info(cpid) do
+    GenServer.call(__MODULE__, {:get_info, cpid})
   end
 
   def update_info(cpid, info) do
