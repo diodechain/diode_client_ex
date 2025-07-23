@@ -215,15 +215,20 @@ defmodule DiodeClient.Manager do
     end)
   end
 
-  @target_connections 8
+  @target_connections 10
   def refresh() do
     current = ranked_connections()
     len = length(current)
 
     if len >= @target_connections do
-      {_, _, key, type} = List.last(current)
+      # Find find the slowest (from bottom) community node
+      current = Enum.reverse(current)
+      i = Enum.find_index(current, fn {_, _, _, type} -> type == :manual end)
 
-      if type == :manual do
+      # If this is in the lower half shuffle it out
+      # to make space for another one
+      if i != nil and i < div(@target_connections, 2) do
+        {_, _, key, _} = Enum.at(current, i)
         drop_connection(key)
       end
     end
