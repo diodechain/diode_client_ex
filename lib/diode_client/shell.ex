@@ -426,4 +426,9 @@ defmodule DiodeClient.Shell do
       end
     end
   end
+
+  def get_meta_nonce(_address, _peak \\ peak()) do
+    # there are not meta transaction on the diode l1
+    raise "not implemented"
+  end
 end
