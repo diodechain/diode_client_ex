@@ -336,7 +336,7 @@ defmodule DiodeClient.Manager do
           Process.monitor(pid)
 
           for {shell, _} <- peaks do
-            GenServer.cast(pid, {:subscribe, shell})
+            send(pid, {:subscribe, shell})
           end
 
           pid
@@ -371,7 +371,7 @@ defmodule DiodeClient.Manager do
           restart_all(state)
 
         not new_online ->
-          for pid <- pids, do: GenServer.cast(pid, :stop)
+          for pid <- pids, do: send(pid, :stop)
           %Manager{state | server_list: seed_list(), conns: %{}, best: []}
       end
 
@@ -389,7 +389,7 @@ defmodule DiodeClient.Manager do
       ) do
     state = %{state | shells: MapSet.put(shells, shell)}
 
-    for c <- Map.keys(conns), do: GenServer.cast(c, {:subscribe, shell})
+    for c <- Map.keys(conns), do: send(c, {:subscribe, shell})
     {:reply, Map.get(peaks, shell), state}
   end
 
@@ -470,7 +470,7 @@ defmodule DiodeClient.Manager do
     state =
       if result do
         {pid, _info} = result
-        GenServer.cast(pid, :stop)
+        send(pid, :stop)
         %Manager{state | server_list: server_list, conns: Map.delete(conns, pid)}
       else
         %Manager{state | server_list: server_list}

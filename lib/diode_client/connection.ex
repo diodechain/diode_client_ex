@@ -86,6 +86,7 @@ defmodule DiodeClient.Connection do
   @impl true
   def init([server, ports]) do
     Process.flag(:trap_exit, true)
+    :timer.send_interval(@ping, :ping)
     {conns, bytes} = {1, 0}
 
     state = %Connection{
@@ -128,26 +129,7 @@ defmodule DiodeClient.Connection do
 
   @impl true
   def handle_continue(:init, state = %Connection{}) do
-    {:ok, state, socket} = connect(state)
-    server_wallet = Wallet.from_pubkey(Certs.extract(socket))
-
-    :ok = :ssl.setopts(socket, active: true)
-    set_keepalive(socket)
-    :timer.send_interval(@ping, :ping)
-
-    pid = self()
-
-    spawn_link(fn ->
-      ["ok"] = rpc(pid, ["hello", @vsn])
-
-      for shell <- state.shells do
-        :ok = update_block(pid, shell, nil)
-      end
-    end)
-
-    # Updating ets state cache
-    state = update_info(%Connection{state | socket: socket, server_wallet: server_wallet})
-    {:noreply, state}
+    init_loop(state, 0)
   end
 
   defp update_info(
@@ -165,15 +147,35 @@ defmodule DiodeClient.Connection do
     state
   end
 
-  defp connect(state = %Connection{server: server, server_ports: ports}, count \\ 0) do
-    backoff = fib(count) * 1_000
-    port = Enum.at(ports, rem(count, length(ports)))
+  def init_loop(state = %Connection{server_ports: ports}, count) do
+    receive do
+      :ping ->
+        init_loop(state, count)
 
-    if backoff > 0 do
-      debug("connect() delayed by #{backoff}ms trying port #{port}")
-      Process.sleep(backoff)
+      msg = :stop ->
+        handle_info(msg, state)
+
+      msg = {:subscribe, _} ->
+        {:noreply, state} = handle_info(msg, state)
+        init_loop(state, count)
+    after
+      0 ->
+        backoff = fib(count) * 1_000
+        port = Enum.at(ports, rem(count, length(ports)))
+
+        if backoff > 0 do
+          debug("connect() delayed by #{backoff}ms, trying port #{port}")
+          Process.sleep(backoff)
+        end
+
+        case connect(state, port) do
+          {:retry, state} -> init_loop(state, count + 1)
+          {:noreply, state} -> {:noreply, state}
+        end
     end
+  end
 
+  defp connect(state = %Connection{server: server}, port) do
     now = timestamp()
 
     :ssl.connect(String.to_charlist(server), port, ssl_options(role: :client), 25_000)
@@ -181,14 +183,29 @@ defmodule DiodeClient.Connection do
       {:ok, socket} ->
         NetworkMonitor.close_on_down(socket, :ssl)
         state = %{state | latency: timestamp() - now}
-        {:ok, state, socket}
+
+        server_wallet = Wallet.from_pubkey(Certs.extract(socket))
+        :ok = :ssl.setopts(socket, active: true)
+        set_keepalive(socket)
+        pid = self()
+
+        spawn_link(fn ->
+          ["ok"] = rpc(pid, ["hello", @vsn])
+
+          for shell <- state.shells do
+            :ok = update_block(pid, shell, nil)
+          end
+        end)
+
+        # Updating ets state cache
+        state = update_info(%Connection{state | socket: socket, server_wallet: server_wallet})
+        {:noreply, state}
 
       {:error, reason} ->
         debug("connect() failed: #{inspect(reason)}")
 
-        %{state | latency: @inital_latency}
-        |> update_info()
-        |> connect(count + 1)
+        state = update_info(%{state | latency: @inital_latency})
+        {:retry, state}
     end
   end
 
@@ -326,21 +343,9 @@ defmodule DiodeClient.Connection do
   end
 
   @impl true
-  def handle_cast({:subscribe, shell}, state = %Connection{}) do
-    state = %{state | shells: MapSet.put(state.shells, shell)}
-    queue_update_blocks(state)
-    {:noreply, state}
-  end
-
   def handle_cast({:rpc, cmd, req, rlp, time, pid}, state) do
     cmd = %Cmd{cmd: cmd, reply: nil, time: time, port: pid, size: byte_size(rlp)}
     {:noreply, insert_cmd(state, req, cmd, rlp)}
-  end
-
-  def handle_cast(:stop, state = %Connection{socket: socket, ports: ports}) do
-    if socket != nil, do: :ssl.close(socket)
-    for {_, {pid, _}} <- ports, do: GenServer.cast(pid, :remote_close)
-    {:stop, :normal, %Connection{state | socket: nil}}
   end
 
   defp to_bin(num) do
@@ -554,6 +559,18 @@ defmodule DiodeClient.Connection do
   end
 
   @impl true
+  def handle_info({:subscribe, shell}, state = %Connection{}) do
+    state = %{state | shells: MapSet.put(state.shells, shell)}
+    queue_update_blocks(state)
+    {:noreply, state}
+  end
+
+  def handle_info(:stop, state = %Connection{socket: socket, ports: ports}) do
+    if socket != nil, do: :ssl.close(socket)
+    for {_, {pid, _}} <- ports, do: GenServer.cast(pid, :remote_close)
+    {:stop, :normal, %Connection{state | socket: nil}}
+  end
+
   def handle_info({:DOWN, _ref, :process, pid, _reason}, state = %Connection{ports: ports}) do
     Enum.find(ports, fn {_port_ref, {port_pid, _status}} -> pid == port_pid end)
     |> case do
