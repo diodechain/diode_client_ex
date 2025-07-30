@@ -270,6 +270,12 @@ defmodule DiodeClient.Shell.OasisSapphire do
            DiodeClient.OasisSapphire.decrypt_data_pack_response(call, Base16.decode(result)),
          {:ok, %{"ok" => %CBOR.Tag{value: data}}, ""} <- CBOR.decode(cbor) do
       DiodeClient.Shell.Common.decode_result(data, Keyword.get(opts, :result_types))
+    else
+      {:error, reason} ->
+        {:error, reason}
+
+      {:ok, %{"error" => error}} ->
+        {:error, error}
     end
   end
 
