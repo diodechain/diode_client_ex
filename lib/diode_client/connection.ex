@@ -160,7 +160,7 @@ defmodule DiodeClient.Connection do
         init_loop(state, count)
     after
       0 ->
-        backoff = fib(count) * 1_000
+        backoff = min(fib(count) * :timer.seconds(1), :timer.seconds(120))
         port = Enum.at(ports, rem(count, length(ports)))
 
         if backoff > 0 do
