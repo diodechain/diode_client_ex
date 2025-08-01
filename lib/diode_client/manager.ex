@@ -336,7 +336,7 @@ defmodule DiodeClient.Manager do
           Process.monitor(pid)
 
           for {shell, _} <- peaks do
-            send(pid, {:subscribe, shell})
+            safe_send(pid, {:subscribe, shell})
           end
 
           pid
@@ -371,7 +371,7 @@ defmodule DiodeClient.Manager do
           restart_all(state)
 
         not new_online ->
-          for pid <- pids, do: send(pid, :stop)
+          for pid <- pids, do: safe_send(pid, :stop)
           %Manager{state | server_list: seed_list(), conns: %{}, best: []}
       end
 
@@ -389,7 +389,7 @@ defmodule DiodeClient.Manager do
       ) do
     state = %{state | shells: MapSet.put(shells, shell)}
 
-    for c <- Map.keys(conns), do: send(c, {:subscribe, shell})
+    for c <- Map.keys(conns), do: safe_send(c, {:subscribe, shell})
     {:reply, Map.get(peaks, shell), state}
   end
 
@@ -470,7 +470,7 @@ defmodule DiodeClient.Manager do
     state =
       if result do
         {pid, _info} = result
-        send(pid, :stop)
+        safe_send(pid, :stop)
         %Manager{state | server_list: server_list, conns: Map.delete(conns, pid)}
       else
         %Manager{state | server_list: server_list}
@@ -606,4 +606,8 @@ defmodule DiodeClient.Manager do
     Process.register(pid, __MODULE__.Sticky)
     {:reply, pid, %Manager{state | sticky: info.server_url}}
   end
+
+  defp safe_send(pid, message) when is_atom(pid), do: safe_send(Process.whereis(pid), message)
+  defp safe_send(nil, _message), do: :ok
+  defp safe_send(pid, message) when is_pid(pid), do: send(pid, message)
 end
