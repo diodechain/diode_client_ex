@@ -247,7 +247,7 @@ defmodule DiodeClient.Manager do
   end
 
   def set_online(online) do
-    GenServer.call(__MODULE__, {:set_online, online})
+    GenServer.cast(__MODULE__, {:set_online, online})
   end
 
   @impl true
@@ -282,6 +282,11 @@ defmodule DiodeClient.Manager do
       Logger.debug("Connection down: #{inspect(pid)} #{inspect(reason)}")
       {:noreply, state}
     end
+  end
+
+  @impl true
+  def handle_cast({:set_online, new_online}, state) do
+    {:noreply, do_set_online(state, new_online)}
   end
 
   @impl true
@@ -354,28 +359,8 @@ defmodule DiodeClient.Manager do
     {:reply, online and length(connected(state)) > 0, state}
   end
 
-  def handle_call(
-        {:set_online, new_online},
-        _from,
-        state = %Manager{online: online, server_list: servers}
-      ) do
-    state = %Manager{state | online: new_online}
-    pids = Map.keys(servers)
-
-    state =
-      cond do
-        new_online == online ->
-          state
-
-        new_online ->
-          restart_all(state)
-
-        not new_online ->
-          for pid <- pids, do: safe_send(pid, :stop)
-          %Manager{state | server_list: seed_list(), conns: %{}, best: []}
-      end
-
-    {:reply, :ok, state}
+  def handle_call({:set_online, new_online}, _from, state) do
+    {:reply, :ok, do_set_online(state, new_online)}
   end
 
   def handle_call(:connections, _from, state = %Manager{conns: conns}) do
@@ -605,6 +590,23 @@ defmodule DiodeClient.Manager do
     Logger.info("Setting sticky connection to #{inspect(info.server_url)}")
     Process.register(pid, __MODULE__.Sticky)
     {:reply, pid, %Manager{state | sticky: info.server_url}}
+  end
+
+  defp do_set_online(state = %Manager{online: online, server_list: servers}, new_online) do
+    state = %Manager{state | online: new_online}
+    pids = Map.keys(servers)
+
+    cond do
+      new_online == online ->
+        state
+
+      new_online ->
+        restart_all(state)
+
+      not new_online ->
+        for pid <- pids, do: safe_send(pid, :stop)
+        %Manager{state | server_list: seed_list(), conns: %{}, best: []}
+    end
   end
 
   defp safe_send(pid, message) when is_atom(pid), do: safe_send(Process.whereis(pid), message)
