@@ -609,7 +609,7 @@ defmodule DiodeClient.Manager do
     end
   end
 
-  defp safe_send(pid, message) when is_atom(pid), do: safe_send(Process.whereis(pid), message)
   defp safe_send(nil, _message), do: :ok
+  defp safe_send(pid, message) when is_atom(pid), do: safe_send(Process.whereis(pid), message)
   defp safe_send(pid, message) when is_pid(pid), do: send(pid, message)
 end
