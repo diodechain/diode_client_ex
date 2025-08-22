@@ -98,4 +98,21 @@ defmodule DiodeClient.Contracts.Utils do
     base = Hash.to_bytes32(hash_slot)
     Hash.keccak_256(key <> base)
   end
+
+  def call(shell, contract, method, types, args, result_types, block \\ nil) do
+    shell.call(contract, method, types, args,
+      block: block || shell.peak(),
+      result_types: result_types,
+      gas_price: 0,
+      gas: 12_000_000
+    )
+    |> null_to_nil(result_types)
+  end
+
+  def null_to_nil(<<0::256>>), do: nil
+  def null_to_nil(<<0::160>>), do: nil
+  def null_to_nil(other), do: other
+
+  def null_to_nil(<<0::160>>, "address"), do: nil
+  def null_to_nil(other, _), do: other
 end

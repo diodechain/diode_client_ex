@@ -83,6 +83,19 @@ defmodule DiodeClient.Manager do
     System.get_env("SEED_LIST")
   end
 
+  def update_seed_list(list) do
+    System.put_env("SEED_LIST", list)
+    list = initial_seed_list()
+
+    if map_size(list) > 0 do
+      DiodeClient.Store.put(:seed_list, list)
+      for {_, %{key: key}} <- connection_map(), do: drop_connection(key)
+      GenServer.call(__MODULE__, {:reset_server_list, list})
+    else
+      {:error, :no_seed_list}
+    end
+  end
+
   defp initial_seed_list() do
     if seed_list_override() == nil do
       Enum.map(default_seed_keys(), fn pre ->
@@ -314,8 +327,10 @@ defmodule DiodeClient.Manager do
     end
   end
 
-  defp restart_all(state) do
-    Enum.reduce(Map.keys(seed_list()), state, fn key, state ->
+  defp restart_all(state = %Manager{server_list: servers}) do
+    (Map.keys(servers) ++ Map.keys(seed_list()))
+    |> Enum.uniq()
+    |> Enum.reduce(state, fn key, state ->
       restart_conn(key, state)
     end)
   end
@@ -442,6 +457,11 @@ defmodule DiodeClient.Manager do
     server_list = Map.put(server_list, key, info)
     state = %Manager{state | server_list: server_list}
     {:reply, :ok, restart_conn(key, state)}
+  end
+
+  def handle_call({:reset_server_list, list}, _from, state) do
+    {:reply, :ok,
+     restart_all(%Manager{state | server_list: list, sticky: nil, best: [], peaks: %{}})}
   end
 
   def handle_call(

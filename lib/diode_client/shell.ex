@@ -345,12 +345,12 @@ defmodule DiodeClient.Shell do
     Connection.rpc(conn(), args)
   end
 
-  def ether(x), do: 1000 * finney(x)
-  def finney(x), do: 1000 * szabo(x)
-  def szabo(x), do: 1000 * gwei(x)
-  def gwei(x), do: 1000 * mwei(x)
-  def mwei(x), do: 1000 * kwei(x)
-  def kwei(x), do: 1000 * wei(x)
+  def ether(x), do: trunc(1000 * finney(1) * x)
+  def finney(x), do: trunc(1000 * szabo(1) * x)
+  def szabo(x), do: trunc(1000 * gwei(1) * x)
+  def gwei(x), do: trunc(1000 * mwei(1) * x)
+  def mwei(x), do: trunc(1000 * kwei(1) * x)
+  def kwei(x), do: trunc(1000 * wei(1) * x)
   def wei(x) when is_integer(x), do: x
 
   # defp index() do

@@ -1,3 +1,27 @@
+# Aug 22nd 2025
+
+DiodeClient.address()
+addr = <<183, 96, 62, 48, 155, 55, 145, 28, 215, 221, 191, 216, 141, 203, 224, 122, 185, 141, 110, 46>>
+
+for server <- ["eu1.prenet.diode.io", "eu2.prenet.diode.io", "as1.prenet.diode.io", "as2.prenet.diode.io", "us1.prenet.diode.io", "us2.prenet.diode.io"] do
+  DiodeClient.Manager.update_seed_list(server)
+  block = DiodeClient.Shell.peak()
+  list = DiodeClient.Contracts.Utils.list_at(DiodeClient.Shell, addr, 63, block)
+  IO.inspect({server, DiodeClient.Block.number(block), length(list)}, label: "list")
+end
+
+nodes = DiodeClient.Shell.get_nodes(DiodeClient.Wallet.address!(DiodeClient.Wallet.new))
+for node <- nodes do
+  ip = elem(node, 1)
+  port = elem(node, 2)
+  server = "#{ip}:#{port}"
+
+  DiodeClient.Manager.update_seed_list(server)
+  block = DiodeClient.Shell.peak()
+  list = DiodeClient.Contracts.Utils.list_at(DiodeClient.Shell, addr, 63, block)
+  IO.inspect({server, DiodeClient.Block.number(block), length(list)}, label: "list")
+end
+
 # May 6th 2025
 DiodeClient.ensure_wallet()
 addr = DiodeClient.Contracts.Factory.identity_address(DiodeClient.Shell.OasisSapphire)
