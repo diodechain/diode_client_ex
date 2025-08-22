@@ -77,7 +77,8 @@ defmodule DiodeClient.Connection do
             pending_tickets: %{},
             ticket_count: 0,
             last_ticket: nil,
-            blocked: []
+            blocked: [],
+            shutdown: false
 
   def start_link(server, ports) when is_list(ports) do
     GenServer.start_link(__MODULE__, [server, ports], hibernate_after: 5_000)
@@ -565,10 +566,8 @@ defmodule DiodeClient.Connection do
     {:noreply, state}
   end
 
-  def handle_info(:stop, state = %Connection{socket: socket, ports: ports}) do
-    if socket != nil, do: :ssl.close(socket)
-    for {_, {pid, _}} <- ports, do: GenServer.cast(pid, :remote_close)
-    {:stop, :normal, %Connection{state | socket: nil}}
+  def handle_info(:stop, state) do
+    maybe_shutdown(%Connection{state | shutdown: true})
   end
 
   def handle_info({:DOWN, _ref, :process, pid, _reason}, state = %Connection{ports: ports}) do
@@ -592,7 +591,7 @@ defmodule DiodeClient.Connection do
       {ref, {_pid, status}} ->
         debug("removing port #{Base16.encode(ref)}: #{inspect(pid)} #{inspect(reason)}")
         if status == :up, do: rpc_cast(self(), ["portclose", ref])
-        {:noreply, %Connection{state | ports: Map.delete(ports, ref)}}
+        maybe_shutdown(%Connection{state | ports: Map.delete(ports, ref)})
 
       nil ->
         if reason != :normal do
@@ -1024,5 +1023,14 @@ defmodule DiodeClient.Connection do
 
   defp set_tcpopt(socket, level, opt, value) do
     :ssl.setopts(socket, [{:raw, level, opt, <<value::unsigned-little-size(32)>>}])
+  end
+
+  defp maybe_shutdown(state = %Connection{shutdown: shutdown, ports: ports, socket: socket}) do
+    if shutdown == false or map_size(ports) > 0 do
+      {:noreply, state}
+    else
+      if socket != nil, do: :ssl.close(socket)
+      {:stop, :normal, %Connection{state | socket: nil}}
+    end
   end
 end
