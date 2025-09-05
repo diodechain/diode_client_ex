@@ -440,7 +440,7 @@ defmodule DiodeClient.Connection do
       end
 
     if last_ticket != nil and Ticket.epoch(last_ticket) != Ticket.epoch(tck) do
-      raise "epoch mismatch"
+      raise "DiodeClient epoch mismatch"
     end
 
     tck = Ticket.device_sign(tck, Wallet.privkey!(DiodeClient.wallet()))
@@ -472,7 +472,7 @@ defmodule DiodeClient.Connection do
       receive do
         {:ssl, ^socket, msg} -> msg
       after
-        15_000 -> throw(:missing_ticket_reply)
+        15_000 -> raise "DiodeClient missing ticket reply"
       end
 
     case Rlp.decode!(msg) do

@@ -286,14 +286,19 @@ defmodule DiodeClient.Manager do
   end
 
   defp handle_exit(pid, reason, state = %Manager{conns: conns}) do
-    if Map.has_key?(conns, pid) do
-      %Info{key: key} = Map.fetch!(conns, pid)
-      Process.send_after(self(), {:restart_conn, key}, 15_000)
-      state = %Manager{state | conns: Map.delete(conns, pid)}
-      {:noreply, schedule_update(state)}
-    else
-      Logger.debug("Connection down: #{inspect(pid)} #{inspect(reason)}")
-      {:noreply, state}
+    case Map.pop(conns, pid) do
+      {%Info{key: key, server_url: server_url}, conns} ->
+        if reason != :normal do
+          Logger.info("Connection down: #{inspect(server_url)} for: #{inspect(reason)}")
+        end
+
+        Process.send_after(self(), {:restart_conn, key}, 15_000)
+        state = %Manager{state | conns: conns}
+        {:noreply, schedule_update(state)}
+
+      {nil, _conns} ->
+        Logger.debug("Connection down: #{inspect(pid)} #{inspect(reason)}")
+        {:noreply, state}
     end
   end
 
