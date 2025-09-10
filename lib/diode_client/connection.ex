@@ -112,6 +112,12 @@ defmodule DiodeClient.Connection do
     end
   end
 
+  defmacrop warning(format) do
+    quote do
+      Logger.warning("DiodeClient[#{var!(state).server}] " <> unquote(format))
+    end
+  end
+
   def latency(pid) do
     Manager.get_connection_info(pid, :latency) || @inital_latency
   end
@@ -682,7 +688,7 @@ defmodule DiodeClient.Connection do
         {:noreply, state}
 
       msg ->
-        debug("unhandled: #{inspect(msg)}")
+        warning("unhandled: #{inspect(msg)}")
         {:stop, :unhandled, state}
     end
   end
@@ -963,7 +969,8 @@ defmodule DiodeClient.Connection do
   defp ssl_send!(state = %Connection{socket: socket, unpaid_bytes: up, server: server}, msg) do
     # IO.puts("send size: #{byte_size(msg)}")
     with {:error, reason} <- :ssl.send(socket, msg) do
-      Logger.warning("SSL send error: #{inspect(reason)}")
+      warning("SSL send error: #{inspect(reason)}")
+      send(self(), {:ssl_closed, socket})
     end
 
     DiodeClient.Stats.submit(:relay, :self, server, byte_size(msg) + @packet_header)
