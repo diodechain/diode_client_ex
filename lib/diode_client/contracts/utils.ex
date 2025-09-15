@@ -99,6 +99,22 @@ defmodule DiodeClient.Contracts.Utils do
     Hash.keccak_256(key <> base)
   end
 
+  def change_tracker(shell, address, block \\ nil)
+
+  def change_tracker(shell, address, block) when shell == DiodeClient.Shell do
+    block = block || shell.peak()
+
+    case shell.get_account_root(address, block) do
+      nil -> 0xDEADBEEF
+      <<state::unsigned-size(32), _::binary>> -> state
+    end
+  end
+
+  def change_tracker(shell, address, block) do
+    block = block || shell.peak()
+    call(shell, address, "change_tracker", [], [], "uint256", block)
+  end
+
   def call(shell, contract, method, types, args, result_types, block \\ nil) do
     shell.call(contract, method, types, args,
       block: block || shell.peak(),

@@ -93,15 +93,15 @@ defmodule DiodeClient.Contracts.BNS do
     nil
   end
 
-  def resolve_name(name, block) do
-    {impl, name} = name_to_impl(name)
+  def resolve_name(orig_name, block) do
+    {impl, name} = name_to_impl(orig_name)
 
     if impl.shell == DiodeClient.Shell do
       name_hash = Hash.keccak_256(name)
       base = Hash.to_bytes32(@slot_names)
       address(impl.shell, impl.address, Hash.keccak_256(name_hash <> base), block)
     else
-      resolve_entry(name, block).destination
+      resolve_entry(orig_name, block).destination
     end
   end
 
@@ -128,26 +128,35 @@ defmodule DiodeClient.Contracts.BNS do
 
   def resolve_name_all(orig_name, block \\ nil) do
     {impl, name} = name_to_impl(orig_name)
-    name_hash = Hash.keccak_256(name)
-    base = Hash.to_bytes32(@slot_names)
 
-    array_slot = Hash.keccak_256(name_hash <> base) |> add(3)
-    size = number(impl.shell, impl.address, array_slot, block)
+    if impl.shell == DiodeClient.Shell do
+      name_hash = Hash.keccak_256(name)
+      base = Hash.to_bytes32(@slot_names)
 
-    if size == 0 do
-      name = resolve_name(orig_name)
+      array_slot = Hash.keccak_256(name_hash <> base) |> add(3)
+      size = number(impl.shell, impl.address, array_slot, block)
 
-      if name == nil do
-        []
+      if size == 0 do
+        name = resolve_name(orig_name)
+
+        if name == nil do
+          []
+        else
+          [name]
+        end
       else
-        [name]
+        array_start = Hash.keccak_256(array_slot)
+
+        Enum.map(1..size, fn idx ->
+          address(impl.shell, impl.address, add(array_start, idx - 1), block)
+        end)
       end
     else
-      array_start = Hash.keccak_256(array_slot)
-
-      Enum.map(1..size, fn idx ->
-        address(impl.shell, impl.address, add(array_start, idx - 1), block)
-      end)
+      call(impl, "ResolveEntryAll", ["string"], [name],
+        block: block,
+        result_types: ["address[]"]
+      )
+      |> hd()
     end
   end
 
@@ -180,6 +189,11 @@ defmodule DiodeClient.Contracts.BNS do
   defp name_to_impl(name) do
     [name, postfix] = String.split(name, ".")
     impl = Enum.find(impls(), fn impl -> impl.postfix == postfix end)
+
+    if impl == nil do
+      raise "Unknown postfix: #{postfix}"
+    end
+
     {impl, name}
   end
 

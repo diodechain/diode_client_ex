@@ -71,7 +71,7 @@ defmodule DiodeClient.Contracts.DriveMember do
     Contract.Utils.address(shell, address, @slot_target, block)
   end
 
-  def members(shell, address, block) do
+  def members(shell, address, block) when shell == DiodeClient.Shell do
     block = block || shell.peak()
 
     case owner?(shell, address, block) do
@@ -87,6 +87,11 @@ defmodule DiodeClient.Contracts.DriveMember do
           [owner | members]
         end
     end
+  end
+
+  def members(shell, address, block) do
+    block = block || shell.peak()
+    Contract.Utils.call(shell, address, "Members", [], [], "address[]", block)
   end
 
   def member(shell, address, index, block) do
