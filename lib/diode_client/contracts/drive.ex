@@ -12,18 +12,27 @@ defmodule DiodeClient.Contracts.Drive do
   def member_roles(shell, address, block \\ nil) do
     block = block || shell.peak()
 
-    if version(shell, address, block) <= 139 do
-      Utils.call(shell, address, "Members", [], [], "address[]", block)
-      |> Task.async_stream(fn member ->
-        {member, Utils.call(shell, address, "Role", ["address"], [member], "uint256", block)}
-      end)
-      |> Enum.map(fn {:ok, {member, role}} -> {member, int_to_role(role)} end)
-      |> Enum.to_list()
-    else
-      Utils.call(shell, address, "MemberRoles", [], [], "(address,uint256)[]", block)
+    case version(shell, address, block) do
+      :revert ->
+        :revert
+
+      vsn when is_integer(vsn) and vsn <= 139 ->
+        Utils.call(shell, address, "Members", [], [], "address[]", block)
+        |> Task.async_stream(fn member ->
+          {member, Utils.call(shell, address, "Role", ["address"], [member], "uint256", block)}
+        end)
+        |> Enum.map(fn {:ok, {member, role}} -> {member, int_to_role(role)} end)
+        |> Map.new()
+        |> Map.put(owner(shell, address, block), Role.Owner)
+
+      vsn when is_integer(vsn) and vsn > 139 ->
+        Utils.call(shell, address, "MemberRoles", [], [], "(address,uint256)[]", block)
+        |> Map.new()
+        |> Map.put(owner(shell, address, block), Role.Owner)
+
+      _ ->
+        :revert
     end
-    |> Map.new()
-    |> Map.put(owner(shell, address, block), Role.Owner)
   end
 
   defp int_to_role(int) do
