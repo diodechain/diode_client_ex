@@ -132,8 +132,8 @@ defmodule DiodeClient.Shell.Common do
   def decode_result(result, types) do
     case types do
       nil -> result
-      types when is_list(types) -> DiodeClient.ABI.decode_types(types, result)
-      type when is_binary(type) -> List.first(DiodeClient.ABI.decode_types([type], result))
+      types when is_list(types) -> DiodeClient.ABI.decode_args(types, result)
+      type when is_binary(type) -> List.first(DiodeClient.ABI.decode_args([type], result))
     end
   end
 end
