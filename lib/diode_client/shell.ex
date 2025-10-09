@@ -427,7 +427,7 @@ defmodule DiodeClient.Shell do
     end
   end
 
-  def get_meta_nonce(_address, _peak \\ peak()) do
+  def get_meta_nonce(_address, _peak \\ peak(), _opts \\ []) do
     # there are not meta transaction on the diode l1
     {:error, :not_implemented}
   end

@@ -1,4 +1,7 @@
 defmodule DiodeClient.Contracts.Drive do
+  @moduledoc """
+  Zone (drive) contract methods
+  """
   alias DiodeClient.Contracts.Utils
 
   def version(shell, address, block \\ nil) do

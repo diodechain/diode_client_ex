@@ -1,4 +1,5 @@
 defmodule DiodeClient.Contracts.List do
+  @moduledoc false
   @fields [
     # Address of the Global BNS contract
     :bns,

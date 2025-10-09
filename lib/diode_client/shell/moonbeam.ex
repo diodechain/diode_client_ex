@@ -111,7 +111,7 @@ defmodule DiodeClient.Shell.Moonbeam do
     end
   end
 
-  def get_meta_nonce(address, peak \\ peak()) do
+  def get_meta_nonce(address, peak \\ peak(), _opts \\ []) do
     address = Hash.to_address(address)
     peak_index = Rlpx.bin2uint(peak["number"])
     [num] = cached_rpc([prefix() <> "getmetanonce", peak_index, address])

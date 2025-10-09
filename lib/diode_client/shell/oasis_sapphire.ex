@@ -84,7 +84,7 @@ defmodule DiodeClient.Shell.OasisSapphire do
 
     MetaTransaction.sign(
       %MetaTransaction{
-        from: identity_address(),
+        from: identity_address(opts),
         to: address,
         call: callcode,
         gaslimit: gaslimit,
@@ -106,8 +106,11 @@ defmodule DiodeClient.Shell.OasisSapphire do
     end
   end
 
-  def get_meta_nonce(address, peak \\ peak()) do
-    call(identity_address(), "Nonce", ["address"], [address], block: peak, result_types: "uint")
+  def get_meta_nonce(address, peak \\ peak(), opts \\ []) do
+    call(identity_address(opts), "Nonce", ["address"], [address],
+      block: peak,
+      result_types: "uint"
+    )
     |> case do
       nonce when is_integer(nonce) -> nonce
       :revert -> 0
@@ -289,8 +292,16 @@ defmodule DiodeClient.Shell.OasisSapphire do
     Rlpx.bin2uint(peak["number"])
   end
 
-  defp identity_address() do
-    DiodeClient.Contracts.Factory.identity_address(__MODULE__)
+  defp identity_address(opts) do
+    identity =
+      opts[:identity] ||
+        raise "Missing :identity parameter, define or use the default `DiodeClient.Contracts.Factory.identity_address(DiodeClient.Shell.OasisSapphire)`"
+
+    if !is_binary(identity) or byte_size(identity) != 20 do
+      raise "Invalid :identity parameter, sould be a 20 byte public address"
+    end
+
+    identity
   end
 
   defdelegate cached_rpc(args), to: DiodeClient.Shell
