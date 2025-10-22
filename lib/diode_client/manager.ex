@@ -513,7 +513,14 @@ defmodule DiodeClient.Manager do
 
     pids =
       Map.values(state.conns)
-      |> Enum.filter(fn %Info{server_address: addr} -> addr != nil end)
+      |> Enum.filter(fn %Info{server_address: addr, peaks: conn_peaks} ->
+        # 1. Remove connections that have no address
+        # 2. Remove connections that have a lower peak than the current best
+        addr != nil and
+          Enum.all?(state.peaks, fn {shell, peak} ->
+            block_number(conn_peaks[shell]) >= block_number(peak)
+          end)
+      end)
       |> Enum.map(fn %{pid: pid} -> pid end)
 
     best = Enum.filter(state.best, fn pid -> pid in pids end)
@@ -528,9 +535,10 @@ defmodule DiodeClient.Manager do
 
   defp update_peaks(state = %Manager{peaks: last_peaks, shells: shells}) do
     connected = connected(state)
+    len = length(connected)
 
     # Reject single node connections
-    connected = if length(connected) < min(2, map_size(seed_list())), do: [], else: connected
+    connected = if len < min(2, map_size(seed_list())), do: [], else: connected
 
     # Get the highest peak for each shell
     peaks =
@@ -538,8 +546,8 @@ defmodule DiodeClient.Manager do
         peak =
           Enum.map(connected, fn %Info{peaks: peaks} -> peaks[shell] end)
           |> Enum.sort_by(&block_number/1, :desc)
-          # Security factor, we chose the lowest peak of the top 3 (e.g. 3 nodes have seen this)
-          |> Enum.take(3)
+          # We remove the bottom 20% of the connected nodes to avoid stale peaks
+          |> Enum.take(len - div(len, 5))
           |> List.last()
 
         if block_number(peak) > block_number(last_peaks[shell]) do
@@ -553,10 +561,16 @@ defmodule DiodeClient.Manager do
     %Manager{state | peaks: peaks}
   end
 
-  defp update_best(state = %Manager{waiting: waiting, best: prev_best}) do
+  defp update_best(state = %Manager{waiting: waiting, best: prev_best, peaks: peaks}) do
     new_best =
       connected(state)
-      # Sort by latency and return the first one
+      # Filter out nodes that have a lower peak than the current best
+      |> Enum.filter(fn %Info{peaks: conn_peaks} ->
+        Enum.all?(peaks, fn {shell, peak} ->
+          block_number(peak) <= block_number(conn_peaks[shell])
+        end)
+      end)
+      # Sort by latency
       |> Enum.sort_by(fn %Info{latency: latency} -> latency end)
 
     if peak = List.first(new_best) do
