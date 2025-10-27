@@ -242,7 +242,7 @@ defmodule DiodeClient.Connection do
        ) do
     default = fn -> %Channel{times: :queue.new(), backlog: []} end
     ch = Map.get_lazy(channels, id, default)
-    ch = %Channel{ch | times: :queue.in(time, ch.times), backlog: ch.backlog ++ [[req, rlp]]}
+    ch = %{ch | times: :queue.in(time, ch.times), backlog: ch.backlog ++ [[req, rlp]]}
     channels = Map.put(channels, id, ch)
 
     sched_cmd(%Connection{
@@ -259,7 +259,7 @@ defmodule DiodeClient.Connection do
        ) do
     ch = %Channel{times: queue} = Map.fetch!(channels, id)
     {_, queue} = :queue.out(queue)
-    ch = %Channel{ch | times: queue}
+    ch = %{ch | times: queue}
 
     channels =
       if Channel.empty?(ch) do
@@ -279,7 +279,7 @@ defmodule DiodeClient.Connection do
         state.latency
       end
 
-    sched_cmd(%Connection{
+    sched_cmd(%{
       state
       | recv_id: Map.delete(recv_id, req),
         channels: channels,
@@ -311,8 +311,8 @@ defmodule DiodeClient.Connection do
         state = maybe_create_ticket(state)
 
         if reply != nil, do: GenServer.reply(reply, :ok)
-        channels = Map.put(channels, id, %Channel{ch | backlog: backlog})
-        sched_cmd(%Connection{state | channels: channels, channel_usage: usage + byte_size(rlp)})
+        channels = Map.put(channels, id, %{ch | backlog: backlog})
+        sched_cmd(%{state | channels: channels, channel_usage: usage + byte_size(rlp)})
 
       nil ->
         state
@@ -453,7 +453,7 @@ defmodule DiodeClient.Connection do
     req = req_id()
     msg = Rlp.encode!([req, Ticket.message(tck)])
 
-    state = %Connection{
+    state = %{
       state
       | pending_tickets: Map.put(pending_tickets, req, tck),
         paid_bytes: Ticket.total_bytes(tck),
@@ -485,11 +485,11 @@ defmodule DiodeClient.Connection do
       [^req, reply] ->
         tck = Map.get(pending_tickets, req)
         DiodeClient.Stats.submit(:relay, server, :self, byte_size(msg) + @packet_header)
-        state = %Connection{state | unpaid_bytes: unpaid_bytes + byte_size(msg) + @packet_header}
+        state = %{state | unpaid_bytes: unpaid_bytes + byte_size(msg) + @packet_header}
         handle_ticket(state, tck, [req, reply])
 
       _other ->
-        wait_for_ticket(req, %Connection{state | events: :queue.in(msg, events)})
+        wait_for_ticket(req, %{state | events: :queue.in(msg, events)})
     end
   end
 
@@ -501,7 +501,7 @@ defmodule DiodeClient.Connection do
         ticket(),
         [req, reply]
       ) do
-    state = %Connection{state | pending_tickets: Map.delete(pending_tickets, req)}
+    state = %{state | pending_tickets: Map.delete(pending_tickets, req)}
 
     case reply do
       ["response", "thanks!", _bytes] ->
@@ -514,14 +514,14 @@ defmodule DiodeClient.Connection do
         state =
           if new_bytes > unpaid_bytes do
             # this must be a continuiation of a previous connection
-            %Connection{
+            %{
               state
               | conns: new_conns,
                 paid_bytes: new_bytes,
                 unpaid_bytes: new_bytes + min(unpaid_bytes, @ticket_size)
             }
           else
-            %Connection{state | conns: new_conns + 1}
+            %{state | conns: new_conns + 1}
           end
 
         {req, state} = do_create_ticket(state)
@@ -537,7 +537,7 @@ defmodule DiodeClient.Connection do
         ticketv2(),
         [req, reply]
       ) do
-    state = %Connection{state | pending_tickets: Map.delete(pending_tickets, req)}
+    state = %{state | pending_tickets: Map.delete(pending_tickets, req)}
 
     case reply do
       ["response", "thanks!", _bytes] ->
@@ -550,14 +550,14 @@ defmodule DiodeClient.Connection do
         state =
           if new_bytes > unpaid_bytes do
             # this must be a continuiation of a previous connection
-            %Connection{
+            %{
               state
               | conns: new_conns,
                 paid_bytes: new_bytes,
                 unpaid_bytes: new_bytes + min(unpaid_bytes, @ticket_size)
             }
           else
-            %Connection{state | conns: new_conns + 1}
+            %{state | conns: new_conns + 1}
           end
 
         {req, state} = do_create_ticket(state)
@@ -573,7 +573,7 @@ defmodule DiodeClient.Connection do
   end
 
   def handle_info(:stop, state) do
-    maybe_shutdown(%Connection{state | shutdown: true})
+    maybe_shutdown(%{state | shutdown: true})
   end
 
   def handle_info({:DOWN, _ref, :process, pid, _reason}, state = %Connection{ports: ports}) do
@@ -581,7 +581,7 @@ defmodule DiodeClient.Connection do
     |> case do
       {ref, {_pid, status}} ->
         if status == :up, do: rpc_cast(self(), ["portclose", ref])
-        {:noreply, %Connection{state | ports: Map.put(ports, ref, {pid, :down})}}
+        {:noreply, %{state | ports: Map.put(ports, ref, {pid, :down})}}
 
       nil ->
         # This just means :EXIT was handled before :DOWN
@@ -597,7 +597,7 @@ defmodule DiodeClient.Connection do
       {ref, {_pid, status}} ->
         debug("removing port #{Base16.encode(ref)}: #{inspect(pid)} #{inspect(reason)}")
         if status == :up, do: rpc_cast(self(), ["portclose", ref])
-        maybe_shutdown(%Connection{state | ports: Map.delete(ports, ref)})
+        maybe_shutdown(%{state | ports: Map.delete(ports, ref)})
 
       nil ->
         if reason != :normal do
@@ -620,7 +620,7 @@ defmodule DiodeClient.Connection do
           {:noreply, state}
         else
           {{:value, msg}, events} = :queue.out(state.events)
-          handle_info({:ssl, socket, msg}, %Connection{state | events: events})
+          handle_info({:ssl, socket, msg}, %{state | events: events})
         end
 
       other ->
@@ -677,7 +677,7 @@ defmodule DiodeClient.Connection do
           end)
 
         state =
-          %Connection{state | peaks: Map.put(peaks, shell, peak), blocked: blocked}
+          %{state | peaks: Map.put(peaks, shell, peak), blocked: blocked}
           |> update_info()
           |> maybe_create_ticket(shell == state.ticket_shell and Map.get(peaks, shell) == nil)
 
@@ -770,7 +770,7 @@ defmodule DiodeClient.Connection do
          }
        ) do
     DiodeClient.Stats.submit(:relay, server, :self, byte_size(rlp) + @packet_header)
-    state = %Connection{state | unpaid_bytes: ub + byte_size(rlp) + @packet_header}
+    state = %{state | unpaid_bytes: ub + byte_size(rlp) + @packet_header}
     msg = [req | _rest] = Rlp.decode!(rlp)
 
     case Map.get(recv_id, req) do
@@ -788,7 +788,7 @@ defmodule DiodeClient.Connection do
               {:ok, pid} = Port.start_link(self(), port_ref)
 
               {[req, ["response", "ok", pid]],
-               %Connection{state | ports: Map.put(ports, port_ref, {pid, :up})}}
+               %{state | ports: Map.put(ports, port_ref, {pid, :up})}}
 
             _other ->
               {msg, state}
@@ -819,7 +819,7 @@ defmodule DiodeClient.Connection do
         {state, msg} =
           case GenServer.call(Acceptor, {:inject, port, pid}) do
             :ok ->
-              state = %Connection{state | ports: Map.put(ports, port_ref, {pid, :up})}
+              state = %{state | ports: Map.put(ports, port_ref, {pid, :up})}
               msg = ["response", port_ref, "ok"]
               {state, msg}
 
@@ -850,7 +850,7 @@ defmodule DiodeClient.Connection do
         case ports[port_ref] do
           {pid, :up} ->
             GenServer.cast(pid, :remote_close)
-            %Connection{state | ports: Map.put(ports, port_ref, {pid, :down})}
+            %{state | ports: Map.put(ports, port_ref, {pid, :down})}
 
           _other ->
             state

@@ -12,7 +12,7 @@ defmodule DiodeClient.Cowboy2Adapter do
       for {scheme, port} <- [http: 4000, https: 4040], opts = config[scheme] do
         port = :proplists.get_value(:port, opts, port)
 
-        unless port do
+        if !port do
           Logger.debug(":port for #{scheme} config is nil, cannot start server")
           raise "aborting due to nil port"
         end

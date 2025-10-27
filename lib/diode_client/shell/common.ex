@@ -80,11 +80,11 @@ defmodule DiodeClient.Shell.Common do
     }
 
     tx =
-      case Hash.to_address(address) do
+      case address do
         # Contract creation
         nil -> %Transaction{tx | init: data}
         # Normal transaction
-        to -> %Transaction{tx | to: to, data: data}
+        to when is_binary(to) -> %Transaction{tx | to: Hash.to_address(to), data: data}
       end
 
     if Map.get(opts, :sign, true) do

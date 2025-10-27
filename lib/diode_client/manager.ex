@@ -293,7 +293,7 @@ defmodule DiodeClient.Manager do
         end
 
         Process.send_after(self(), {:restart_conn, key}, 15_000)
-        state = %Manager{state | conns: conns}
+        state = %{state | conns: conns}
         {:noreply, schedule_update(state)}
 
       {nil, _conns} ->
@@ -309,7 +309,7 @@ defmodule DiodeClient.Manager do
 
   @impl true
   def handle_cast({:set_connection, cpid}, state = %Manager{conns: _conns}) do
-    {:noreply, %Manager{state | best: [cpid]}}
+    {:noreply, %{state | best: [cpid]}}
   end
 
   def handle_cast({:update_info, cpid, info}, state = %Manager{conns: conns}) do
@@ -324,7 +324,7 @@ defmodule DiodeClient.Manager do
 
           new_info = %{peaks: %{}} ->
             state =
-              %Manager{state | conns: Map.put(conns, cpid, new_info)}
+              %{state | conns: Map.put(conns, cpid, new_info)}
               |> schedule_update()
 
             {:noreply, state}
@@ -370,7 +370,7 @@ defmodule DiodeClient.Manager do
           pid
       end
 
-    conns = Map.put(conns, pid, %Info{info | pid: pid, started_at: System.os_time(), peaks: %{}})
+    conns = Map.put(conns, pid, %{info | pid: pid, started_at: System.os_time(), peaks: %{}})
     %Manager{state | conns: conns}
   end
 
@@ -466,7 +466,7 @@ defmodule DiodeClient.Manager do
 
   def handle_call({:reset_server_list, list}, _from, state) do
     {:reply, :ok,
-     restart_all(%Manager{state | server_list: list, sticky: nil, best: [], peaks: %{}})}
+     restart_all(%{state | server_list: list, sticky: nil, best: [], peaks: %{}})}
   end
 
   def handle_call(
@@ -481,9 +481,9 @@ defmodule DiodeClient.Manager do
       if result do
         {pid, _info} = result
         safe_send(pid, :stop)
-        %Manager{state | server_list: server_list, conns: Map.delete(conns, pid)}
+        %{state | server_list: server_list, conns: Map.delete(conns, pid)}
       else
-        %Manager{state | server_list: server_list}
+        %{state | server_list: server_list}
       end
 
     {:reply, :ok, state}
@@ -628,11 +628,11 @@ defmodule DiodeClient.Manager do
   defp set_sticky({pid, info}, state) do
     Logger.info("Setting sticky connection to #{inspect(info.server_url)}")
     Process.register(pid, __MODULE__.Sticky)
-    {:reply, pid, %Manager{state | sticky: info.server_url}}
+    {:reply, pid, %{state | sticky: info.server_url}}
   end
 
   defp do_set_online(state = %Manager{online: online, server_list: servers}, new_online) do
-    state = %Manager{state | online: new_online}
+    state = %{state | online: new_online}
     pids = Map.keys(servers)
 
     cond do
@@ -644,7 +644,7 @@ defmodule DiodeClient.Manager do
 
       not new_online ->
         for pid <- pids, do: safe_send(pid, :stop)
-        %Manager{state | server_list: seed_list(), conns: %{}, best: []}
+        %{state | server_list: seed_list(), conns: %{}, best: []}
     end
   end
 
