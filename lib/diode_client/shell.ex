@@ -20,17 +20,17 @@ defmodule DiodeClient.Shell do
     Connection,
     ETSLru,
     Hash,
-    Transaction,
     Rlpx,
     ShellCache
   }
 
   require Logger
+  use DiodeClient.Shell.Common
 
   def block_time(), do: :timer.seconds(12)
   def chain_id(), do: 15
   def prefix(), do: ""
-  @gas_limit 10_000_000
+  def default_gas_limit(), do: 10_000_000
   @null_hash DiodeClient.Hash.sha3_256("")
   @null_root <<67, 138, 144, 64, 93, 170, 135, 101, 57, 8, 44, 208, 186, 246, 205, 218, 163, 191,
                136, 15, 28, 138, 240, 192, 56, 31, 0, 66, 219, 147, 8, 138>>
@@ -75,22 +75,10 @@ defmodule DiodeClient.Shell do
     |> send_transaction()
   end
 
-  def send_transaction(tx = %Transaction{}) do
-    DiodeClient.Shell.Common.send_transaction(__MODULE__, tx)
-  end
-
   def create_transaction(address, function_name, types, values, opts \\ [])
       when is_list(types) and is_list(values) do
-    opts =
-      opts
-      |> Keyword.put_new(:gas, @gas_limit)
-      |> Keyword.put_new(:gas_price, 0)
-      |> Keyword.put(:to, Hash.to_address(address))
-      |> Map.new()
-
-    # https://solidity.readthedocs.io/en/v0.4.24/abi-spec.html
     callcode = ABI.encode_call(function_name, types, values)
-    DiodeClient.Shell.Common.create_transaction(__MODULE__, callcode, opts)
+    DiodeClient.Shell.Common.create_transaction(__MODULE__, address, callcode, Map.new(opts))
   end
 
   def get_object(key) do
@@ -313,14 +301,6 @@ defmodule DiodeClient.Shell do
           :proplists.get_value(key, values)
         end)
     end
-  end
-
-  def peak() do
-    DiodeClient.Manager.get_peak(__MODULE__)
-  end
-
-  def peak_number(peak \\ peak()) do
-    Rlpx.bin2uint(peak["number"])
   end
 
   def call(address, method, types, args, opts \\ []) do

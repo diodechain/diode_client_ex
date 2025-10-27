@@ -9,13 +9,37 @@ defmodule DiodeClient.Shell.Common do
     ABI,
     Base16,
     Connection,
-    Shell,
-    Transaction,
+    Hash,
+    IdentityRequest,
     MetaTransaction,
     Rlp,
-    Wallet,
-    IdentityRequest
+    Shell,
+    Transaction,
+    Wallet
   }
+
+  defmacro __using__(_opts) do
+    quote do
+      alias DiodeClient.Shell.Common
+
+      if __MODULE__ != DiodeClient.Shell do
+        defdelegate cached_rpc(args), to: DiodeClient.Shell
+        defdelegate uncache_rpc(args), to: DiodeClient.Shell
+        defdelegate rpc(args), to: DiodeClient.Shell
+      end
+
+      def peak(), do: DiodeClient.Manager.get_peak(__MODULE__)
+
+      def peak_number(block \\ peak()) do
+        DiodeClient.Block.number(block)
+      end
+
+      def get_transaction_receipt(tx_hash),
+        do: Common.get_transaction_receipt(__MODULE__, tx_hash)
+
+      def send_transaction(tx), do: Common.send_transaction(__MODULE__, tx)
+    end
+  end
 
   def send_transaction(shell, tx = %IdentityRequest{}) do
     rlp = IdentityRequest.to_rlp(tx) |> Rlp.encode!()
@@ -32,12 +56,12 @@ defmodule DiodeClient.Shell.Common do
     {Connection.rpc(Shell.sticky_conn(), [shell.prefix() <> "sendmetatransaction", rlp]), tx}
   end
 
-  def create_transaction(shell, data, opts) do
+  def create_transaction(shell, address, data, opts) do
     wallet = Map.get(opts, :wallet) || DiodeClient.ensure_wallet()
     from = Wallet.address!(wallet)
-    gas = Map.get(opts, :gas, 0x15F900)
-    gas_price = Map.get(opts, :gas_price, 0x3B9ACA00)
-    value = Map.get(opts, :value, 0x0)
+    gas = Map.get(opts, :gas, shell.default_gas_limit())
+    gas_price = Map.get(opts, :gas_price, 0)
+    value = Map.get(opts, :value, 0)
     nonce = Map.get_lazy(opts, :nonce, fn -> shell.get_account(from).nonce end)
     version = Map.get(opts, :version, 0)
     access_list = Map.get(opts, :access_list, [])
@@ -56,7 +80,7 @@ defmodule DiodeClient.Shell.Common do
     }
 
     tx =
-      case Map.get(opts, :to) do
+      case Hash.to_address(address) do
         # Contract creation
         nil -> %Transaction{tx | init: data}
         # Normal transaction
@@ -71,8 +95,8 @@ defmodule DiodeClient.Shell.Common do
   end
 
   def call(shell, address, method, types, args, opts \\ []) do
-    opts = Map.merge(Map.new(opts), %{to: address, sign: false})
-    tx = create_transaction(shell, ABI.encode_call(method, types, args), opts)
+    opts = Map.merge(Map.new(opts), %{sign: false})
+    tx = create_transaction(shell, address, ABI.encode_call(method, types, args), opts)
 
     call_tx(shell, tx,
       block: Map.get(opts, :block, shell.peak()),
@@ -135,5 +159,44 @@ defmodule DiodeClient.Shell.Common do
       types when is_list(types) -> DiodeClient.ABI.decode_args(types, result)
       type when is_binary(type) -> List.first(DiodeClient.ABI.decode_args([type], result))
     end
+  end
+
+  def get_transaction_receipt(shell, tx_hash) do
+    params = Jason.encode!([tx_hash])
+    cmd = [shell.prefix() <> "rpc", "eth_getTransactionReceipt", params]
+
+    with [json] <- DiodeClient.Shell.cached_rpc(cmd) do
+      case Jason.decode!(json) do
+        %{"result" => result} ->
+          result
+
+        %{"error" => error} ->
+          Logger.error("Error #{shell.prefix()}.eth_getTransactionReceipt: #{inspect(error)}")
+          nil
+      end
+    end
+  end
+
+  def create_meta_transaction(shell, address, callcode, nonce, opts \\ [])
+      when is_binary(callcode) do
+    wallet = DiodeClient.ensure_wallet()
+    from = Keyword.get(opts, :from) || Wallet.address!(wallet)
+    gaslimit = Keyword.get(opts, :gas, shell.default_gas_limit())
+    deadline = Keyword.get(opts, :deadline, System.os_time(:second) + 3600)
+    value = Keyword.get(opts, :value, 0)
+
+    MetaTransaction.sign(
+      %MetaTransaction{
+        from: from,
+        to: address,
+        call: callcode,
+        gaslimit: gaslimit,
+        deadline: deadline,
+        value: value,
+        nonce: nonce,
+        chain_id: shell.chain_id()
+      },
+      wallet
+    )
   end
 end
