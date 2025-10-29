@@ -234,16 +234,18 @@ defmodule DiodeClient.ABI do
   # fixed, ufixed: synonyms for fixed128x18, ufixed128x18 respectively. For computing the function selector, fixed128x18 and ufixed128x18 have to be used.
   # bytes<M>: binary type of M bytes, 0 < M <= 32.
   # function: an address (20 bytes) followed by a function selector (4 bytes). Encoded identical to bytes24.
+  # Use a macro to generate the encode_value/2 function clauses at compile time
   for bit <- 1..32 do
-    Module.eval_quoted(
-      __MODULE__,
-      Code.string_to_quoted("""
-        def encode_value("uint#{bit * 8}", value), do: <<value :: unsigned-size(256)>>
-        def encode_value("int#{bit * 8}", value), do: <<value :: signed-size(256)>>
-        def encode_value("bytes#{bit}", <<value :: binary>>) when byte_size(value) <= #{bit}, do: <<:binary.decode_unsigned(value) :: unsigned-size(256)>>
-        def encode_value("bytes#{bit}", value) when is_integer(value), do: <<value :: unsigned-size(256)>>
-      """)
-    )
+    uint_bits = bit * 8
+    def encode_value(unquote("uint#{uint_bits}"), value), do: <<value::unsigned-size(256)>>
+    def encode_value(unquote("int#{uint_bits}"), value), do: <<value::signed-size(256)>>
+
+    def encode_value(unquote("bytes#{bit}"), <<value::binary>>)
+        when byte_size(value) <= unquote(bit),
+        do: <<:binary.decode_unsigned(value)::unsigned-size(256)>>
+
+    def encode_value(unquote("bytes#{bit}"), value) when is_integer(value),
+      do: <<value::unsigned-size(256)>>
   end
 
   def encode_value("uint", value), do: encode_value("uint256", value)
@@ -309,13 +311,14 @@ defmodule DiodeClient.ABI do
   end
 
   for bit <- 1..32 do
-    Module.eval_quoted(
-      __MODULE__,
+    Code.eval_quoted(
       Code.string_to_quoted("""
         def decode_value("uint#{bit * 8}", <<value :: unsigned-size(256), rest :: binary>>), do: {value, rest}
         def decode_value("int#{bit * 8}", <<value :: signed-size(256), rest :: binary>>), do: {value, rest}
         def decode_value("bytes#{bit}", <<value :: binary-size(#{bit}), _ :: binary-size(#{32 - bit}), rest :: binary>>), do: {value, rest}
-      """)
+      """),
+      [],
+      __ENV__
     )
   end
 

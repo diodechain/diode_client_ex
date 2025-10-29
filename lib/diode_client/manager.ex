@@ -465,8 +465,7 @@ defmodule DiodeClient.Manager do
   end
 
   def handle_call({:reset_server_list, list}, _from, state) do
-    {:reply, :ok,
-     restart_all(%{state | server_list: list, sticky: nil, best: [], peaks: %{}})}
+    {:reply, :ok, restart_all(%{state | server_list: list, sticky: nil, best: [], peaks: %{}})}
   end
 
   def handle_call(

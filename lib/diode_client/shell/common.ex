@@ -183,20 +183,17 @@ defmodule DiodeClient.Shell.Common do
     from = Keyword.get(opts, :from) || Wallet.address!(wallet)
     gaslimit = Keyword.get(opts, :gas, shell.default_gas_limit())
     deadline = Keyword.get(opts, :deadline, System.os_time(:second) + 3600)
-    value = Keyword.get(opts, :value, 0)
 
-    MetaTransaction.sign(
-      %MetaTransaction{
-        from: from,
-        to: address,
-        call: callcode,
-        gaslimit: gaslimit,
-        deadline: deadline,
-        value: value,
-        nonce: nonce,
-        chain_id: shell.chain_id()
-      },
-      wallet
-    )
+    %MetaTransaction{
+      from: from,
+      to: address,
+      call: callcode,
+      gaslimit: gaslimit,
+      deadline: deadline,
+      value: Keyword.get(opts, :value, 0),
+      nonce: nonce,
+      chain_id: shell.chain_id()
+    }
+    |> MetaTransaction.sign(wallet)
   end
 end
