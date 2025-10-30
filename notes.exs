@@ -1,3 +1,23 @@
+# Oct 29th 2025
+{balance, 0} = System.cmd("cast", ["balance", "--rpc-url", "https://sapphire.oasis.io", DiodeClient.Base16.encode(DiodeClient.address())])
+balance = String.trim(balance) |> String.to_integer()
+{gas_price, 0} = System.cmd("cast", ["gas-price", "--rpc-url", "https://sapphire.oasis.io"])
+gas_price = String.trim(gas_price) |> String.to_integer()
+
+tx = DiodeClient.Shell.OasisSapphire.create_transaction(
+  DiodeClient.Base16.decode("0x517D05603fdf943F7a2ffA6881811bED2A8CE19D"),
+  "setValue", ["uint256"], [128],
+  gas_price: gas_price, gas: 500_000, sign: false)
+
+privkey = DiodeClient.wallet() |> DiodeClient.Wallet.privkey!()
+# tx2 = DiodeClient.Shell.OasisSapphire.encrypt_transaction(tx).tx |> DiodeClient.Transaction.sign(privkey)
+tx2 = %{tx | data: DiodeClient.OasisSapphire.encrypt_call(DiodeClient.Transaction.payload(tx))} |> DiodeClient.Transaction.sign(privkey)
+raw_tx = DiodeClient.Transaction.to_binary(tx2) |> DiodeClient.Base16.encode
+
+{cmd, args} = {"cast", ["rpc", "--rpc-url", "https://sapphire.oasis.io", "eth_sendRawTransaction", raw_tx]}
+IO.puts(cmd <> " " <> Enum.join(args, " "))
+System.cmd(cmd, args, into: IO.stream())
+
 # Aug 22nd 2025
 
 DiodeClient.address()

@@ -1,7 +1,7 @@
 defmodule DiodeClient.OasisSapphire do
   @moduledoc """
     Oasis Sapphire Query Call Signing
-    https://github.com/oasisprotocol/sapphire-contracts/blob/main/contracts/CallPermit.sol
+    https://github.com/oasisprotocol/oasis-sdk/blob/main/client-sdk/go/modules/evm/signed_calls.go
   """
   alias DiodeClient.{EIP712, TestValues}
   alias DiodeClient.Oasis.{OrderedMap, TransportCipher}
@@ -11,6 +11,20 @@ defmodule DiodeClient.OasisSapphire do
   @default_chain_id 23_294
   @default_block_range 15
 
+  @doc """
+  This function provides a signed AND encrypted call data pack
+  for sending authenticated and encrypted `eth_call` rpc requests.
+
+  Extra authentication is needed for the `eth_call` to ensure
+  the caller is authorized to make the request (and authorized
+  to read the results of the call).
+
+  This function is not for sending transaction to the chain,
+  as those are signed independently by the caller, and so
+  no extra authentication is needed.
+
+  To encrypt transaction data, use `encrypt_data/1`.
+  """
   def new_signed_call_data_pack(
         account_wallet,
         data_bytes,
@@ -101,6 +115,24 @@ defmodule DiodeClient.OasisSapphire do
       |> CBOR.encode()
 
     %{data_pack: data_pack, msg: msg_data, cipher: cipher}
+  end
+
+  @doc """
+  Based on https://github.com/oasisprotocol/sapphire-paratime/blob/main/clients/js/src/provider.ts
+
+  Use this function to encrypt data for these rpc requests:
+  - eth_sendTransaction
+  - eth_signTransaction
+  - eth_estimateGas
+
+  For eth_call, use `new_signed_call_data_pack/3` instead if possible.
+  """
+  def encrypt_data(data_bytes) do
+    {pubkey, epoch} = oasis_call_data_public_key()
+    cipher = TransportCipher.new({pubkey, epoch})
+
+    make_envelope(cipher, data_bytes)
+    |> CBOR.encode()
   end
 
   def decrypt_data_pack_response(data_pack, response) do

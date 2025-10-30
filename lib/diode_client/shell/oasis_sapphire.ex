@@ -209,14 +209,15 @@ defmodule DiodeClient.Shell.OasisSapphire do
     oasis_call(tx, opts)
   end
 
-  def oasis_call(transaction, opts \\ []) do
+  defp prepare_signed_call(transaction, opts) do
     block = Keyword.get(opts, :block) || peak()
     block = get_block_header(Block.number(block) - 1)
-    block_number = Rlpx.bin2uint(block["number"]) + 1
+    block_number = Block.number(block) + 1
     block_hash = block["block_hash"]
 
     sig_opts = [
-      gasLimit: transaction.gasLimit,
+      gas: transaction.gasLimit,
+      gas_price: transaction.gasPrice,
       to: transaction.to,
       nonce: transaction.nonce,
       block_number: block_number,
@@ -230,6 +231,13 @@ defmodule DiodeClient.Shell.OasisSapphire do
         transaction.data,
         sig_opts
       )
+
+    %{call: call, block_number: block_number}
+  end
+
+  def oasis_call(transaction, opts \\ []) do
+    %{call: call, block_number: block_number} =
+      prepare_signed_call(transaction, opts)
 
     params =
       [
@@ -258,6 +266,10 @@ defmodule DiodeClient.Shell.OasisSapphire do
       {:ok, %{"error" => error}} ->
         {:error, error}
     end
+  end
+
+  def encrypt_transaction(tx) do
+    %{tx | data: DiodeClient.OasisSapphire.encrypt_data(DiodeClient.Transaction.payload(tx))}
   end
 
   def raw_call(address, method, types, args, opts \\ []) do
