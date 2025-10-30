@@ -10,18 +10,19 @@ defmodule DiodeClient.Shell.OasisSapphire do
     Block,
     Hash,
     Transaction,
-    MetaTransaction,
     Rlpx,
     Shell,
     Wallet
   }
 
   require Logger
+  use DiodeClient.Shell.Common
 
   def block_time(), do: :timer.seconds(6)
   def chain_id(), do: 23_294
   def prefix(), do: "sapphire:"
   @gas_limit 10_000_000
+  def default_gas_limit(), do: @gas_limit
 
   def blockexplorer_url(opts \\ []) do
     cond do
@@ -57,48 +58,19 @@ defmodule DiodeClient.Shell.OasisSapphire do
     end
   end
 
-  def send_transaction(tx), do: Shell.Common.send_transaction(__MODULE__, tx)
-
   def create_transaction(address, function_name, types, values, opts \\ [])
       when is_list(types) and is_list(values) do
-    opts =
-      opts
-      |> Keyword.put_new(:gas, @gas_limit)
-      |> Keyword.put_new(:gas_price, 0)
-      |> Keyword.put(:to, Hash.to_address(address))
-      |> Map.new()
-
-    # https://solidity.readthedocs.io/en/v0.4.24/abi-spec.html
     callcode = ABI.encode_call(function_name, types, values)
-    Shell.Common.create_transaction(__MODULE__, callcode, opts)
+    Shell.Common.create_transaction(__MODULE__, address, callcode, Map.new(opts))
   end
 
   def create_meta_transaction(address, function_name, types, values, nonce, opts \\ [])
       when is_list(types) and is_list(values) do
     # https://solidity.readthedocs.io/en/v0.4.24/abi-spec.html
     callcode = ABI.encode_call(function_name, types, values)
-    wallet = DiodeClient.ensure_wallet()
-    gaslimit = Keyword.get(opts, :gas, @gas_limit)
-    deadline = Keyword.get(opts, :deadline, System.os_time(:second) + 3600)
-    value = Keyword.get(opts, :value, 0)
-
-    MetaTransaction.sign(
-      %MetaTransaction{
-        from: identity_address(),
-        to: address,
-        call: callcode,
-        gaslimit: gaslimit,
-        deadline: deadline,
-        value: value,
-        nonce: nonce,
-        chain_id: chain_id()
-      },
-      wallet
-    )
+    opts = Keyword.put(opts, :from, identity_address(opts))
+    Shell.Common.create_meta_transaction(__MODULE__, address, callcode, nonce, opts)
   end
-
-  defdelegate get_object(key), to: Shell
-  defdelegate get_node(key), to: Shell
 
   def get_block_header(block_index) do
     case cached_rpc([prefix() <> "getblockheader", block_index]) do
@@ -106,11 +78,20 @@ defmodule DiodeClient.Shell.OasisSapphire do
     end
   end
 
-  def get_meta_nonce(address, peak \\ peak()) do
-    call(identity_address(), "Nonce", ["address"], [address], block: peak, result_types: "uint")
+  def get_meta_nonce(address, peak \\ peak(), opts \\ []) do
+    id = identity_address(opts)
+
+    call(id, "Nonce", ["address"], [address],
+      block: peak,
+      result_types: "uint"
+    )
     |> case do
-      nonce when is_integer(nonce) -> nonce
-      :revert -> 0
+      nonce when is_integer(nonce) ->
+        nonce
+
+      :revert ->
+        Logger.warning("Identity contract at #{DiodeClient.Base16.encode(id)} reverted")
+        0
     end
   end
 
@@ -197,8 +178,8 @@ defmodule DiodeClient.Shell.OasisSapphire do
         "0x000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000016636f72652e43616c6c446174615075626c69634b6579000000000000000000000000000000000000000000000000000000000000000000000000000000000001f600000000000000000000000000000000000000000000000000000000000000"
       )
 
-    opts = %{to: contract, sign: false}
-    tx = DiodeClient.Shell.Common.create_transaction(__MODULE__, data, opts)
+    opts = %{sign: false}
+    tx = DiodeClient.Shell.Common.create_transaction(__MODULE__, contract, data, opts)
 
     [status, cbor] =
       DiodeClient.Shell.Common.call_tx(__MODULE__, tx,
@@ -228,14 +209,15 @@ defmodule DiodeClient.Shell.OasisSapphire do
     oasis_call(tx, opts)
   end
 
-  def oasis_call(transaction, opts \\ []) do
+  defp prepare_signed_call(transaction, opts) do
     block = Keyword.get(opts, :block) || peak()
     block = get_block_header(Block.number(block) - 1)
-    block_number = Rlpx.bin2uint(block["number"]) + 1
+    block_number = Block.number(block) + 1
     block_hash = block["block_hash"]
 
     sig_opts = [
-      gasLimit: transaction.gasLimit,
+      gas: transaction.gasLimit,
+      gas_price: transaction.gasPrice,
       to: transaction.to,
       nonce: transaction.nonce,
       block_number: block_number,
@@ -249,6 +231,13 @@ defmodule DiodeClient.Shell.OasisSapphire do
         transaction.data,
         sig_opts
       )
+
+    %{call: call, block_number: block_number}
+  end
+
+  def oasis_call(transaction, opts \\ []) do
+    %{call: call, block_number: block_number} =
+      prepare_signed_call(transaction, opts)
 
     params =
       [
@@ -279,20 +268,23 @@ defmodule DiodeClient.Shell.OasisSapphire do
     end
   end
 
+  def encrypt_transaction(tx) do
+    %{tx | data: DiodeClient.OasisSapphire.encrypt_data(DiodeClient.Transaction.payload(tx))}
+  end
+
   def raw_call(address, method, types, args, opts \\ []) do
     DiodeClient.Shell.Common.call(__MODULE__, address, method, types, args, opts)
   end
 
-  def peak(), do: DiodeClient.Manager.get_peak(__MODULE__)
+  defp identity_address(opts) do
+    identity =
+      opts[:identity] ||
+        raise "Missing :identity parameter, define or use the default `DiodeClient.Contracts.Factory.identity_address(DiodeClient.Shell.OasisSapphire)`"
 
-  def peak_number(peak \\ peak()) do
-    Rlpx.bin2uint(peak["number"])
+    if !is_binary(identity) or byte_size(identity) != 20 do
+      raise "Invalid :identity parameter, sould be a 20 byte public address"
+    end
+
+    identity
   end
-
-  defp identity_address() do
-    DiodeClient.Contracts.Factory.identity_address(__MODULE__)
-  end
-
-  defdelegate cached_rpc(args), to: DiodeClient.Shell
-  defdelegate rpc(args), to: DiodeClient.Shell
 end

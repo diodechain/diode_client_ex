@@ -16,18 +16,19 @@ defmodule DiodeClient.Shell.Moonbeam do
     ABI,
     Account,
     Hash,
-    MetaTransaction,
     Rlpx,
     Shell,
     Wallet
   }
 
   require Logger
+  use DiodeClient.Shell.Common
 
   def block_time(), do: :timer.seconds(6)
   def chain_id(), do: 1284
   def prefix(), do: "glmr:"
   @gas_limit 10_000_000
+  def default_gas_limit(), do: @gas_limit
 
   def blockexplorer_url(opts \\ []) do
     cond do
@@ -60,50 +61,17 @@ defmodule DiodeClient.Shell.Moonbeam do
     |> send_transaction()
   end
 
-  def send_transaction(tx), do: Shell.Common.send_transaction(__MODULE__, tx)
-
   def create_transaction(address, function_name, types, values, opts \\ [])
       when is_list(types) and is_list(values) do
-    opts =
-      opts
-      |> Keyword.put_new(:gas, @gas_limit)
-      |> Keyword.put_new(:gas_price, 0)
-      |> Keyword.put(:to, Hash.to_address(address))
-      |> Map.new()
-
-    # https://solidity.readthedocs.io/en/v0.4.24/abi-spec.html
     callcode = ABI.encode_call(function_name, types, values)
-    Shell.Common.create_transaction(__MODULE__, callcode, opts)
+    Shell.Common.create_transaction(__MODULE__, address, callcode, Map.new(opts))
   end
 
   def create_meta_transaction(address, function_name, types, values, nonce, opts \\ [])
       when is_list(types) and is_list(values) do
-    # https://solidity.readthedocs.io/en/v0.4.24/abi-spec.html
     callcode = ABI.encode_call(function_name, types, values)
-    wallet = DiodeClient.ensure_wallet()
-    from = Wallet.address!(wallet)
-
-    gaslimit = Keyword.get(opts, :gas, @gas_limit)
-    deadline = Keyword.get(opts, :deadline, System.os_time(:second) + 3600)
-    value = Keyword.get(opts, :value, 0)
-
-    MetaTransaction.sign(
-      %MetaTransaction{
-        from: from,
-        to: address,
-        call: callcode,
-        gaslimit: gaslimit,
-        deadline: deadline,
-        value: value,
-        nonce: nonce,
-        chain_id: chain_id()
-      },
-      wallet
-    )
+    Shell.Common.create_meta_transaction(__MODULE__, address, callcode, nonce, opts)
   end
-
-  defdelegate get_object(key), to: Shell
-  defdelegate get_node(key), to: Shell
 
   def get_block_header(block_index) do
     case cached_rpc([prefix() <> "getblockheader", block_index]) do
@@ -111,7 +79,7 @@ defmodule DiodeClient.Shell.Moonbeam do
     end
   end
 
-  def get_meta_nonce(address, peak \\ peak()) do
+  def get_meta_nonce(address, peak \\ peak(), _opts \\ []) do
     address = Hash.to_address(address)
     peak_index = Rlpx.bin2uint(peak["number"])
     [num] = cached_rpc([prefix() <> "getmetanonce", peak_index, address])
@@ -183,16 +151,7 @@ defmodule DiodeClient.Shell.Moonbeam do
     end
   end
 
-  def peak(), do: DiodeClient.Manager.get_peak(__MODULE__)
-
-  def peak_number(peak \\ peak()) do
-    Rlpx.bin2uint(peak["number"])
-  end
-
   def call(address, method, types, args, opts \\ []) do
     DiodeClient.Shell.Common.call(__MODULE__, address, method, types, args, opts)
   end
-
-  defdelegate cached_rpc(args), to: DiodeClient.Shell
-  defdelegate rpc(args), to: DiodeClient.Shell
 end

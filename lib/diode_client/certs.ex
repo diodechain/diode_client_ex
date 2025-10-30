@@ -37,14 +37,7 @@ defmodule DiodeClient.Certs do
   for type <- @types do
     record = Record.extract(type, from_lib: "public_key/include/public_key.hrl")
 
-    Module.eval_quoted(
-      __MODULE__,
-      Code.string_to_quoted("""
-        def extract_record(:#{Atom.to_string(type)}) do
-          #{inspect(record)}
-        end
-      """)
-    )
+    def extract_record(unquote(type)), do: unquote(Macro.escape(record))
   end
 
   @spec keywords([any()], any()) :: keyword()

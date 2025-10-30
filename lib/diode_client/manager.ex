@@ -293,7 +293,7 @@ defmodule DiodeClient.Manager do
         end
 
         Process.send_after(self(), {:restart_conn, key}, 15_000)
-        state = %Manager{state | conns: conns}
+        state = %{state | conns: conns}
         {:noreply, schedule_update(state)}
 
       {nil, _conns} ->
@@ -309,7 +309,7 @@ defmodule DiodeClient.Manager do
 
   @impl true
   def handle_cast({:set_connection, cpid}, state = %Manager{conns: _conns}) do
-    {:noreply, %Manager{state | best: [cpid]}}
+    {:noreply, %{state | best: [cpid]}}
   end
 
   def handle_cast({:update_info, cpid, info}, state = %Manager{conns: conns}) do
@@ -324,7 +324,7 @@ defmodule DiodeClient.Manager do
 
           new_info = %{peaks: %{}} ->
             state =
-              %Manager{state | conns: Map.put(conns, cpid, new_info)}
+              %{state | conns: Map.put(conns, cpid, new_info)}
               |> schedule_update()
 
             {:noreply, state}
@@ -370,7 +370,7 @@ defmodule DiodeClient.Manager do
           pid
       end
 
-    conns = Map.put(conns, pid, %Info{info | pid: pid, started_at: System.os_time(), peaks: %{}})
+    conns = Map.put(conns, pid, %{info | pid: pid, started_at: System.os_time(), peaks: %{}})
     %Manager{state | conns: conns}
   end
 
@@ -465,8 +465,7 @@ defmodule DiodeClient.Manager do
   end
 
   def handle_call({:reset_server_list, list}, _from, state) do
-    {:reply, :ok,
-     restart_all(%Manager{state | server_list: list, sticky: nil, best: [], peaks: %{}})}
+    {:reply, :ok, restart_all(%{state | server_list: list, sticky: nil, best: [], peaks: %{}})}
   end
 
   def handle_call(
@@ -481,9 +480,9 @@ defmodule DiodeClient.Manager do
       if result do
         {pid, _info} = result
         safe_send(pid, :stop)
-        %Manager{state | server_list: server_list, conns: Map.delete(conns, pid)}
+        %{state | server_list: server_list, conns: Map.delete(conns, pid)}
       else
-        %Manager{state | server_list: server_list}
+        %{state | server_list: server_list}
       end
 
     {:reply, :ok, state}
@@ -513,7 +512,14 @@ defmodule DiodeClient.Manager do
 
     pids =
       Map.values(state.conns)
-      |> Enum.filter(fn %Info{server_address: addr} -> addr != nil end)
+      |> Enum.filter(fn %Info{server_address: addr, peaks: conn_peaks} ->
+        # 1. Remove connections that have no address
+        # 2. Remove connections that have a lower peak than the current best
+        addr != nil and
+          Enum.all?(state.peaks, fn {shell, peak} ->
+            block_number(conn_peaks[shell]) >= block_number(peak)
+          end)
+      end)
       |> Enum.map(fn %{pid: pid} -> pid end)
 
     best = Enum.filter(state.best, fn pid -> pid in pids end)
@@ -528,9 +534,10 @@ defmodule DiodeClient.Manager do
 
   defp update_peaks(state = %Manager{peaks: last_peaks, shells: shells}) do
     connected = connected(state)
+    len = length(connected)
 
     # Reject single node connections
-    connected = if length(connected) < min(2, map_size(seed_list())), do: [], else: connected
+    connected = if len < min(2, map_size(seed_list())), do: [], else: connected
 
     # Get the highest peak for each shell
     peaks =
@@ -538,8 +545,8 @@ defmodule DiodeClient.Manager do
         peak =
           Enum.map(connected, fn %Info{peaks: peaks} -> peaks[shell] end)
           |> Enum.sort_by(&block_number/1, :desc)
-          # Security factor, we chose the lowest peak of the top 3 (e.g. 3 nodes have seen this)
-          |> Enum.take(3)
+          # We remove the bottom 20% of the connected nodes to avoid stale peaks
+          |> Enum.take(len - div(len, 5))
           |> List.last()
 
         if block_number(peak) > block_number(last_peaks[shell]) do
@@ -553,10 +560,16 @@ defmodule DiodeClient.Manager do
     %Manager{state | peaks: peaks}
   end
 
-  defp update_best(state = %Manager{waiting: waiting, best: prev_best}) do
+  defp update_best(state = %Manager{waiting: waiting, best: prev_best, peaks: peaks}) do
     new_best =
       connected(state)
-      # Sort by latency and return the first one
+      # Filter out nodes that have a lower peak than the current best
+      |> Enum.filter(fn %Info{peaks: conn_peaks} ->
+        Enum.all?(peaks, fn {shell, peak} ->
+          block_number(peak) <= block_number(conn_peaks[shell])
+        end)
+      end)
+      # Sort by latency
       |> Enum.sort_by(fn %Info{latency: latency} -> latency end)
 
     if peak = List.first(new_best) do
@@ -614,11 +627,11 @@ defmodule DiodeClient.Manager do
   defp set_sticky({pid, info}, state) do
     Logger.info("Setting sticky connection to #{inspect(info.server_url)}")
     Process.register(pid, __MODULE__.Sticky)
-    {:reply, pid, %Manager{state | sticky: info.server_url}}
+    {:reply, pid, %{state | sticky: info.server_url}}
   end
 
   defp do_set_online(state = %Manager{online: online, server_list: servers}, new_online) do
-    state = %Manager{state | online: new_online}
+    state = %{state | online: new_online}
     pids = Map.keys(servers)
 
     cond do
@@ -630,7 +643,7 @@ defmodule DiodeClient.Manager do
 
       not new_online ->
         for pid <- pids, do: safe_send(pid, :stop)
-        %Manager{state | server_list: seed_list(), conns: %{}, best: []}
+        %{state | server_list: seed_list(), conns: %{}, best: []}
     end
   end
 

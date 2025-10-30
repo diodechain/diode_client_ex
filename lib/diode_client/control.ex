@@ -97,7 +97,7 @@ defmodule DiodeClient.Control do
     if state.socket == nil do
       :ssl.controlling_process(socket, self())
       :ssl.setopts(socket, active: true, packet: 2)
-      {:reply, :ok, %Control{state | socket: socket}}
+      {:reply, :ok, %{state | socket: socket}}
     else
       Logger.debug("ignoring socket on control plane since i'm open already")
       :ssl.close(socket)
@@ -121,12 +121,12 @@ defmodule DiodeClient.Control do
   end
 
   defp try_connection(state = %Control{socket: nil, peer: peer, tried: 0}) do
-    state = %Control{state | tried: 1}
+    state = %{state | tried: 1}
 
     case Port.connect(peer, @control_port, local: false) do
       {:ok, pid} ->
         :ssl.setopts(pid, active: true, packet: 2)
-        %Control{state | socket: pid}
+        %{state | socket: pid}
 
       {:error, _reason} ->
         # Logger.debug("control plane failed for #{inspect(reason)}")
@@ -164,7 +164,7 @@ defmodule DiodeClient.Control do
             state
 
           ["RESOLVED", ^bin_portnum, ret_addr, ret_port] ->
-            %Control{
+            %{
               state
               | resolved_ports: Map.put(ports, portnum, Rlpx.bin2uint(ret_port)),
                 resolved_address: ret_addr
@@ -177,14 +177,14 @@ defmodule DiodeClient.Control do
       5_000 ->
         :ssl.close(socket)
         Logger.debug("failed control plane on timeout")
-        %Control{state | socket: nil}
+        %{state | socket: nil}
     end
   end
 
   @impl true
   def handle_info({:ssl_closed, closed_socket}, state = %Control{socket: socket}) do
     if socket == closed_socket do
-      {:noreply, %Control{state | socket: nil}}
+      {:noreply, %{state | socket: nil}}
     else
       {:noreply, state}
     end

@@ -3,7 +3,7 @@ defmodule DiodeClient.Contracts.BNS do
   Wrapper for BNS smart contract to register and resolve names.
   """
   import DiodeClient.Contracts.Utils
-  alias DiodeClient.{Hash}
+  alias DiodeClient.{Hash, Contracts.Factory}
   @slot_names 1
   @slot_reverse_names 2
 
@@ -15,28 +15,15 @@ defmodule DiodeClient.Contracts.BNS do
   alias __MODULE__.Impl
 
   def impls() do
-    [
+    for shell <- Factory.shells() do
+      contracts = Factory.contracts(shell)
+
       %Impl{
-        address: Hash.to_address(0xAF60FAA5CD840B724742F1AF116168276112D6A6),
-        shell: DiodeClient.Shell,
-        postfix: "diode"
-      },
-      %Impl{
-        address: Hash.to_address(0x75140F88B0F4B2FBC6DADC16CC51203ADB07FE36),
-        shell: DiodeClient.Shell.MoonbaseAlpha,
-        postfix: "m1"
-      },
-      %Impl{
-        address: Hash.to_address(0x8A093E3A83F63A00FFFC4729AA55482845A49294),
-        shell: DiodeClient.Shell.Moonbeam,
-        postfix: "glmr"
-      },
-      %Impl{
-        address: Hash.to_address(0xBC7A66A80E760DD0D84F6E39DF6CFD937C6C94F6),
-        shell: DiodeClient.Shell.OasisSapphire,
-        postfix: "sapphire"
+        address: contracts.bns,
+        shell: shell,
+        postfix: contracts.bns_postfix
       }
-    ]
+    end
   end
 
   def all_names_length(shell, block \\ nil) do

@@ -177,7 +177,7 @@ defmodule DiodeClient.Port do
   end
 
   def handle_call({:update_peer_port, peer, portnum}, _, state) do
-    {:reply, :ok, %Port{state | peer: peer, portnum: portnum}}
+    {:reply, :ok, %{state | peer: peer, portnum: portnum}}
   end
 
   def handle_call({:setopts, new_opts}, _, state = %Port{opts: opts}) do
