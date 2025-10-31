@@ -13,6 +13,7 @@ defmodule DiodeClient.Shell.Common do
     IdentityRequest,
     MetaTransaction,
     Rlp,
+    Rlpx,
     Shell,
     Transaction,
     Wallet
@@ -38,6 +39,8 @@ defmodule DiodeClient.Shell.Common do
         do: Common.get_transaction_receipt(__MODULE__, tx_hash)
 
       def send_transaction(tx), do: Common.send_transaction(__MODULE__, tx)
+
+      def get_block_header(block_index), do: Common.get_block_header(__MODULE__, block_index)
     end
   end
 
@@ -195,5 +198,11 @@ defmodule DiodeClient.Shell.Common do
       chain_id: shell.chain_id()
     }
     |> MetaTransaction.sign(wallet)
+  end
+
+  def get_block_header(shell, block_index) do
+    case Shell.cached_rpc([shell.prefix() <> "getblockheader", block_index]) do
+      [block] -> Rlpx.list2map(block)
+    end
   end
 end

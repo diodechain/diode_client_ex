@@ -63,12 +63,6 @@ defmodule DiodeClient.Shell.MoonbaseAlpha do
     Shell.Common.create_meta_transaction(__MODULE__, address, callcode, nonce, opts)
   end
 
-  def get_block_header(block_index) do
-    case cached_rpc([prefix() <> "getblockheader", block_index]) do
-      [block] -> Rlpx.list2map(block)
-    end
-  end
-
   def get_meta_nonce(address, peak \\ peak(), _opts \\ []) do
     address = Hash.to_address(address)
     peak_index = Rlpx.bin2uint(peak["number"])

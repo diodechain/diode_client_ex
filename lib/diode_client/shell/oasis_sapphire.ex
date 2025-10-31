@@ -72,12 +72,6 @@ defmodule DiodeClient.Shell.OasisSapphire do
     Shell.Common.create_meta_transaction(__MODULE__, address, callcode, nonce, opts)
   end
 
-  def get_block_header(block_index) do
-    case cached_rpc([prefix() <> "getblockheader", block_index]) do
-      [block] -> Rlpx.list2map(block)
-    end
-  end
-
   def get_meta_nonce(address, peak \\ peak(), opts \\ []) do
     id = identity_address(opts)
 
@@ -210,8 +204,14 @@ defmodule DiodeClient.Shell.OasisSapphire do
   end
 
   defp prepare_signed_call(transaction, opts) do
-    block = Keyword.get(opts, :block) || peak()
-    block = get_block_header(Block.number(block) - 1)
+    block =
+      case Keyword.get(opts, :block) do
+        nil -> get_block_header(peak_number() - 1)
+        "latest" -> get_block_header(peak_number() - 1)
+        block when is_integer(block) -> get_block_header(block - 1)
+        block when is_map(block) -> get_block_header(Block.number(block) - 1)
+      end
+
     block_number = Block.number(block) + 1
     block_hash = block["block_hash"]
 
