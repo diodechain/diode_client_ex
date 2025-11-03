@@ -71,11 +71,11 @@ defmodule DiodeClient.Contracts.Factory do
     factory = Hash.to_address(0x1E568739AF8FD8FE0748DEFB74A917EA9D38FE29)
 
     %List{
-      bns: Hash.to_address(0xBC7A66A80E760DD0D84F6E39DF6CFD937C6C94F6),
+      bns: Hash.to_address(0x6CBF10355F8A16F7CD2F7AA762C08374959CE1BD),
       bns_postfix: "sapphire",
       drive_invites: Hash.to_address(0xA0A4DC6623EC96122066195DE34A813846DC0FC0),
-      drive_member_version: 121,
-      drive_member: Hash.to_address(0xD344A3BB945C5113754144DD03F9FA643AA9A359),
+      drive_member_version: 122,
+      drive_member: Hash.to_address(0x732208713E3CCFB8EF011A337BE872F221A95560),
       drive_version: 144,
       drive: Hash.to_address(0xB7CAF5CBB62C54BEF279BB335919598E9BA17BCE),
       factory: factory,
