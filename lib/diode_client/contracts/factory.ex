@@ -159,7 +159,9 @@ defmodule DiodeClient.Contracts.Factory do
     %IdentityRequest{
       salt: identity_salt(shell),
       target: drive_member_target(shell),
-      from: DiodeClient.address()
+      from: DiodeClient.address(),
+      chain_id: shell.chain_id(),
+      nonce: -1
     }
   end
 
