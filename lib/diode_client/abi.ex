@@ -42,12 +42,21 @@ defmodule DiodeClient.ABI do
 
     Enum.zip(types, ret)
     |> Enum.map(fn {type, value} ->
-      if is_dynamic(type) do
-        decode_dynamic_type(type, data, value)
-      else
-        value
-      end
+      maybe_decode_dynamic_type(type, data, value)
     end)
+  end
+
+  defp maybe_decode_dynamic_type(type, data, value) do
+    if is_dynamic(type) do
+      decode_dynamic_type(type, data, value)
+    else
+      value
+    end
+  end
+
+  defp decode_string(base) do
+    {len, rest} = decode("uint256", base)
+    binary_part(rest, 0, len)
   end
 
   defp decode_dynamic_type(type, data, value) do
@@ -56,16 +65,15 @@ defmodule DiodeClient.ABI do
 
     cond do
       type in ["string", "bytes"] ->
-        {len, rest} = decode("uint256", base)
-        binary_part(rest, 0, len)
+        decode_string(base)
 
       String.ends_with?(type, "[]") ->
-        {slots, rest} = decode_value("uint256", base)
+        {slots, base} = decode_value("uint256", base)
         element_type = String.replace_trailing(type, "[]", "")
 
         {acc, _rest} =
           List.duplicate(element_type, slots)
-          |> Enum.reduce({[], rest}, fn element_type, {acc, rest} ->
+          |> Enum.reduce({[], base}, fn element_type, {acc, rest} ->
             {value, rest} =
               if String.starts_with?(element_type, "(") do
                 # For tuple types, we need to decode using the tuple logic
@@ -80,7 +88,8 @@ defmodule DiodeClient.ABI do
 
                 {decoded_tuple, remaining_rest}
               else
-                decode_value(element_type, rest)
+                {value, rest} = decode_value(element_type, rest)
+                {maybe_decode_dynamic_type(element_type, base, value), rest}
               end
 
             {acc ++ [value], rest}
