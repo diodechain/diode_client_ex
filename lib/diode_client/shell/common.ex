@@ -148,7 +148,7 @@ defmodule DiodeClient.Shell.Common do
 
         %{"error" => error} ->
           Logger.error("Error #{shell.prefix()}.eth_call: #{inspect(error)}")
-          nil
+          {:error, error}
       end
     end
   end
