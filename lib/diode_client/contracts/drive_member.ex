@@ -91,7 +91,12 @@ defmodule DiodeClient.Contracts.DriveMember do
 
   def members(shell, address, block) do
     block = block || shell.peak()
+
     Contract.Utils.call(shell, address, "Members", [], [], "address[]", block)
+    |> case do
+      :revert -> :revert
+      members -> [owner(shell, address, block) | members]
+    end
   end
 
   def member(shell, address, index, block) do
