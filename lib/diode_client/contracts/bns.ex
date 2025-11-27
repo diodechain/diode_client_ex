@@ -116,7 +116,7 @@ defmodule DiodeClient.Contracts.BNS do
   def resolve_name_all(orig_name, block \\ nil) do
     {impl, name} = name_to_impl(orig_name)
 
-    if impl.shell == DiodeClient.Shell do
+    if impl.shell == DiodeClient.Shell or version(impl.shell, impl.address, block) < 318 do
       name_hash = Hash.keccak_256(name)
       base = Hash.to_bytes32(@slot_names)
 
@@ -139,7 +139,7 @@ defmodule DiodeClient.Contracts.BNS do
         end)
       end
     else
-      call(impl, "ResolveEntryAll", ["string"], [name],
+      call(impl, "ResolveAll", ["string"], [name],
         block: block,
         result_types: ["address[]"]
       )

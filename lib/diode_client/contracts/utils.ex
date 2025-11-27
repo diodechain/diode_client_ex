@@ -115,6 +115,11 @@ defmodule DiodeClient.Contracts.Utils do
     call(shell, address, "change_tracker", [], [], "uint256", block)
   end
 
+  def version(shell, address, block) do
+    block = block || shell.peak()
+    call(shell, address, "Version", [], [], "uint256", block)
+  end
+
   def call(shell, contract, method, types, args, result_types, block \\ nil) do
     shell.call(contract, method, types, args,
       block: block || shell.peak(),
