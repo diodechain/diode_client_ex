@@ -10,6 +10,11 @@ defmodule Mix.Tasks.Resolve do
     resolve(address)
   end
 
+  def run(_) do
+    IO.puts("Usage: mix resolve <address>")
+    System.halt(1)
+  end
+
   def resolve(name, level \\ 0)
 
   def resolve(hex = "0x" <> _, level) do
@@ -35,11 +40,6 @@ defmodule Mix.Tasks.Resolve do
 
       addtl_drive_addresses =
         Contracts.DriveMember.addtl_drive_addresses(shell, Base16.decode(hex), nil)
-
-      # if owner == false do
-      #   DiodeClient.Shell.get_account_root(Base16.decode(hex)) |> IO.inspect()
-      #   DiodeClient.Shell.get_account(Base16.decode(hex)) |> IO.inspect()
-      # end
 
       puts(level, "owner", if(owner, do: Base16.encode(owner), else: "nil"))
 

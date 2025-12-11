@@ -447,7 +447,8 @@ defmodule DiodeClient.Manager do
         {:reply, nil, state}
 
       true ->
-        Enum.filter(conns, fn {_, %Info{type: type}} -> type == :seed end)
+        connected(state)
+        |> Enum.filter(fn {_, %Info{type: type}} -> type == :seed end)
         |> Enum.sort_by(fn {_, %Info{latency: latency}} -> latency end)
         |> List.first()
         |> set_sticky(state)
@@ -489,20 +490,39 @@ defmodule DiodeClient.Manager do
   end
 
   defp connected(%Manager{conns: conns, shells: shells, peaks: peaks}) do
-    Enum.filter(Map.values(conns), fn %Info{server_address: addr, peaks: conn_peaks} ->
-      addr != nil and
-        Enum.all?(shells, fn shell ->
-          block_number(conn_peaks[shell]) >= block_number(peaks[shell])
-        end)
-    end)
+    connected =
+      Enum.filter(conns, fn {_, %Info{server_address: addr, peaks: conn_peaks}} ->
+        addr != nil and
+          Enum.all?(shells, fn shell ->
+            block_number(conn_peaks[shell]) >= block_number(peaks[shell])
+          end)
+      end)
+      |> Map.new()
+
+    # Reject single node connections
+    if map_size(connected) < min_connections() do
+      %{}
+    else
+      connected
+    end
+  end
+
+  defp min_connections() do
+    # When the node list is force set by the user we ignore the usual minimum requirement.
+    min(3, map_size(seed_list()))
   end
 
   defp schedule_update(state) do
     pid = self()
+    debounce_timeout = if state.best == [], do: 100, else: 5_000
 
-    Debouncer.immediate({__MODULE__, :update}, fn ->
-      send(pid, :update)
-    end)
+    Debouncer.immediate(
+      {__MODULE__, :update},
+      fn ->
+        send(pid, :update)
+      end,
+      debounce_timeout
+    )
 
     state
   end
@@ -533,11 +553,17 @@ defmodule DiodeClient.Manager do
   end
 
   defp update_peaks(state = %Manager{peaks: last_peaks, shells: shells}) do
-    connected = connected(state)
+    connected = Map.values(connected(state))
     len = length(connected)
 
-    # Reject single node connections
-    connected = if len < min(2, map_size(seed_list())), do: [], else: connected
+    drop =
+      if len > 1 do
+        # We remove the bottom 20% (but at least 1) of the connected nodes to avoid stale peaks
+        max(1, div(len, 5))
+      else
+        # If there is only one connected node, we don't remove any
+        0
+      end
 
     # Get the highest peak for each shell
     peaks =
@@ -546,7 +572,7 @@ defmodule DiodeClient.Manager do
           Enum.map(connected, fn %Info{peaks: peaks} -> peaks[shell] end)
           |> Enum.sort_by(&block_number/1, :desc)
           # We remove the bottom 20% of the connected nodes to avoid stale peaks
-          |> Enum.take(len - div(len, 5))
+          |> Enum.take(len - drop)
           |> List.last()
 
         if block_number(peak) > block_number(last_peaks[shell]) do
@@ -562,7 +588,7 @@ defmodule DiodeClient.Manager do
 
   defp update_best(state = %Manager{waiting: waiting, best: prev_best, peaks: peaks}) do
     new_best =
-      connected(state)
+      Map.values(connected(state))
       # Filter out nodes that have a lower peak than the current best
       |> Enum.filter(fn %Info{peaks: conn_peaks} ->
         Enum.all?(peaks, fn {shell, peak} ->

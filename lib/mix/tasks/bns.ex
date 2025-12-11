@@ -24,9 +24,15 @@ defmodule Mix.Tasks.Bns do
     unregister(name)
   end
 
+  def run(["whoami"]) do
+    init()
+    IO.puts("Whoami: #{DiodeClient.Wallet.printable(DiodeClient.wallet())}")
+  end
+
   def run(_) do
     IO.puts("Usage: mix bns register <name> <destination>")
     IO.puts("Usage: mix bns unregister <name>")
+    IO.puts("Usage: mix bns whoami")
     System.halt(1)
   end
 
