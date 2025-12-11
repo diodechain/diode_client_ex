@@ -376,7 +376,7 @@ defmodule DiodeClient.Manager do
 
   @impl true
   def handle_call(:online?, _from, state = %Manager{online: online}) do
-    {:reply, online and length(connected(state)) > 0, state}
+    {:reply, online and map_size(connected(state)) > 0, state}
   end
 
   def handle_call({:set_online, new_online}, _from, state) do
