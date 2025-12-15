@@ -147,7 +147,7 @@ defmodule DiodeClient.Shell.Common do
           |> decode_result(Keyword.get(opts, :result_types))
 
         %{"error" => error} ->
-          Logger.error("Error #{shell.prefix()}.eth_call: #{inspect(error)}")
+          Logger.error("#{shell.prefix()}eth_call: #{inspect(error)}")
           {:error, error}
       end
     end
@@ -174,7 +174,7 @@ defmodule DiodeClient.Shell.Common do
           result
 
         %{"error" => error} ->
-          Logger.error("Error #{shell.prefix()}.eth_getTransactionReceipt: #{inspect(error)}")
+          Logger.error("#{shell.prefix()}eth_getTransactionReceipt: #{inspect(error)}")
           nil
       end
     end

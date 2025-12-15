@@ -304,9 +304,26 @@ defmodule DiodeClient.Shell do
   def cached_rpc(args) do
     ETSLru.fetch(ShellCache, args, fn ->
       # Single retry for remote_closed
+      c1 = conn()
+      name = Connection.server_url(c1)
+
       case Connection.rpc(conn(), args) do
-        {:error, "remote_closed"} -> Connection.rpc(conn(), args)
-        ret -> ret
+        {:error, "remote_closed"} ->
+          Connection.rpc(conn(), args)
+
+        {:error, other} ->
+          {:error, "#{name}: #{inspect(other)}"}
+
+        [json] when is_binary(json) ->
+          # This is a moonbeam specific error, that unfortunatelly is common.
+          if String.contains?(json, "failed to retrieve Runtime Api version") do
+            {:error, "#{name}: failed to retrieve Runtime Api version"}
+          else
+            [json]
+          end
+
+        ret ->
+          ret
       end
     end)
   end

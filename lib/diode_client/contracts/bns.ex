@@ -2,7 +2,7 @@ defmodule DiodeClient.Contracts.BNS do
   @moduledoc """
   Wrapper for BNS smart contract to register and resolve names.
   """
-  import DiodeClient.Contracts.Utils
+  import DiodeClient.Contracts.Utils, except: [call: 6, call: 7]
   alias DiodeClient.{Hash, Contracts.Factory}
   @slot_names 1
   @slot_reverse_names 2
@@ -16,20 +16,18 @@ defmodule DiodeClient.Contracts.BNS do
 
   def impls() do
     for shell <- Factory.shells() do
-      contracts = Factory.contracts(shell)
-
-      %Impl{
-        address: contracts.bns,
-        shell: shell,
-        postfix: contracts.bns_postfix
-      }
+      impl(shell)
     end
   end
 
-  def all_names_length(shell, block \\ nil) do
-    impl = Enum.find(impls(), fn impl -> impl.shell == shell end)
+  def impl(shell) do
+    contracts = Factory.contracts(shell)
 
-    call(impl, "AllNamesLength", [], [], block: block, result_types: "uint256")
+    %Impl{
+      address: contracts.bns,
+      shell: shell,
+      postfix: contracts.bns_postfix
+    }
   end
 
   def is_bns(address) do
@@ -169,6 +167,9 @@ defmodule DiodeClient.Contracts.BNS do
     impl.shell.send_transaction(impl.address, method, types, args, meta_transaction: true)
   end
 
+  defp call(impl, method, types, args, opts) when is_atom(impl),
+    do: call(impl(impl), method, types, args, opts)
+
   defp call(impl, method, types, args, opts) do
     impl.shell.call(impl.address, method, types, args, opts)
   end
@@ -188,6 +189,42 @@ defmodule DiodeClient.Contracts.BNS do
     with [_name, postfix] <- String.split(name, "."),
          impl when not is_nil(impl) <- Enum.find(impls(), fn impl -> impl.postfix == postfix end) do
       impl.shell
+    end
+  end
+
+  def version(shell, block) do
+    block = block || shell.peak()
+    call(shell, "Version", [], [], result_types: "uint256", block: block)
+  end
+
+  def all_names_length(shell, block) do
+    block = block || shell.peak()
+    call(shell, "AllNamesLength", [], [], result_types: "uint256", block: block)
+  end
+
+  def name_by_index(shell, index, block) do
+    block = block || shell.peak()
+    hash = call(shell, "namesIndex", ["uint256"], [index], result_types: "bytes32", block: block)
+    name_by_hash(shell, hash, block)
+  end
+
+  def name_by_hash(shell, hash, block) do
+    call(shell, "names", ["bytes32"], [hash],
+      block: block,
+      result_types: ["address", "address", "string", "uint256", "uint256"]
+    )
+    |> case do
+      [destination, owner, name, lock_end, lease_end] ->
+        %{
+          destination: destination,
+          owner: owner,
+          name: name,
+          lock_end: lock_end,
+          lease_end: lease_end
+        }
+
+      _ ->
+        nil
     end
   end
 end
