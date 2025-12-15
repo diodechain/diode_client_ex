@@ -77,6 +77,31 @@ For example `server_address = "0x389eba94b330140579cdce1feb1a6e905ff876e6"`
   end)
 ```
 
+## Blockchain Interaction
+
+For limited access to supported blockchain source of truth data :diode_client supports reading from smart contracts and calling contract methods. For each supported blockchain there is a `Shell` configured, currently supported blockchains are:
+
+- Diode L1 (DiodeClient.Shell) - deprecated
+- Moonbeam (Diodeclient.Shell.Moonbeam) - https://moonbeam.network/
+- Oasis Sapphire (DiodeClient.Shell.OasisSapphire) - https://oasis.net/sapphire
+
+Each of these support `call/5` and other methods to read contract data and send transactions. 
+
+Example of making a ZTNA contract call on Oasis Sapphire:
+
+```elixir
+alias Diodeclient.{Base16, Shell}
+
+Shell.OasisSapphire.call(
+  Base16.decode("0xb78700e7254F54b418bdF6DE7109128D1Fe8E8DD"), 
+  "getPropertyValue", 
+  ["address", "string"], 
+  [Base16.decode("0x90983fc294577b6f00CBd5D3b26aDf2e85Ca2Cac"), "public"], 
+  result_types: "string"
+)
+
+```
+
 ## Encryption and Authentication
 
 For encryption standard TLS as builtin into Erlang from OpenSSL is used. For authentication though the Ethereum signature scheme using the elliptic curve `secp256k1` is used. The generated public addresses of the form `0x389eba94b330140579cdce1feb1a6e905ff876e6` actually represent hashes of public keys. When opening a port using `DiodeClient.port_open("0x389eba94b330140579cdce1feb1a6e905ff876e6", 5000)` this first locates the correct peer and then uses cryptographic handshakes to ensure the peer is in fact in possession of the corresponding private key.
