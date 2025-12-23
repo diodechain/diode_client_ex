@@ -38,6 +38,8 @@ defmodule DiodeClient.Shell.Common do
       def get_transaction_receipt(tx_hash),
         do: Common.get_transaction_receipt(__MODULE__, tx_hash)
 
+      def gas_price(), do: Common.gas_price(__MODULE__)
+
       def send_transaction(tx), do: Common.send_transaction(__MODULE__, tx)
 
       def get_block_header(block_index), do: Common.get_block_header(__MODULE__, block_index)
@@ -175,6 +177,21 @@ defmodule DiodeClient.Shell.Common do
 
         %{"error" => error} ->
           Logger.error("#{shell.prefix()}eth_getTransactionReceipt: #{inspect(error)}")
+          nil
+      end
+    end
+  end
+
+  def gas_price(shell) do
+    cmd = [shell.prefix() <> "rpc", "eth_gasPrice", "[]"]
+
+    with [json] <- DiodeClient.Shell.cached_rpc(cmd) do
+      case Jason.decode!(json) do
+        %{"result" => result} ->
+          Base16.decode_int(result)
+
+        %{"error" => error} ->
+          Logger.error("#{shell.prefix()}eth_gasPrice: #{inspect(error)}")
           nil
       end
     end
