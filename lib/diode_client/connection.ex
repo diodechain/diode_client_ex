@@ -301,10 +301,9 @@ defmodule DiodeClient.Connection do
       {id, ch = %Channel{backlog: [[req, rlp] | backlog]}} ->
         %Cmd{cmd: cmd, send_reply: reply} = Map.fetch!(recv_id, req)
 
-        if cmd in ["portopen", "portsend"] do
-          debug(
-            "sending #{cmd} for #{if is_binary(id), do: Base16.encode(id), else: inspect(id)}"
-          )
+        if cmd in ["portopen", "portopen2"] do
+          "sending #{cmd} for #{if is_binary(id), do: Base16.encode(id), else: inspect(id)}"
+          |> debug()
         end
 
         state = ssl_send!(state, rlp)
@@ -783,6 +782,10 @@ defmodule DiodeClient.Connection do
       cmd = %Cmd{cmd: name, reply: from} ->
         {msg, state} =
           case {name, msg} do
+            {"portopen2", [^req, ["response", "ok", port_num]]} ->
+              debug("received portopen2 ack for #{Base16.encode(port_num)}")
+              {[req, ["response", "ok", Rlpx.bin2uint(port_num)]], state}
+
             {"portopen", [^req, ["response", "ok", port_ref]]} ->
               debug("received portopen ack for #{Base16.encode(port_ref)}")
               {:ok, pid} = Port.start_link(self(), port_ref)
@@ -801,7 +804,72 @@ defmodule DiodeClient.Connection do
 
   defp handle_request(
          state = %Connection{ports: ports},
-         [ref, [command | params]]
+         [ref, ["portopen", port, port_ref, from]]
+       ) do
+    debug("received portopen for #{Base16.encode(port_ref)}")
+    port = to_num(port)
+
+    {:ok, pid} = Port.start_link(self(), port_ref, port, from)
+
+    {state, msg} =
+      case GenServer.call(Acceptor, {:inject, port, pid}) do
+        :ok ->
+          state = %{state | ports: Map.put(ports, port_ref, {pid, :up})}
+          msg = ["response", port_ref, "ok"]
+          {state, msg}
+
+        {:error, message} ->
+          debug(
+            "reject portopen on port #{port} ref: #{Base16.encode(port_ref)} reason: #{inspect(message)}"
+          )
+
+          Process.unlink(pid)
+          Port.close(pid)
+          {state, ["error", port_ref, inspect(message)]}
+      end
+
+    msg = Rlp.encode!([ref, msg])
+    ssl_send!(state, msg)
+  end
+
+  defp handle_request(
+         state = %Connection{},
+         [ref, ["portopen2", port, physical_port | _rest]]
+       ) do
+    debug("received portopen2 for #{Base16.encode(physical_port)}")
+    port = to_num(port)
+
+    {state, msg} =
+      case Port.direct_connect(server_url(self()), Rlpx.bin2uint(physical_port), :server) do
+        {:error, reason} ->
+          debug(
+            "reject portopen2 on port #{port} ref: #{Base16.encode(physical_port)} reason: #{inspect(reason)}"
+          )
+
+          {state, ["error", physical_port, inspect(reason)]}
+
+        {:ok, ssl} ->
+          case GenServer.call(Acceptor, {:inject, port, ssl}) do
+            :ok ->
+              {state, ["response", physical_port, "ok"]}
+
+            {:error, message} ->
+              debug(
+                "reject portopen on port #{port} ref: #{Base16.encode(physical_port)} reason: #{inspect(message)}"
+              )
+
+              :ssl.close(ssl)
+              {state, ["error", physical_port, inspect(message)]}
+          end
+      end
+
+    msg = Rlp.encode!([ref, msg])
+    ssl_send!(state, msg)
+  end
+
+  defp handle_request(
+         state = %Connection{ports: ports},
+         [_ref, [command | params]]
        ) do
     case {command, params} do
       {"block", [_num]} ->
@@ -810,35 +878,8 @@ defmodule DiodeClient.Connection do
       {"ping", []} ->
         {state, ["response", "pong"]}
 
-      {"portopen", [port, port_ref, from]} ->
-        debug("received portopen for #{Base16.encode(port_ref)}")
-        port = to_num(port)
-
-        {:ok, pid} = Port.start_link(self(), port_ref, port, from)
-
-        {state, msg} =
-          case GenServer.call(Acceptor, {:inject, port, pid}) do
-            :ok ->
-              state = %{state | ports: Map.put(ports, port_ref, {pid, :up})}
-              msg = ["response", port_ref, "ok"]
-              {state, msg}
-
-            {:error, message} ->
-              debug(
-                "reject portopen on port #{port} ref: #{Base16.encode(port_ref)} reason: #{inspect(message)}"
-              )
-
-              Process.unlink(pid)
-              Port.close(pid)
-              {state, ["error", port_ref, inspect(message)]}
-          end
-
-        msg = Rlp.encode!([ref, msg])
-        ssl_send!(state, msg)
-
       {"portsend", [port_ref, msg]} ->
         with {pid, :up} <- ports[port_ref] do
-          debug("received portsend for #{Base16.encode(port_ref)}")
           GenServer.cast(pid, {:send, msg})
         end
 
@@ -967,7 +1008,6 @@ defmodule DiodeClient.Connection do
   end
 
   defp ssl_send!(state = %Connection{socket: socket, unpaid_bytes: up, server: server}, msg) do
-    # IO.puts("send size: #{byte_size(msg)}")
     with {:error, reason} <- :ssl.send(socket, msg) do
       warning("SSL send error: #{inspect(reason)}")
       send(self(), {:ssl_closed, socket})

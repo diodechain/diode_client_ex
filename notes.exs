@@ -1,3 +1,38 @@
+# Dec 28th 2025
+DiodeClient.interface_add("diode_client")
+# testing to transfer 1000gb
+data = String.duplicate("a", 65535)
+
+bench = fn count, conn ->
+  time = :timer.tc(fn ->
+    for _ <- 1..10 do
+      :ok = :ssl.send(conn, data)
+    end
+
+    for _ <- 1..count do
+      :ok = :ssl.send(conn, data)
+      receive do
+        msg -> msg
+      end
+      |> case do
+        {:ssl, _conn, _data} -> :ok
+        {:ssl_closed, conn2} when conn2 != conn -> :ok
+      end
+    end
+  end) |> elem(0)
+
+  IO.puts("Transferred #{count*byte_size(data)} bytes in #{div(time, 1000)} milliseconds")
+end
+
+{:ok, ssl1} = DiodeClient.port_connect("0x0fcf0a7f1b9f16f272c136af9d5bd662a5479301", 8080, access: "rw2")
+:ok = :ssl.setopts(ssl1, active: true, packet: 2)
+bench.(1600, ssl1)
+
+{:ok, ssl2} = DiodeClient.port_connect("0x0fcf0a7f1b9f16f272c136af9d5bd662a5479301", 8080, access: "rw")
+:ok = :ssl.setopts(ssl2, active: true, packet: 2)
+bench.(1600, ssl2)
+
+
 # Oct 29th 2025
 {balance, 0} = System.cmd("cast", ["balance", "--rpc-url", "https://sapphire.oasis.io", DiodeClient.Base16.encode(DiodeClient.address())])
 balance = String.trim(balance) |> String.to_integer()

@@ -33,6 +33,29 @@ defmodule DiodeClient.Acceptor do
     end
   end
 
+  @doc """
+  Listen on a port.
+
+  Returns `{:ok, listener}`, or `{:error, reason}`.
+
+  This can be used to accept ports in a tcp/ip fashion using the `DiodeClient.Port.accept/2` function.
+
+  Example:
+  ```
+  {:ok, listener} = DiodeClient.Acceptor.listen(80)
+  {:ok, socket} = DiodeClient.Port.accept(listener)
+  ```
+
+  An alternative is to passe the `callback` option to the `listen/2` function.
+
+  Example:
+
+  ```
+  {:ok, listener} = DiodeClient.Acceptor.listen(80, callback: fn socket ->
+    IO.puts("Accepted connection on port 80 \#{inspect(socket)}")
+  end)
+  ```
+  """
   def listen(portnum, options \\ []) when is_integer(portnum) do
     case GenServer.call(Acceptor, {:open, portnum, options}) do
       {:ok, portnum} -> {:ok, %Listener{portnum: portnum, opts: options}}
@@ -109,6 +132,7 @@ defmodule DiodeClient.Acceptor do
 
   defp init_socket(ssl) do
     # local ssl sockets already have gotten their tls handshake done
+    :ssl.controlling_process(ssl, self())
     ssl
   end
 

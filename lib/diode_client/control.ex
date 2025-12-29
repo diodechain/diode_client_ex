@@ -3,7 +3,7 @@ defmodule DiodeClient.Control do
   use GenServer
   require Logger
   require Logger
-  alias DiodeClient.{Acceptor, Connection, Control, Port, Rlp, Rlpx}
+  alias DiodeClient.{Acceptor, Control, Port, Rlp, Rlpx}
   @control_port 320_922
   defstruct [:tried, :peer, :resolved_address, :waiting, :socket, :resolved_ports]
 
@@ -56,17 +56,7 @@ defmodule DiodeClient.Control do
         {address, port} = _addr ->
           # Logger.info("resolve_local: #{inspect(addr)}")
           address = String.to_charlist(address)
-
-          case :ssl.connect(address, port, Connection.ssl_options(role: :client), 5_000) do
-            {:ok, ssl} ->
-              NetworkMonitor.close_on_down(ssl, :ssl)
-              :ssl.controlling_process(ssl, self())
-              ssl
-
-            {:error, _reason} ->
-              # Logger.info("resolve_local failed for #{inspect(reason)}")
-              nil
-          end
+          Port.direct_connect(address, port, :client)
       end
     end
   end

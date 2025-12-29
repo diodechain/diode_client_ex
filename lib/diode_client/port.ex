@@ -420,26 +420,42 @@ defmodule DiodeClient.Port do
     case local do
       true ->
         if access == "rw" do
-          case Control.resolve_local(destination, port) do
-            nil -> do_connect(destination, port, options)
-            ssl -> {:ok, ssl}
-          end
+          Control.resolve_local(destination, port) || do_connect(destination, port, options)
         else
           do_connect(destination, port, options)
         end
 
       :always ->
         if access == "rw" do
-          case Control.resolve_local(destination, port) do
-            nil -> {:error, "local connection not found"}
-            ssl -> {:ok, ssl}
-          end
+          Control.resolve_local(destination, port) || {:error, "local connection not found"}
         else
           {:error, "only 'rw' access is supported for direct connections"}
         end
 
       false ->
         do_connect(destination, port, options)
+    end
+  end
+
+  def direct_connect(address, port, role, timeout \\ 5_000)
+
+  def direct_connect(address, port, :client, timeout) do
+    with {:ok, ssl} <-
+           :ssl.connect(~c'#{address}', port, Connection.ssl_options(role: :client), timeout) do
+      NetworkMonitor.close_on_down(ssl, :ssl)
+      :ssl.controlling_process(ssl, self())
+      :ssl.setopts(ssl, packet: :raw)
+      {:ok, ssl}
+    end
+  end
+
+  def direct_connect(address, port, :server, timeout) do
+    with {:ok, tcp} <- :gen_tcp.connect(~c'#{address}', port, [:binary, active: false], timeout),
+         {:ok, ssl} <- :ssl.handshake(tcp, Connection.ssl_options(role: :server), timeout) do
+      NetworkMonitor.close_on_down(ssl, :ssl)
+      :ssl.controlling_process(ssl, self())
+      :ssl.setopts(ssl, packet: :raw)
+      {:ok, ssl}
     end
   end
 
@@ -469,8 +485,19 @@ defmodule DiodeClient.Port do
   end
 
   defp do_connect([conn | conns], destination, port, access) do
-    Connection.rpc(conn, ["portopen", destination, port, access])
+    cmd =
+      if String.contains?(access, "2") do
+        "portopen2"
+      else
+        "portopen"
+      end
+
+    Connection.rpc(conn, [cmd, destination, port, access])
     |> case do
+      ["ok", port_num] when is_integer(port_num) ->
+        Connection.server_url(conn)
+        |> direct_connect(port_num, :client)
+
       ["ok", pid] ->
         update_peer_port(pid, destination, port)
         tls_connect(pid)
