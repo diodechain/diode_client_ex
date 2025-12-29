@@ -205,7 +205,10 @@ defmodule DiodeClient.Connection do
         end)
 
         # Updating ets state cache
-        state = update_info(%Connection{state | socket: socket, server_wallet: server_wallet})
+        state =
+          %Connection{state | socket: socket, server_wallet: server_wallet}
+          |> update_info()
+
         {:noreply, state}
 
       {:error, reason} ->
@@ -389,21 +392,30 @@ defmodule DiodeClient.Connection do
     end
   end
 
+  defp do_create_ticket(state = %Connection{peaks: peaks, ticket_shell: ticket_shell}) do
+    peak = Map.get(peaks, ticket_shell)
+
+    if peak == nil do
+      # setting last_ticket to nil will cause a new ticket to be created as soon as blocks are synced
+      {:error, %{state | last_ticket: nil}}
+    else
+      do_create_ticket(state, peak)
+    end
+  end
+
   defp do_create_ticket(
          state = %Connection{
            conns: conns,
            unpaid_bytes: unpaid_bytes,
            paid_bytes: paid_bytes,
-           peaks: peaks,
-           ticket_shell: ticket_shell,
            server_wallet: server_wallet,
            pending_tickets: pending_tickets,
            ticket_count: tc,
-           last_ticket: last_ticket
-         }
+           last_ticket: last_ticket,
+           ticket_shell: ticket_shell
+         },
+         peak
        ) do
-    peak = Map.get(peaks, ticket_shell)
-
     count =
       div(unpaid_bytes + 400 - paid_bytes, @ticket_size)
       |> max(1)
@@ -448,6 +460,8 @@ defmodule DiodeClient.Connection do
       raise "DiodeClient epoch mismatch"
     end
 
+    IO.puts("creating ticket: #{Ticket.total_bytes(tck)}")
+
     tck = Ticket.device_sign(tck, Wallet.privkey!(DiodeClient.wallet()))
     req = req_id()
     msg = Rlp.encode!([req, Ticket.message(tck)])
@@ -461,6 +475,10 @@ defmodule DiodeClient.Connection do
     }
 
     {req, ssl_send!(state, msg)}
+  end
+
+  defp wait_for_ticket(:error, state) do
+    state
   end
 
   defp wait_for_ticket(
@@ -493,10 +511,7 @@ defmodule DiodeClient.Connection do
   end
 
   def handle_ticket(
-        state = %Connection{
-          unpaid_bytes: unpaid_bytes,
-          pending_tickets: pending_tickets
-        },
+        state = %Connection{pending_tickets: pending_tickets},
         ticket(),
         [req, reply]
       ) do
@@ -509,33 +524,14 @@ defmodule DiodeClient.Connection do
       ["response", "too_low", _peak, rlp_conns, rlp_bytes, _address, _signature] ->
         new_bytes = to_num(rlp_bytes)
         new_conns = to_num(rlp_conns)
-
-        state =
-          if new_bytes > unpaid_bytes do
-            # this must be a continuiation of a previous connection
-            %{
-              state
-              | conns: new_conns,
-                paid_bytes: new_bytes,
-                unpaid_bytes: new_bytes + min(unpaid_bytes, @ticket_size)
-            }
-          else
-            %{state | conns: new_conns + 1}
-          end
-
-        {req, state} = do_create_ticket(state)
-        wait_for_ticket(req, state)
+        create_update_ticket(state, new_bytes, new_conns)
     end
   end
 
-  def handle_ticket(
-        state = %Connection{
-          unpaid_bytes: unpaid_bytes,
-          pending_tickets: pending_tickets
-        },
-        ticketv2(),
-        [req, reply]
-      ) do
+  def handle_ticket(state = %Connection{pending_tickets: pending_tickets}, ticketv2(), [
+        req,
+        reply
+      ]) do
     state = %{state | pending_tickets: Map.delete(pending_tickets, req)}
 
     case reply do
@@ -545,23 +541,26 @@ defmodule DiodeClient.Connection do
       ["response", "too_low", _chain_id, _epoch, rlp_conns, rlp_bytes, _address, _signature] ->
         new_bytes = to_num(rlp_bytes)
         new_conns = to_num(rlp_conns)
-
-        state =
-          if new_bytes > unpaid_bytes do
-            # this must be a continuiation of a previous connection
-            %{
-              state
-              | conns: new_conns,
-                paid_bytes: new_bytes,
-                unpaid_bytes: new_bytes + min(unpaid_bytes, @ticket_size)
-            }
-          else
-            %{state | conns: new_conns + 1}
-          end
-
-        {req, state} = do_create_ticket(state)
-        wait_for_ticket(req, state)
+        create_update_ticket(state, new_bytes, new_conns)
     end
+  end
+
+  defp create_update_ticket(state = %Connection{unpaid_bytes: unpaid_bytes}, new_bytes, new_conns) do
+    state =
+      if new_bytes > unpaid_bytes do
+        # this must be a continuiation of a previous connection
+        %{
+          state
+          | conns: new_conns,
+            paid_bytes: new_bytes,
+            unpaid_bytes: new_bytes + min(unpaid_bytes, @ticket_size)
+        }
+      else
+        %{state | conns: new_conns + 1}
+      end
+
+    {req, state} = do_create_ticket(state)
+    wait_for_ticket(req, state)
   end
 
   @impl true
@@ -678,7 +677,11 @@ defmodule DiodeClient.Connection do
         state =
           %{state | peaks: Map.put(peaks, shell, peak), blocked: blocked}
           |> update_info()
-          |> maybe_create_ticket(shell == state.ticket_shell and Map.get(peaks, shell) == nil)
+
+        state =
+          if shell == state.ticket_shell and state.last_ticket == nil,
+            do: maybe_create_ticket(state, true),
+            else: state
 
         {:noreply, state}
 
@@ -752,6 +755,7 @@ defmodule DiodeClient.Connection do
         recv_id: %{},
         conns: conns + 1,
         ticket_count: 0,
+        last_ticket: nil,
         pending_tickets: %{},
         server_wallet: nil
     }
@@ -877,6 +881,10 @@ defmodule DiodeClient.Connection do
 
       {"ping", []} ->
         {state, ["response", "pong"]}
+
+      {"ticket_request", [usage]} ->
+        usage = to_num(usage)
+        create_update_ticket(state, usage, state.conns)
 
       {"portsend", [port_ref, msg]} ->
         with {pid, :up} <- ports[port_ref] do

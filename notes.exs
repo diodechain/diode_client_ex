@@ -1,4 +1,11 @@
 # Dec 28th 2025
+
+device_id = DiodeClient.Base16.decode("0x0fcf0a7f1b9f16f272c136af9d5bd662a5479301")
+fleet = DiodeClient.Base16.decode("0x8afe08d333f785c818199a5bdc7a52ac6ffc492a")
+epoch = TicketStore.epoch()
+TicketStore.find(device_id, fleet, epoch)
+
+# Dec 28th 2025
 DiodeClient.interface_add("diode_client")
 # testing to transfer 1000gb
 data = String.duplicate("a", 65535)
@@ -17,6 +24,7 @@ bench = fn count, conn ->
       |> case do
         {:ssl, _conn, _data} -> :ok
         {:ssl_closed, conn2} when conn2 != conn -> :ok
+        {:ssl_error, conn2, _reason} when conn2 != conn -> :ok
       end
     end
   end) |> elem(0)
