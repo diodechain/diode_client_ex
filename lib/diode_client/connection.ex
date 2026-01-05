@@ -460,8 +460,6 @@ defmodule DiodeClient.Connection do
       raise "DiodeClient epoch mismatch"
     end
 
-    IO.puts("creating ticket: #{Ticket.total_bytes(tck)}")
-
     tck = Ticket.device_sign(tck, Wallet.privkey!(DiodeClient.wallet()))
     req = req_id()
     msg = Rlp.encode!([req, Ticket.message(tck)])
