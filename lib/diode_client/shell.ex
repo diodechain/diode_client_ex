@@ -158,13 +158,17 @@ defmodule DiodeClient.Shell do
 
     case account do
       # empty needs a proof as well...
-      {:error, "account does not exist"} ->
-        %Account{
-          nonce: 0,
-          balance: 0,
-          storage_root: nil,
-          code_hash: @null_hash
-        }
+      {:error, reason} ->
+        if String.contains?(reason, "account does not exist") do
+          %Account{
+            nonce: 0,
+            balance: 0,
+            storage_root: nil,
+            code_hash: @null_hash
+          }
+        else
+          raise "getaccount #{inspect(address)} produced error #{inspect(reason)}"
+        end
 
       [acc, proofs] when is_list(acc) ->
         acc = Rlpx.list2map(acc)
