@@ -15,7 +15,7 @@ defmodule DiodeClient.ABI do
 
     case encoded_call do
       <<^signature::binary-size(4), rest::binary>> ->
-        {:ok, decode_args(types, rest)}
+        {:ok, decode_args(types, rest, 0, nil)}
 
       _ ->
         {:error, "Invalid signature"}
@@ -24,10 +24,16 @@ defmodule DiodeClient.ABI do
 
   @deprecated "Use decode_args/2 instead"
   def decode_types(types, encoded_args) do
-    decode_args(types, encoded_args)
+    decode_args(types, encoded_args, 0, nil)
   end
 
-  def decode_args(types, data) do
+  def decode_args(types, data, base_offset \\ 0, original_data \\ nil) do
+    # base_offset is the absolute position in the original data where this structure starts
+    # original_data is the full original data buffer (for resolving offsets)
+    # If not provided, assume data is the original data
+    original_data = original_data || data
+    tuple_start_pos = base_offset
+
     {ret, _rest} =
       Enum.reduce(types, {[], data}, fn type, {ret, rest} ->
         {value, rest} =
@@ -42,13 +48,20 @@ defmodule DiodeClient.ABI do
 
     Enum.zip(types, ret)
     |> Enum.map(fn {type, value} ->
-      maybe_decode_dynamic_type(type, data, value)
+      maybe_decode_dynamic_type(type, original_data, value, tuple_start_pos)
     end)
   end
 
-  defp maybe_decode_dynamic_type(type, data, value) do
+  defp maybe_decode_dynamic_type(type, data, value, base_offset) do
     if is_dynamic(type) do
-      decode_dynamic_type(type, data, value)
+      # value is an offset relative to base_offset, so absolute position is value + base_offset
+      absolute_pos = value + base_offset
+
+      if absolute_pos > byte_size(data) do
+        raise "Invalid offset: value=#{value}, base_offset=#{base_offset}, absolute=#{absolute_pos}, data_size=#{byte_size(data)}, type=#{type}"
+      end
+
+      decode_dynamic_type(type, data, absolute_pos, base_offset)
     else
       value
     end
@@ -59,47 +72,82 @@ defmodule DiodeClient.ABI do
     binary_part(rest, 0, len)
   end
 
-  defp decode_dynamic_type(type, data, value) do
+  defp decode_dynamic_type(type, data, offset, _base_offset) do
     # for dynamic types the decoded value in the header is the offset of the data
-    base = binary_part(data, value, byte_size(data) - value)
+    # offset is absolute position in the data
+    absolute_offset = offset
+
+    if absolute_offset >= byte_size(data) do
+      raise "Offset #{absolute_offset} out of range for data size #{byte_size(data)}"
+    end
+
+    base = binary_part(data, absolute_offset, byte_size(data) - absolute_offset)
 
     cond do
       type in ["string", "bytes"] ->
         decode_string(base)
 
       String.ends_with?(type, "[]") ->
-        {slots, base} = decode_value("uint256", base)
+        {slots, base_data} = decode_value("uint256", base)
         element_type = String.replace_trailing(type, "[]", "")
+        # base_data starts after consuming the length (32 bytes), so it's at absolute_offset + 32
+        array_data_start = absolute_offset + 32
 
         {acc, _rest} =
           List.duplicate(element_type, slots)
-          |> Enum.reduce({[], base}, fn element_type, {acc, rest} ->
-            {value, rest} =
+          |> Enum.reduce({[], base_data}, fn element_type, {acc, rest} ->
+            {decoded_element, rest} =
               if String.starts_with?(element_type, "(") do
-                # For tuple types, we need to decode using the tuple logic
                 "(" <> tuple_def = element_type
                 types = tuple_types(tuple_def)
-                decoded_tuple = decode_args(types, rest)
-                # Calculate how many bytes were consumed
-                consumed_bytes = length(types) * 32
 
-                remaining_rest =
-                  binary_part(rest, consumed_bytes, byte_size(rest) - consumed_bytes)
+                if is_dynamic(element_type) do
+                  # For dynamic tuple types, we need to read the offset first
+                  # The offset is relative to array_data_start
+                  {tuple_offset, rest_after_offset} = decode_value("uint256", rest)
+                  tuple_absolute_offset = array_data_start + tuple_offset
+                  # Now get the tuple data starting at that offset
+                  tuple_data =
+                    binary_part(
+                      data,
+                      tuple_absolute_offset,
+                      byte_size(data) - tuple_absolute_offset
+                    )
 
-                {decoded_tuple, remaining_rest}
+                  decoded_tuple = decode_args(types, tuple_data, tuple_absolute_offset, data)
+                  # We consumed 32 bytes for the offset
+                  {decoded_tuple, rest_after_offset}
+                else
+                  # For static tuple types, the data is stored directly
+                  tuple_position_in_array_data = byte_size(base_data) - byte_size(rest)
+                  tuple_absolute_offset = array_data_start + tuple_position_in_array_data
+                  decoded_tuple = decode_args(types, rest, tuple_absolute_offset, data)
+                  # Calculate bytes consumed: all static types take 32 bytes each
+                  consumed_bytes = length(types) * 32
+
+                  remaining_rest =
+                    binary_part(rest, consumed_bytes, byte_size(rest) - consumed_bytes)
+
+                  {decoded_tuple, remaining_rest}
+                end
               else
                 {value, rest} = decode_value(element_type, rest)
-                {maybe_decode_dynamic_type(element_type, base, value), rest}
+
+                # For dynamic nested types, offsets are relative to the start of array data (array_data_start)
+                decoded_value =
+                  maybe_decode_dynamic_type(element_type, data, value, array_data_start)
+
+                {decoded_value, rest}
               end
 
-            {acc ++ [value], rest}
+            {acc ++ [decoded_element], rest}
           end)
 
         acc
 
       String.starts_with?(type, "(") ->
         "(" <> tuple_def = type
-        decode_types(tuple_types(tuple_def), base)
+        decode_args(tuple_types(tuple_def), base, absolute_offset, data)
     end
   end
 
@@ -312,7 +360,7 @@ defmodule DiodeClient.ABI do
   """
   def decode(format, value) when is_binary(format) do
     if is_dynamic(format) do
-      [result] = decode_args([format], value)
+      [result] = decode_args([format], value, 0, nil)
       {result, ""}
     else
       decode_value(format, value)
@@ -344,7 +392,7 @@ defmodule DiodeClient.ABI do
 
   def decode_value("(" <> tuple_def, value) do
     types = tuple_types(tuple_def)
-    {decode_args(types, value), ""}
+    {decode_args(types, value, 0, nil), ""}
   end
 
   def decode_value(other, value) do
