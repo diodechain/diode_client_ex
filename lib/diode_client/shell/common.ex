@@ -148,6 +148,30 @@ defmodule DiodeClient.Shell.Common do
           Base16.decode(result)
           |> decode_result(Keyword.get(opts, :result_types))
 
+        %{"code" => -32000, "data" => %{} = data} ->
+          case Map.values(data) do
+            [%{"error" => "revert"} | _] ->
+              :revert
+
+            [%{"error" => error} | _] ->
+              {:error, error}
+
+            _ ->
+              {:error, "unknown error"}
+          end
+
+        %{"error" => %{"code" => -32000, "data" => %{} = data, "message" => message}} ->
+          case Map.values(data) do
+            [%{"error" => "revert"} | _] ->
+              :revert
+
+            [%{"error" => error} | _] ->
+              {:error, error}
+
+            _ ->
+              {:error, message}
+          end
+
         %{"error" => error} ->
           Logger.error("#{shell.prefix()}eth_call: #{inspect(error)}")
           {:error, error}

@@ -1,5 +1,5 @@
 defmodule DiodeClientTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: false
   doctest DiodeClient
 
   test "restore" do
@@ -15,5 +15,8 @@ defmodule DiodeClientTest do
     :ok = Supervisor.terminate_child(sup, DiodeClient.Acceptor)
     {:ok, _pid} = Supervisor.restart_child(sup, DiodeClient.Acceptor)
     assert %{5000 => _sock} = DiodeClient.Acceptor.all_ports()
+
+    DiodeClient.TestValues.clear()
+    assert DiodeClient.Contracts.Factory.self_check() |> Enum.all?()
   end
 end

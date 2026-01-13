@@ -5,7 +5,7 @@ defmodule DiodeClient.Contracts.Factory do
   Only the original transaction submitter can upgrade the implementation.
   """
   alias DiodeClient.{ABI, Base16, Hash, IdentityRequest}
-  alias DiodeClient.Contracts.List
+  alias DiodeClient.Contracts.{List, Utils}
 
   @constructor_diode Base16.decode(
                        "0x608060405234801561001057600080fd5b5060405161027d38038061027d8339818101604052604081101561003357600080fd5b5080516020909101517f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc919091557fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103556101eb806100926000396000f3fe60806040526004361061002d5760003560e01c8063277f2594146100445780633b2a0ff2146100775761003c565b3661003c5761003a6100aa565b005b61003a6100aa565b34801561005057600080fd5b5061003a6004803603602081101561006757600080fd5b50356001600160a01b03166100f0565b34801561008357600080fd5b5061003a6004803603602081101561009a57600080fd5b50356001600160a01b0316610159565b7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc543660008037600080366000845af43d6000803e8080156100eb573d6000f35b600080fd5b7fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103546001600160a01b03811633141561014c57817f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc5550610156565b6101546100aa565b505b50565b7fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103546001600160a01b03811633141561014c57817fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103555061015656fea264697066735822122046073a9a998cc88e87a1097fe86f7bf447c03175c06d350ca5a603c0b2c4abf464736f6c63430006060033"
@@ -36,8 +36,8 @@ defmodule DiodeClient.Contracts.Factory do
       drive_invites: Hash.to_address(0xED6B28E0A1FC3909AB84CC299FFDEC63C80F7BDA),
       drive_member_version: 112,
       drive_member: Hash.to_address(0x6329E652E2212A33529334A3B39B3441861EFA58),
-      drive_version: 137,
-      drive: Hash.to_address(0xCF19DF8CAC7AAB219B5D56A72FCEC2788EBEB65C),
+      drive_version: 153,
+      drive: Hash.to_address(0x355DdBCf0e9fD70D78829eEcb443389290Ee53E1),
       factory: factory,
       fleet_member: Hash.to_address(0x3A887BEEEEE533A6799C0C9AC6FC69C022B57F4C),
       proxy_code_hash:
@@ -56,8 +56,8 @@ defmodule DiodeClient.Contracts.Factory do
       drive_invites: Hash.to_address(0x5C6ED819886B77017BAAF81EF0E7ABEACB17BD1D),
       drive_member_version: 114,
       drive_member: Hash.to_address(0x2EE98B1DCB555E38B33B9D73D258A2FFE5A4E577),
-      drive_version: 139,
-      drive: Hash.to_address(0xC16F2C70C2C0B6EE436568F9FADD0AD5A8526E05),
+      drive_version: 153,
+      drive: Hash.to_address(0x26Ec3AdffbE9548fA9BF76C65BD6815B3e2f2A29),
       factory: factory,
       fleet_member: Hash.to_address(0x8A47E149637CFA7FEA946E4489A43D7CC7CD6374),
       proxy_code_hash:
@@ -76,8 +76,8 @@ defmodule DiodeClient.Contracts.Factory do
       drive_invites: Hash.to_address(0xA0A4DC6623EC96122066195DE34A813846DC0FC0),
       drive_member_version: 122,
       drive_member: Hash.to_address(0x732208713E3CCFB8EF011A337BE872F221A95560),
-      drive_version: 144,
-      drive: Hash.to_address(0xB7CAF5CBB62C54BEF279BB335919598E9BA17BCE),
+      drive_version: 153,
+      drive: Hash.to_address(0x09B04d06C19845E193f9eF5286d21923c9CaeE46),
       factory: factory,
       fleet_member: Hash.to_address(0x0),
       proxy_code_hash:
@@ -85,6 +85,29 @@ defmodule DiodeClient.Contracts.Factory do
           @constructor_sapphire <> ABI.encode_args(["address", "address"], [0, factory])
         )
     }
+  end
+
+  def self_check() do
+    for shell <- shells() do
+      IO.puts("Validating #{shell}...")
+      contracts = contracts(shell)
+
+      [
+        {"Drive", contracts.drive_version, Utils.version(shell, contracts.drive, nil)},
+        {"Drive member", contracts.drive_member_version,
+         Utils.version(shell, contracts.drive_member, nil)}
+      ]
+      |> Enum.map(fn {name, expected, actual} ->
+        if expected != actual do
+          IO.puts("\t#{name} version mismatch: #{expected} != #{inspect(actual)}")
+          :error
+        else
+          IO.puts("\t#{name} version matches: #{expected} == #{actual}")
+          :ok
+        end
+      end)
+      |> Enum.all?(&(&1 == :ok))
+    end
   end
 
   def fleet_member_target(shell) do
