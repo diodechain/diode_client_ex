@@ -341,12 +341,47 @@ defmodule DiodeClient.ABI do
 
     case tuple_def do
       <<tuple_def::binary-size(len), ")">> ->
-        String.split(tuple_def, ",")
+        no_brackets_split(tuple_def)
         |> Enum.map(&String.trim/1)
 
       _ ->
         raise "Invalid tuple definition (#{tuple_def}"
     end
+  end
+
+  defp no_brackets_split(tuple_def) do
+    :erlang.binary_to_list(tuple_def)
+    |> Enum.reduce(%{depth: 0, result: [], current: ~c''}, fn char,
+                                                              %{
+                                                                depth: depth,
+                                                                result: result,
+                                                                current: current
+                                                              } ->
+      case char do
+        ?( ->
+          %{depth: depth + 1, result: result, current: current ++ [char]}
+
+        ?) ->
+          %{depth: depth - 1, result: result, current: current ++ [char]}
+
+        ?, ->
+          if depth == 0 do
+            %{depth: depth, result: result ++ [current], current: ~c''}
+          else
+            %{depth: depth, result: result, current: current ++ [char]}
+          end
+
+        _ ->
+          %{depth: depth, result: result, current: current ++ [char]}
+      end
+    end)
+    |> case do
+      %{depth: depth} when depth > 0 -> raise "Invalid tuple definition (#{tuple_def}"
+      %{result: result, current: ~c''} -> result
+      %{result: result, current: current} -> result ++ [current]
+    end
+    |> Enum.map(&:erlang.list_to_binary/1)
+    |> Enum.map(&String.trim/1)
   end
 
   @doc """

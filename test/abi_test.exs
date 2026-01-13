@@ -155,6 +155,14 @@ defmodule ABITest do
     assert equality("(address,uint256)", item)
   end
 
+  test "nested tuple encoding / decoding" do
+    assert encode("((address,uint256))", [[0x1, 2]]) ==
+             "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002"
+
+    item = [[<<0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>, 2]]
+    assert equality("((address,uint256))", item)
+  end
+
   test "tuple array encoding / decoding" do
     item = [unhex("0x0000000000000000000000000000000000000001"), 2]
 
