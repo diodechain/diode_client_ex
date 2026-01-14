@@ -58,14 +58,17 @@ defmodule DiodeClient do
 
   @impl true
   def start(_start_type, _start_args) do
-    ETSLru.new(ShellCache, 10_000, fn
+    ETSLru.new(ShellCache, 10_000, {__MODULE__, :filter_invalid_object})
+    ETSLru.new(HashCache, 1_000)
+    Supervisor.start_link([], strategy: :one_for_one, name: __MODULE__)
+  end
+
+  def filter_invalid_object(object) do
+    case object do
       :undefined -> false
       {:error, _reason} -> false
       _other -> true
-    end)
-
-    ETSLru.new(HashCache, 1_000)
-    Supervisor.start_link([], strategy: :one_for_one, name: __MODULE__)
+    end
   end
 
   def interface_add(wallet \\ "diode_client_interface", name \\ :default) do

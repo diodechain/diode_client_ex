@@ -2,7 +2,8 @@ defmodule DiodeClient.ETSLru do
   @moduledoc false
   use GenServer
 
-  def start_link(name, max_size, filter \\ fn _ -> true end) do
+  def start_link(name, max_size, filter \\ nil) do
+    _ = apply_filter(filter, {__MODULE__, :test})
     GenServer.start_link(__MODULE__, {name, max_size, filter}, hibernate_after: 5_000)
   end
 
@@ -12,7 +13,9 @@ defmodule DiodeClient.ETSLru do
     {:ok, name}
   end
 
-  def new(name, max_size, filter \\ fn _ -> true end) do
+  def new(name, max_size, filter \\ nil) do
+    _ = apply_filter(filter, {__MODULE__, :test})
+
     name =
       case name do
         nil -> :ets.new(name, [:public])
@@ -28,10 +31,8 @@ defmodule DiodeClient.ETSLru do
   end
 
   def put(lru, key, value) do
-    filter_fun = filter(lru)
-
     cond do
-      not filter_fun.(value) ->
+      not apply_filter(filter(lru), value) ->
         delete(lru, key)
 
       get(lru, key) == value ->
@@ -60,6 +61,11 @@ defmodule DiodeClient.ETSLru do
 
     value
   end
+
+  defp apply_filter(nil, _value), do: true
+  defp apply_filter({module, function}, value), do: apply(module, function, [value])
+  defp apply_filter({module, function, args}, value), do: apply(module, function, args ++ [value])
+  defp apply_filter(fun, value) when is_function(fun, 1), do: fun.(value)
 
   def get(lru, key, default \\ nil) do
     case :ets.lookup(lru, {:key, key}) do

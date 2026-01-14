@@ -98,38 +98,7 @@ defmodule DiodeClient.ABI do
           |> Enum.reduce({[], base_data}, fn element_type, {acc, rest} ->
             {decoded_element, rest} =
               if String.starts_with?(element_type, "(") do
-                "(" <> tuple_def = element_type
-                types = tuple_types(tuple_def)
-
-                if is_dynamic(element_type) do
-                  # For dynamic tuple types, we need to read the offset first
-                  # The offset is relative to array_data_start
-                  {tuple_offset, rest_after_offset} = decode_value("uint256", rest)
-                  tuple_absolute_offset = array_data_start + tuple_offset
-                  # Now get the tuple data starting at that offset
-                  tuple_data =
-                    binary_part(
-                      data,
-                      tuple_absolute_offset,
-                      byte_size(data) - tuple_absolute_offset
-                    )
-
-                  decoded_tuple = decode_args(types, tuple_data, tuple_absolute_offset, data)
-                  # We consumed 32 bytes for the offset
-                  {decoded_tuple, rest_after_offset}
-                else
-                  # For static tuple types, the data is stored directly
-                  tuple_position_in_array_data = byte_size(base_data) - byte_size(rest)
-                  tuple_absolute_offset = array_data_start + tuple_position_in_array_data
-                  decoded_tuple = decode_args(types, rest, tuple_absolute_offset, data)
-                  # Calculate bytes consumed: all static types take 32 bytes each
-                  consumed_bytes = length(types) * 32
-
-                  remaining_rest =
-                    binary_part(rest, consumed_bytes, byte_size(rest) - consumed_bytes)
-
-                  {decoded_tuple, remaining_rest}
-                end
+                maybe_decode_dynamic_tuple(element_type, rest, array_data_start, data, base_data)
               else
                 {value, rest} = decode_value(element_type, rest)
 
@@ -148,6 +117,41 @@ defmodule DiodeClient.ABI do
       String.starts_with?(type, "(") ->
         "(" <> tuple_def = type
         decode_args(tuple_types(tuple_def), base, absolute_offset, data)
+    end
+  end
+
+  defp maybe_decode_dynamic_tuple(element_type, rest, array_data_start, data, base_data) do
+    "(" <> tuple_def = element_type
+    types = tuple_types(tuple_def)
+
+    if is_dynamic(element_type) do
+      # For dynamic tuple types, we need to read the offset first
+      # The offset is relative to array_data_start
+      {tuple_offset, rest_after_offset} = decode_value("uint256", rest)
+      tuple_absolute_offset = array_data_start + tuple_offset
+      # Now get the tuple data starting at that offset
+      tuple_data =
+        binary_part(
+          data,
+          tuple_absolute_offset,
+          byte_size(data) - tuple_absolute_offset
+        )
+
+      decoded_tuple = decode_args(types, tuple_data, tuple_absolute_offset, data)
+      # We consumed 32 bytes for the offset
+      {decoded_tuple, rest_after_offset}
+    else
+      # For static tuple types, the data is stored directly
+      tuple_position_in_array_data = byte_size(base_data) - byte_size(rest)
+      tuple_absolute_offset = array_data_start + tuple_position_in_array_data
+      decoded_tuple = decode_args(types, rest, tuple_absolute_offset, data)
+      # Calculate bytes consumed: all static types take 32 bytes each
+      consumed_bytes = length(types) * 32
+
+      remaining_rest =
+        binary_part(rest, consumed_bytes, byte_size(rest) - consumed_bytes)
+
+      {decoded_tuple, remaining_rest}
     end
   end
 

@@ -143,39 +143,43 @@ defmodule DiodeClient.Shell.Common do
     cmd = [shell.prefix() <> "rpc", "eth_call", params]
 
     with [json] <- DiodeClient.Shell.cached_rpc(cmd) do
-      case Jason.decode!(json) do
-        %{"result" => result} ->
-          Base16.decode(result)
-          |> decode_result(Keyword.get(opts, :result_types))
+      process_call_result(shell, json, opts)
+    end
+  end
 
-        %{"code" => -32000, "data" => %{} = data} ->
-          case Map.values(data) do
-            [%{"error" => "revert"} | _] ->
-              :revert
+  defp process_call_result(shell, json, opts) do
+    case Jason.decode!(json) do
+      %{"result" => result} ->
+        Base16.decode(result)
+        |> decode_result(Keyword.get(opts, :result_types))
 
-            [%{"error" => error} | _] ->
-              {:error, error}
+      %{"code" => -32_000, "data" => %{} = data} ->
+        case Map.values(data) do
+          [%{"error" => "revert"} | _] ->
+            :revert
 
-            _ ->
-              {:error, "unknown error"}
-          end
+          [%{"error" => error} | _] ->
+            {:error, error}
 
-        %{"error" => %{"code" => -32000, "data" => %{} = data, "message" => message}} ->
-          case Map.values(data) do
-            [%{"error" => "revert"} | _] ->
-              :revert
+          _ ->
+            {:error, "unknown error"}
+        end
 
-            [%{"error" => error} | _] ->
-              {:error, error}
+      %{"error" => %{"code" => -32_000, "data" => %{} = data, "message" => message}} ->
+        case Map.values(data) do
+          [%{"error" => "revert"} | _] ->
+            :revert
 
-            _ ->
-              {:error, message}
-          end
+          [%{"error" => error} | _] ->
+            {:error, error}
 
-        %{"error" => error} ->
-          Logger.error("#{shell.prefix()}eth_call: #{inspect(error)}")
-          {:error, error}
-      end
+          _ ->
+            {:error, message}
+        end
+
+      %{"error" => error} ->
+        Logger.error("#{shell.prefix()}eth_call: #{inspect(error)}")
+        {:error, error}
     end
   end
 
