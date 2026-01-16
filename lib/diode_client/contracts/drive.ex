@@ -30,6 +30,7 @@ defmodule DiodeClient.Contracts.Drive do
 
       vsn when is_integer(vsn) and vsn > 139 ->
         Utils.call(shell, address, "MemberRoles", [], [], "(address,uint256)[]", block)
+        |> Enum.map(fn [member, role] -> {member, int_to_role(role)} end)
         |> Map.new()
         |> Map.put(owner(shell, address, block), Role.Owner)
 
