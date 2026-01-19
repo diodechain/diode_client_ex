@@ -610,7 +610,7 @@ defmodule DiodeClient.Manager do
             "#{url}: #{trunc(latency)}"
           end)
 
-        Logger.info("Best connection changed to [#{servers}]")
+        Logger.debug("Best connection changed to [#{servers}]")
       end
 
       for from <- waiting, do: GenServer.reply(from, new_best_pids)
