@@ -36,8 +36,8 @@ defmodule DiodeClient.Contracts.Factory do
       drive_invites: Hash.to_address(0xED6B28E0A1FC3909AB84CC299FFDEC63C80F7BDA),
       drive_member_version: 112,
       drive_member: Hash.to_address(0x6329E652E2212A33529334A3B39B3441861EFA58),
-      drive_version: 157,
-      drive: Hash.to_address(0xA32A9ED71FBF22E6D197C13725AD61958E9A4499),
+      drive_version: 158,
+      drive: Hash.to_address(0xA2F3E33E3BF64F68A698FC2C35D5C8184844ADB2),
       factory: factory,
       fleet_member: Hash.to_address(0x3A887BEEEEE533A6799C0C9AC6FC69C022B57F4C),
       proxy_code_hash:
@@ -56,8 +56,8 @@ defmodule DiodeClient.Contracts.Factory do
       drive_invites: Hash.to_address(0x5C6ED819886B77017BAAF81EF0E7ABEACB17BD1D),
       drive_member_version: 114,
       drive_member: Hash.to_address(0x2EE98B1DCB555E38B33B9D73D258A2FFE5A4E577),
-      drive_version: 157,
-      drive: Hash.to_address(0xDA576670C679931D3050C3AA5159915ED70120CB),
+      drive_version: 158,
+      drive: Hash.to_address(0x617452F290A6362AD87009969C5F9358364FAF0F),
       factory: factory,
       fleet_member: Hash.to_address(0x8A47E149637CFA7FEA946E4489A43D7CC7CD6374),
       proxy_code_hash:
@@ -76,8 +76,8 @@ defmodule DiodeClient.Contracts.Factory do
       drive_invites: Hash.to_address(0xA0A4DC6623EC96122066195DE34A813846DC0FC0),
       drive_member_version: 122,
       drive_member: Hash.to_address(0x732208713E3CCFB8EF011A337BE872F221A95560),
-      drive_version: 157,
-      drive: Hash.to_address(0xFB5E4F38307E9A023A8BF4BB4E2287B940ECA41B),
+      drive_version: 158,
+      drive: Hash.to_address(0x53D74E33EDE28881873D33FD19A6F074CAAF6BEA),
       factory: factory,
       fleet_member: Hash.to_address(0x0),
       proxy_code_hash:
