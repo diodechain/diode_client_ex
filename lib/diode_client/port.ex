@@ -392,7 +392,8 @@ defmodule DiodeClient.Port do
     end
   end
 
-  def connect(destination, port, options \\ [], timeout \\ 5_000) when is_integer(port) do
+  def connect(destination, port, options \\ [], timeout \\ 5_000)
+      when is_integer(port) and is_list(options) do
     destination =
       if is_list(destination) do
         List.to_string(destination)
@@ -413,7 +414,7 @@ defmodule DiodeClient.Port do
   end
 
   def connect_address(destination, port, options \\ [], _timeout \\ 5_000)
-      when is_integer(port) do
+      when is_list(options) and is_integer(port) do
     access = Keyword.get(options, :access, "rw")
     local = Keyword.get(options, :local, true)
 
@@ -460,8 +461,6 @@ defmodule DiodeClient.Port do
   end
 
   defp do_connect(destination, port, options) do
-    access = Keyword.get(options, :access, "rw")
-
     conns =
       case DiodeClient.Shell.get_object(destination) do
         nil ->
@@ -481,10 +480,12 @@ defmodule DiodeClient.Port do
           |> Enum.uniq()
       end
 
-    do_connect(conns, destination, port, access)
+    do_connect(conns, destination, port, options)
   end
 
-  defp do_connect([conn | conns], destination, port, access) do
+  defp do_connect([conn | conns], destination, port, options) do
+    access = Keyword.get(options, :access, "rw")
+
     cmd =
       if String.contains?(access, "2") do
         "portopen2"
@@ -495,8 +496,14 @@ defmodule DiodeClient.Port do
     Connection.rpc(conn, [cmd, destination, port, access])
     |> case do
       ["ok", port_num] when is_integer(port_num) ->
-        Connection.server_url(conn)
-        |> direct_connect(port_num, :client)
+        address = Connection.server_url(conn)
+        print? = Keyword.get(options, :print?, false)
+
+        if print? do
+          {:ok, "#{address}:#{port_num}"}
+        else
+          direct_connect(address, port_num, :client)
+        end
 
       ["ok", pid] ->
         update_peer_port(pid, destination, port)

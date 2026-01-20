@@ -102,7 +102,7 @@ defmodule DiodeClient.LocalAcceptor do
         :ssl.close(client)
 
       {:ok, ssl} ->
-        GenServer.call(Acceptor, {:inject, portnum, ssl})
+        GenServer.call(Acceptor, {:inject, portnum, %{type: :open1, from: self(), ref: ssl}})
     end
 
     loop(socket, portnum)

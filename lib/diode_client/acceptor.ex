@@ -104,40 +104,48 @@ defmodule DiodeClient.Acceptor do
       {:error, :timeout} ->
         {:error, :timeout}
 
-      ssl when is_pid(ssl) ->
-        if Process.alive?(ssl) do
-          init_socket(ssl)
-        else
-          {:error, :retry}
-        end
-
-      ssl ->
-        init_socket(ssl)
+      {request, listener_options} ->
+        init_socket(request, listener_options)
     end
   end
 
-  defp init_socket(pid) when is_pid(pid) do
-    Process.link(pid)
+  defp init_socket(%{type: :open1, ref: pid}, _listener_options) when is_pid(pid) do
+    if Process.alive?(pid) do
+      Process.link(pid)
 
-    case Port.tls_handshake(pid) do
-      {:ok, socket} ->
-        socket
+      case Port.tls_handshake(pid) do
+        {:ok, socket} ->
+          socket
 
-      {:error, reason} ->
-        Logger.debug("port closed during handshake (#{reason})")
-        Port.close(pid)
-        {:error, reason}
+        {:error, reason} ->
+          Logger.debug("port closed during handshake (#{reason})")
+          Port.close(pid)
+          {:error, reason}
+      end
+    else
+      {:error, :retry}
     end
   end
 
-  defp init_socket(ssl) do
+  defp init_socket(%{type: :open1, ref: ssl}, _listener_options) do
     # local ssl sockets already have gotten their tls handshake done
     :ssl.controlling_process(ssl, self())
     ssl
   end
 
-  defp close_socket(pid, reason) when is_pid(pid), do: Process.exit(pid, reason)
-  defp close_socket(ssl, _reason), do: :ssl.close(ssl)
+  defp init_socket(%{type: :open2, from: conn, ref: physical_port}, listener_options) do
+    address = DiodeClient.Connection.server_url(conn)
+
+    if opt_print?(listener_options) do
+      "#{address}:#{physical_port}"
+    else
+      Port.direct_connect(address, physical_port, :server)
+    end
+  end
+
+  defp close_socket(%{ref: pid}, reason) when is_pid(pid), do: Process.exit(pid, reason)
+  defp close_socket(%{type: :open1, ref: ssl}, _reason), do: :ssl.close(ssl)
+  defp close_socket(%{type: :open2, ref: _physical_port}, _reason), do: :ok
 
   @impl true
   def handle_call(:all_ports, _from, state = %Acceptor{ports: ports}) do
@@ -145,44 +153,27 @@ defmodule DiodeClient.Acceptor do
   end
 
   def handle_call(
-        {:open, portnum, options},
+        {:open, portnum, listener_options},
         _from,
         state = %Acceptor{ports: ports, local_ports: local}
       ) do
-    new_value =
-      case Keyword.fetch(options, :callback) do
-        {:ok, callback} when is_function(callback, 1) -> callback
-        {:ok, _other} -> :invalid_callback
-        :error -> []
-      end
+    new_value = {[], listener_options}
+    backup = Map.put(state.backup, portnum, new_value)
+    state = %{state | backup: backup}
+    Application.put_env(:diode_client, :backup, backup)
 
-    {reply, state} =
-      if new_value == :invalid_callback do
-        {{:error, :invalid_callback}, state}
+    state =
+      if is_function(opt_callback(listener_options)) do
+        do_close(portnum, state)
+        %Acceptor{state | ports: Map.put(ports, portnum, new_value)}
       else
-        backup = Map.put(state.backup, portnum, new_value)
-        state = %{state | backup: backup}
-        Application.put_env(:diode_client, :backup, backup)
-
-        state =
-          if is_function(new_value) do
-            do_close(portnum, state)
-            %Acceptor{state | ports: Map.put(ports, portnum, new_value)}
-          else
-            new_value =
-              case Map.get(ports, portnum, []) do
-                list when is_list(list) -> new_value ++ list
-                callback when is_function(callback) -> new_value
-              end
-
-            local = open_local(local, portnum, options)
-            %Acceptor{state | ports: Map.put(ports, portnum, new_value), local_ports: local}
-          end
-
-        {{:ok, portnum}, state}
+        {old_list, _old_options} = Map.get(ports, portnum, {[], nil})
+        new_value = {old_list ++ [new_value], listener_options}
+        local = open_local(local, portnum, listener_options)
+        %Acceptor{state | ports: Map.put(ports, portnum, new_value), local_ports: local}
       end
 
-    {:reply, reply, state}
+    {:reply, {:ok, portnum}, state}
   end
 
   def handle_call({:local_port, portnum}, _from, state = %Acceptor{local_ports: local}) do
@@ -198,7 +189,9 @@ defmodule DiodeClient.Acceptor do
         from,
         state = %Acceptor{backlog: backlog, ports: ports}
       ) do
-    case Map.get(backlog, portnum) do
+    {_, listener_options} = Map.get(ports, portnum, {[], []})
+
+    case Map.get(backlog, portnum, []) do
       [request] ->
         {request, Map.delete(backlog, portnum)}
 
@@ -207,20 +200,21 @@ defmodule DiodeClient.Acceptor do
 
       [] ->
         :wait
-
-      nil ->
-        :wait
     end
     |> case do
       :wait ->
         if is_integer(timeout),
           do: Process.send_after(self(), {:accept_timeout, portnum, from}, timeout)
 
-        ports = Map.update(ports, portnum, [from], fn list -> list ++ [from] end)
+        ports =
+          Map.update(ports, portnum, {[from], []}, fn {list, options} ->
+            {list ++ [from], options}
+          end)
+
         {:noreply, %Acceptor{state | ports: ports}}
 
       {request, backlog} ->
-        {:reply, request, %Acceptor{state | backlog: backlog}}
+        {:reply, {request, listener_options}, %Acceptor{state | backlog: backlog}}
     end
   end
 
@@ -230,50 +224,53 @@ defmodule DiodeClient.Acceptor do
         state = %Acceptor{backlog: backlog, ports: ports}
       ) do
     case Map.get(ports, portnum) do
-      [client | rest] ->
-        ports = Map.put(ports, portnum, rest)
-        GenServer.reply(client, request)
+      {[client | rest], listener_options} ->
+        ports = Map.put(ports, portnum, {rest, listener_options})
+        GenServer.reply(client, {request, listener_options})
         {:reply, :ok, %Acceptor{state | ports: ports}}
 
-      [] ->
-        list = Map.get(backlog, portnum, [])
+      {[], listener_options} ->
+        callback = opt_callback(listener_options)
 
-        if length(list) >= @max_backlog do
-          close_socket(request, :backlog_full)
-          {:reply, {:error, :backlog_full}, state}
+        if is_function(callback) do
+          spawn(fn ->
+            case init_socket(request, listener_options) do
+              {:error, _} -> :nop
+              socket -> callback.(socket)
+            end
+          end)
+
+          {:reply, :ok, state}
         else
-          backlog = Map.put(backlog, portnum, list ++ [request])
-          Process.send_after(self(), {:backlog_timeout, portnum, request}, @timeout)
-          {:reply, :ok, %Acceptor{state | backlog: backlog}}
-        end
+          list = Map.get(backlog, portnum, [])
 
-      callback when is_function(callback, 1) ->
-        spawn(fn ->
-          case init_socket(request) do
-            {:error, _} -> :nop
-            socket -> callback.(socket)
+          if length(list) >= @max_backlog do
+            close_socket(request.ref, :backlog_full)
+            {:reply, {:error, :backlog_full}, state}
+          else
+            backlog = Map.put(backlog, portnum, list ++ [request])
+            Process.send_after(self(), {:backlog_timeout, portnum, request}, @timeout)
+            {:reply, :ok, %Acceptor{state | backlog: backlog}}
           end
-        end)
-
-        {:reply, :ok, state}
+        end
 
       nil ->
         {:reply, {:error, :access_denied}, state}
     end
   end
 
-  defp open_local(ports, portnum, options) do
+  defp open_local(local_ports, portnum, options) do
     if Keyword.get(options, :local, true) do
-      case Map.get(ports, portnum) do
+      case Map.get(local_ports, portnum) do
         pid when is_pid(pid) ->
-          ports
+          local_ports
 
         nil ->
           {:ok, pid} = DiodeClient.LocalAcceptor.start_link(portnum)
-          Map.put(ports, portnum, pid)
+          Map.put(local_ports, portnum, pid)
       end
     else
-      ports
+      local_ports
     end
   end
 
@@ -298,18 +295,14 @@ defmodule DiodeClient.Acceptor do
   end
 
   def handle_info({:accept_timeout, portnum, from}, state = %Acceptor{ports: ports}) do
-    ports =
-      case Map.get(ports, portnum) do
-        list when is_list(list) ->
-          if from in list do
-            GenServer.reply(from, {:error, :timeout})
-            Map.put(ports, portnum, List.delete(list, from))
-          else
-            ports
-          end
+    {list, options} = Map.get(ports, portnum) || {[], nil}
 
-        _other ->
-          ports
+    ports =
+      if from in list do
+        GenServer.reply(from, {:error, :timeout})
+        Map.put(ports, portnum, {List.delete(list, from), options})
+      else
+        ports
       end
 
     {:noreply, %Acceptor{state | ports: ports}}
@@ -318,28 +311,20 @@ defmodule DiodeClient.Acceptor do
   @impl true
   def handle_continue({:restore, backup}, state) do
     state =
-      Enum.reduce(backup, state, fn {portnum, callback}, state ->
-        if is_function(callback) do
-          {:reply, _, state} = handle_call({:open, portnum, callback: callback}, nil, state)
-          state
-        else
-          state
-        end
+      Enum.reduce(backup, state, fn {portnum, {_list, listener_options}}, state ->
+        {:reply, _, state} = handle_call({:open, portnum, listener_options}, nil, state)
+        state
       end)
 
     {:noreply, state}
   end
 
   defp do_close(portnum, state = %Acceptor{ports: ports, local_ports: local, backup: backup}) do
-    case Map.get(ports, portnum) do
-      list when is_list(list) -> list
-      _other -> []
-    end
-    |> Enum.each(fn from -> GenServer.reply(from, {:error, :port_closed}) end)
+    {list, _options} = Map.get(ports, portnum, {[], nil})
+    Enum.each(list, fn from -> GenServer.reply(from, {:error, :port_closed}) end)
 
-    case Map.get(local, portnum) do
-      nil -> :ok
-      pid -> GenServer.stop(pid, :closed, 1_000)
+    if pid = Map.get(local, portnum) do
+      GenServer.stop(pid, :closed, 1_000)
     end
 
     %Acceptor{
@@ -348,5 +333,17 @@ defmodule DiodeClient.Acceptor do
         local_ports: Map.delete(local, portnum),
         backup: Map.delete(backup, portnum)
     }
+  end
+
+  defp opt_callback(listener_options) do
+    case Keyword.fetch(listener_options, :callback) do
+      {:ok, callback} when is_function(callback, 1) -> callback
+      {:ok, _other} -> :invalid_callback
+      :error -> nil
+    end
+  end
+
+  defp opt_print?(listener_options) do
+    Keyword.get(listener_options, :print?, false)
   end
 end
