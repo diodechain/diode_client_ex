@@ -218,45 +218,45 @@ defmodule DiodeClient.Acceptor do
     end
   end
 
-  def handle_call(
-        {:inject, portnum, request},
-        _from,
-        state = %Acceptor{backlog: backlog, ports: ports}
-      ) do
-    case Map.get(ports, portnum) do
-      {[client | rest], listener_options} ->
-        ports = Map.put(ports, portnum, {rest, listener_options})
-        GenServer.reply(client, {request, listener_options})
-        {:reply, :ok, %Acceptor{state | ports: ports}}
+  def handle_call({:inject, portnum, request}, _from, state = %Acceptor{ports: ports}) do
+    {reply, state} = handle_inject(Map.get(ports, portnum), portnum, request, state)
+    {:reply, reply, state}
+  end
 
-      {[], listener_options} ->
-        callback = opt_callback(listener_options)
+  def handle_inject({[client | rest], listener_options}, portnum, request, state) do
+    ports = Map.put(state.ports, portnum, {rest, listener_options})
+    GenServer.reply(client, {request, listener_options})
+    {:ok, %{state | ports: ports}}
+  end
 
-        if is_function(callback) do
-          spawn(fn ->
-            case init_socket(request, listener_options) do
-              {:error, _} -> :nop
-              socket -> callback.(socket)
-            end
-          end)
+  def handle_inject({[], listener_options}, portnum, request, state) do
+    callback = opt_callback(listener_options)
 
-          {:reply, :ok, state}
-        else
-          list = Map.get(backlog, portnum, [])
-
-          if length(list) >= @max_backlog do
-            close_socket(request.ref, :backlog_full)
-            {:reply, {:error, :backlog_full}, state}
-          else
-            backlog = Map.put(backlog, portnum, list ++ [request])
-            Process.send_after(self(), {:backlog_timeout, portnum, request}, @timeout)
-            {:reply, :ok, %Acceptor{state | backlog: backlog}}
-          end
+    if is_function(callback) do
+      spawn(fn ->
+        case init_socket(request, listener_options) do
+          {:error, _} -> :nop
+          socket -> callback.(socket)
         end
+      end)
 
-      nil ->
-        {:reply, {:error, :access_denied}, state}
+      {:ok, state}
+    else
+      list = Map.get(state.backlog, portnum, [])
+
+      if length(list) >= @max_backlog do
+        close_socket(request.ref, :backlog_full)
+        {{:error, :backlog_full}, state}
+      else
+        state = %{state | backlog: Map.put(state.backlog, portnum, list ++ [request])}
+        Process.send_after(self(), {:backlog_timeout, portnum, request}, @timeout)
+        {:ok, state}
+      end
     end
+  end
+
+  def handle_inject(nil, _request, state) do
+    {{:error, :access_denied}, state}
   end
 
   defp open_local(local_ports, portnum, options) do

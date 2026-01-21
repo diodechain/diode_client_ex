@@ -29,6 +29,7 @@ defmodule DiodeClient.Connection do
   @ping 3_000
   @inital_latency 100_000_000_000_000
   @packet_header 2
+  @hello_req <<1>>
 
   defmodule Cmd do
     @moduledoc false
@@ -182,7 +183,7 @@ defmodule DiodeClient.Connection do
     end
   end
 
-  defp connect(state = %Connection{server: server}, port) do
+  defp connect(state = %Connection{server: server, recv_id: recv_id}, port) do
     now = timestamp()
 
     :ssl.connect(String.to_charlist(server), port, ssl_options(role: :client), 25_000)
@@ -202,11 +203,12 @@ defmodule DiodeClient.Connection do
           end
         end)
 
-        # Updating ets state cache
+        recv_id = Map.put(recv_id, @hello_req, %Cmd{cmd: "hello"})
+
         state =
-          %Connection{state | socket: socket, server_wallet: server_wallet}
+          %Connection{state | socket: socket, server_wallet: server_wallet, recv_id: recv_id}
           |> update_info()
-          |> ssl_send!(Rlp.encode!([<<0>>, ["hello", @vsn, "zlib"]]))
+          |> ssl_send!(Rlp.encode!([@hello_req, ["hello", @vsn, "zlib"]]))
 
         {:noreply, state}
 
@@ -252,6 +254,11 @@ defmodule DiodeClient.Connection do
       | recv_id: Map.put(recv_id, req, cmd),
         channels: channels
     })
+  end
+
+  defp pop_cmd(state = %Connection{recv_id: recv_id}, @hello_req, %Cmd{cmd: "hello"}) do
+    %{state | recv_id: Map.delete(recv_id, @hello_req)}
+    |> sched_cmd()
   end
 
   defp pop_cmd(
