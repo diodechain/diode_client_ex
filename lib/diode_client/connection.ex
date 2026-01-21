@@ -197,8 +197,6 @@ defmodule DiodeClient.Connection do
         pid = self()
 
         spawn_link(fn ->
-          ["ok"] = rpc(pid, ["hello", @vsn])
-
           for shell <- state.shells do
             :ok = update_block(pid, shell, nil)
           end
@@ -208,6 +206,7 @@ defmodule DiodeClient.Connection do
         state =
           %Connection{state | socket: socket, server_wallet: server_wallet}
           |> update_info()
+          |> ssl_send!(Rlp.encode!([<<0>>, ["hello", @vsn, "zlib"]]))
 
         {:noreply, state}
 
@@ -462,7 +461,7 @@ defmodule DiodeClient.Connection do
 
     tck = Ticket.device_sign(tck, Wallet.privkey!(DiodeClient.wallet()))
     req = req_id()
-    msg = Rlp.encode!([req, Ticket.message(tck)])
+    msg = encode!([req, Ticket.message(tck)])
 
     state = %{
       state
@@ -473,6 +472,10 @@ defmodule DiodeClient.Connection do
     }
 
     {req, ssl_send!(state, msg)}
+  end
+
+  defp encode!(list) do
+    Rlp.encode!(list) |> :zlib.zip()
   end
 
   defp wait_for_ticket(:error, state) do
@@ -496,7 +499,7 @@ defmodule DiodeClient.Connection do
         15_000 -> raise "DiodeClient missing ticket reply"
       end
 
-    case Rlp.decode!(msg) do
+    case decode!(msg) do
       [^req, reply] ->
         tck = Map.get(pending_tickets, req)
         DiodeClient.Stats.submit(:relay, server, :self, byte_size(msg) + @packet_header)
@@ -760,6 +763,26 @@ defmodule DiodeClient.Connection do
     |> update_info()
   end
 
+  defp decode!(rlp) do
+    try do
+      :zlib.unzip(rlp)
+    rescue
+      _ -> rlp
+    end
+
+    rlp =
+      try do
+        :zlib.unzip(rlp)
+      rescue
+        _ -> rlp
+      end
+
+    # id = :erlang.phash2(rlp)
+    # File.write!("rlp.log", "#{id}:#{DiodeClient.Base16.encode(rlp)}\n", [:append])
+    # IO.puts("received rlp: #{id} bytes: #{byte_size(rlp)}")
+    Rlp.decode!(rlp)
+  end
+
   defp handle_msg(
          rlp,
          state = %Connection{
@@ -772,7 +795,7 @@ defmodule DiodeClient.Connection do
        ) do
     DiodeClient.Stats.submit(:relay, server, :self, byte_size(rlp) + @packet_header)
     state = %{state | unpaid_bytes: ub + byte_size(rlp) + @packet_header}
-    msg = [req | _rest] = Rlp.decode!(rlp)
+    msg = [req | _rest] = decode!(rlp)
 
     case Map.get(recv_id, req) do
       nil ->
@@ -830,7 +853,7 @@ defmodule DiodeClient.Connection do
           {state, ["error", port_ref, inspect(message)]}
       end
 
-    msg = Rlp.encode!([ref, msg])
+    msg = encode!([ref, msg])
     ssl_send!(state, msg)
   end
 
@@ -857,7 +880,7 @@ defmodule DiodeClient.Connection do
           {state, ["error", physical_port, inspect(message)]}
       end
 
-    msg = Rlp.encode!([ref, msg])
+    msg = encode!([ref, msg])
     ssl_send!(state, msg)
   end
 
@@ -914,7 +937,7 @@ defmodule DiodeClient.Connection do
   def rpc(pid, data = [cmd | _rest], opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 120_000)
     req = req_id()
-    rlp = Rlp.encode!([req | [data]])
+    rlp = encode!([req | [data]])
 
     call(pid, {:rpc, cmd, req, rlp, timestamp(), self()}, timeout)
     |> case do

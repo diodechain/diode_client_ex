@@ -33,6 +33,12 @@ defmodule DiodeClient.Rlp do
 
   """
 
+  @short_string 0x80
+  @long_string 0xB7
+  @short_list 0xC0
+  @long_list 0xF7
+  @short_max_size 55
+
   @doc """
     Encode an Elixir term to RLP. Integers are converted
     to binaries using `:binary.encode_unsigned/1`
@@ -49,14 +55,14 @@ defmodule DiodeClient.Rlp do
     do_encode!(term, opts)
   end
 
-  def do_encode!(<<x>>, _opts) when x < 0x80, do: <<x>>
+  def do_encode!(<<x>>, _opts) when x < @short_string, do: <<x>>
 
   def do_encode!(x, _opts) when is_binary(x) do
-    with_length!(0x80, x)
+    with_length!(@short_string, x)
   end
 
   def do_encode!(list, opts) when is_list(list) do
-    with_length!(0xC0, :lists.map(&do_encode!(&1, opts), list))
+    with_length!(@short_list, :lists.map(&do_encode!(&1, opts), list))
   end
 
   def do_encode!(other, opts) do
@@ -64,14 +70,20 @@ defmodule DiodeClient.Rlp do
     |> do_encode!(opts)
   end
 
-  defp with_length!(offset, data) do
+  def with_length!(type, data) when type in [@short_string, @short_list] do
     size = :erlang.iolist_size(data)
 
-    if size <= 55 do
-      [offset + size, data]
+    if size <= @short_max_size do
+      [type + size, data]
     else
+      type =
+        case type do
+          @short_string -> @long_string
+          @short_list -> @long_list
+        end
+
       bin = :binary.encode_unsigned(size)
-      [byte_size(bin) + offset + 55, bin, data]
+      [byte_size(bin) + type, bin, data]
     end
   end
 
@@ -129,27 +141,35 @@ defmodule DiodeClient.Rlp do
   end
 
   defp do_decode!(<<head::unsigned-size(8), rest::binary>>) when head <= 0xB7 do
-    size = head - 0x80
+    size = head - @short_string
     <<item::binary-size(size), rest::binary>> = rest
     {item, rest}
   end
 
   defp do_decode!(<<head::unsigned-size(8), rest::binary>>) when head <= 0xBF do
-    length_size = (head - 0xB7) * 8
+    length_size = (head - @long_string) * 8
     <<size::unsigned-size(length_size), item::binary-size(size), rest::binary>> = rest
     {item, rest}
   end
 
   defp do_decode!(<<head::unsigned-size(8), rest::binary>>) when head <= 0xF7 do
-    size = head - 0xC0
+    size = head - @short_list
     <<list::binary-size(size), rest::binary>> = rest
     {do_decode_list!([], list), rest}
   end
 
   defp do_decode!(<<head::unsigned-size(8), rest::binary>>) when head <= 0xFF do
-    length_size = (head - 0xF7) * 8
-    <<size::unsigned-size(length_size), list::binary-size(size), rest::binary>> = rest
-    {do_decode_list!([], list), rest}
+    length_size = (head - @long_list) * 8
+
+    case rest do
+      <<size::unsigned-size(length_size), list::binary-size(size), rest::binary>> ->
+        {do_decode_list!([], list), rest}
+
+      <<size::unsigned-size(length_size), rest::binary>> ->
+        # Too short binary
+        list = String.pad_trailing(rest, byte_size(rest) + size, <<0>>)
+        {:error, {"too short binary", {do_decode_list!([], list), rest}}}
+    end
   end
 
   defp do_decode_list!(list, "") do
