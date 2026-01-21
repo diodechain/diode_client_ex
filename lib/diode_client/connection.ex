@@ -771,12 +771,6 @@ defmodule DiodeClient.Connection do
   end
 
   defp decode!(rlp) do
-    try do
-      :zlib.unzip(rlp)
-    rescue
-      _ -> rlp
-    end
-
     rlp =
       try do
         :zlib.unzip(rlp)
@@ -968,7 +962,7 @@ defmodule DiodeClient.Connection do
 
   def rpc_async(pid, data = [cmd | _rest], id \\ self()) do
     req = req_id()
-    rlp = Rlp.encode!([req | [data]])
+    rlp = encode!([req | [data]])
     call(pid, {:rpc_async, cmd, req, rlp, timestamp(), id})
   end
 
@@ -990,7 +984,7 @@ defmodule DiodeClient.Connection do
 
   def rpc_cast(pid, data = [cmd | _rest]) do
     req = req_id()
-    rlp = Rlp.encode!([req | [data]])
+    rlp = encode!([req | [data]])
     GenServer.cast(pid, {:rpc, cmd, req, rlp, timestamp(), self()})
   end
 
