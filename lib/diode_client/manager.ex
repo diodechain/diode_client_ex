@@ -281,7 +281,7 @@ defmodule DiodeClient.Manager do
     removed = len - new_len
     added = max(0, @target_connections - new_len)
 
-    Logger.info(
+    Logger.debug(
       "DiodeClient.Manager: removed #{removed}, added #{added} connections, new length #{new_len + added}"
     )
   end
