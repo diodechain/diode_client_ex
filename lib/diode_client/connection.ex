@@ -79,10 +79,16 @@ defmodule DiodeClient.Connection do
             ticket_count: 0,
             last_ticket: nil,
             blocked: [],
-            shutdown: false
+            shutdown: false,
+            started_at: 0,
+            reset_count: 0,
+            max_uptime: nil
 
   def start_link(server, ports) when is_list(ports) do
-    GenServer.start_link(__MODULE__, [server, ports], hibernate_after: 5_000)
+    GenServer.start_link(__MODULE__, [server, ports],
+      hibernate_after: 5_000,
+      name: {:global, {__MODULE__, server}}
+    )
   end
 
   @impl true
@@ -101,7 +107,8 @@ defmodule DiodeClient.Connection do
       ticket_shell: DiodeClient.Shell.Moonbeam,
       shells: MapSet.new(DiodeClient.Manager.default_shells()),
       server: server,
-      server_ports: ports
+      server_ports: ports,
+      started_at: System.os_time(:second)
     }
 
     {:ok, state, {:continue, :init}}
@@ -149,7 +156,10 @@ defmodule DiodeClient.Connection do
       latency: latency,
       server_address: address,
       peaks: peaks,
-      open_port_count: map_size(ports)
+      open_port_count: map_size(ports),
+      reset_count: state.reset_count,
+      max_uptime: state.max_uptime,
+      started_at: state.started_at
     })
 
     state
@@ -765,7 +775,10 @@ defmodule DiodeClient.Connection do
         ticket_count: 0,
         last_ticket: nil,
         pending_tickets: %{},
-        server_wallet: nil
+        server_wallet: nil,
+        started_at: System.os_time(:second),
+        reset_count: state.reset_count + 1,
+        max_uptime: max(state.max_uptime || 0, System.os_time(:second) - state.started_at)
     }
     |> update_info()
   end

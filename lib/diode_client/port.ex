@@ -467,17 +467,23 @@ defmodule DiodeClient.Port do
           [DiodeClient.default_conn()]
 
         ticket ->
-          all_conns = DiodeClient.connections()
+          preferred_ids = DiodeClient.Ticket.preferred_server_ids(ticket)
 
-          DiodeClient.Ticket.preferred_server_ids(ticket)
-          |> Enum.map(fn addr ->
-            Enum.find(all_conns, fn pid ->
-              DiodeClient.Connection.server_address(pid) == addr
+          Enum.each(preferred_ids, fn addr -> DiodeClient.Manager.add_connection_address(addr) end)
+
+          conns =
+            DiodeClient.Manager.connected_connections()
+            |> Enum.sort_by(fn {_, %{latency: latency}} -> latency end)
+
+          {preferred, others} =
+            Enum.split_with(conns, fn {_, %{server_address: addr}} ->
+              addr in preferred_ids
             end)
-          end)
-          |> Enum.filter(fn conn -> conn != nil end)
-          |> Enum.concat([DiodeClient.default_conn()])
-          |> Enum.uniq()
+
+          {seeds, rest} = Enum.split_with(others, fn {_, %{type: type}} -> type == :seed end)
+
+          _canidates_by_priority =
+            Enum.map(preferred ++ seeds ++ rest, fn {pid, _info} -> pid end)
       end
 
     do_connect(conns, destination, port, options)
@@ -509,11 +515,12 @@ defmodule DiodeClient.Port do
         update_peer_port(pid, destination, port)
         tls_connect(pid)
 
-      {:error, "not found"} ->
-        do_connect(conns, destination, port, access)
-
       {:error, reason} ->
-        {:error, reason}
+        if String.contains?(reason, "not found") do
+          do_connect(conns, destination, port, options)
+        else
+          {:error, reason}
+        end
     end
   end
 

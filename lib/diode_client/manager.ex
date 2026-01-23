@@ -31,7 +31,9 @@ defmodule DiodeClient.Manager do
       :started_at,
       :peaks,
       :created_at,
-      :type
+      :type,
+      :reset_count,
+      :max_uptime
     ]
   end
 
@@ -127,14 +129,14 @@ defmodule DiodeClient.Manager do
     |> Map.new()
   end
 
-  def add_connection(server) do
+  def add_connection(server, type \\ :manual) do
     ports = [DiodeClient.Object.Server.edge_port(server)]
     url = DiodeClient.Object.Server.host(server)
     key = String.to_atom(url)
 
     conn =
       {key,
-       %Info{server_url: url, ports: ports, key: key, created_at: System.os_time(), type: :manual}}
+       %Info{server_url: url, ports: ports, key: key, created_at: System.os_time(), type: type}}
 
     GenServer.call(__MODULE__, {:add_connection, conn})
   end
@@ -145,6 +147,19 @@ defmodule DiodeClient.Manager do
     with [server | _] <- DiodeClient.Shell.get_nodes(addr) do
       add_connection(server)
     end
+  end
+
+  def add_connection_address(address) do
+    Debouncer.immediate(
+      {__MODULE__, :add_connection_address, address},
+      fn ->
+        with [server] <- DiodeClient.Shell.get_node(address) do
+          DiodeClient.Object.decode_rlp_list!(server)
+          |> add_connection(:peer)
+        end
+      end,
+      60_000
+    )
   end
 
   def drop_connection(key) do
@@ -217,12 +232,16 @@ defmodule DiodeClient.Manager do
     end)
   end
 
-  def ranked_connections() do
+  def ranked_info() do
     connection_map()
     |> Enum.sort_by(fn {_pid, %Info{server_address: addr, peaks: peaks, latency: latency}} ->
       online? = addr != nil and map_size(peaks) > 0
       {not online?, latency}
     end)
+  end
+
+  def ranked_connections() do
+    ranked_info()
     |> Enum.map(fn {pid, %Info{latency: latency, key: key, type: type}} ->
       {latency, pid, key, type}
     end)
@@ -234,25 +253,37 @@ defmodule DiodeClient.Manager do
     len = length(current)
 
     if len >= @target_connections do
-      # Find find the slowest (from bottom) community node
-      current = Enum.reverse(current)
-      i = Enum.find_index(current, fn {_, _, _, type} -> type == :manual end)
+      # Find find the slowest half of the connections
+      slowest_half = Enum.reverse(current) |> Enum.take(div(len, 2))
+      # Remove at least 1 connection, and at most half of the excess connections
+      removals = max(1, div(len - @target_connections, 2))
 
-      # If this is in the lower half shuffle it out
-      # to make space for another one
-      if i != nil and i < div(@target_connections, 2) do
-        {_, _, key, _} = Enum.at(current, i)
-        drop_connection(key)
-      end
+      _ =
+        Enum.reduce_while(slowest_half, removals, fn {_, pid, key, type}, removals ->
+          if removals > 0 and type in [:manual, :peer] and
+               get_connection_info(pid, :open_port_count) in [0, nil] do
+            drop_connection(key)
+            {:cont, removals - 1}
+          else
+            {:cont, removals}
+          end
+        end)
     end
 
-    len = length(ranked_connections())
+    new_len = length(ranked_connections())
 
-    if seed_list_override() == nil and len < @target_connections do
-      for _ <- (len + 1)..@target_connections do
+    if seed_list_override() == nil and new_len < @target_connections do
+      for _ <- (new_len + 1)..@target_connections do
         add_connection()
       end
     end
+
+    removed = len - new_len
+    added = max(0, @target_connections - new_len)
+
+    Logger.info(
+      "DiodeClient.Manager: removed #{removed}, added #{added} connections, new length #{new_len + added}"
+    )
   end
 
   def online?() do
@@ -287,13 +318,19 @@ defmodule DiodeClient.Manager do
 
   defp handle_exit(pid, reason, state = %Manager{conns: conns}) do
     case Map.pop(conns, pid) do
-      {%Info{key: key, server_url: server_url}, conns} ->
+      {%Info{key: key, server_url: server_url, type: type}, conns} ->
         if reason != :normal do
           Logger.info("Connection down: #{inspect(server_url)} for: #{inspect(reason)}")
         end
 
-        Process.send_after(self(), {:restart_conn, key}, 15_000)
-        state = %{state | conns: conns}
+        state =
+          if type == :seed do
+            Process.send_after(self(), {:restart_conn, key}, 15_000)
+            %{state | conns: conns}
+          else
+            do_drop_connection(key, state)
+          end
+
         {:noreply, schedule_update(state)}
 
       {nil, _conns} ->
@@ -370,7 +407,7 @@ defmodule DiodeClient.Manager do
           pid
       end
 
-    conns = Map.put(conns, pid, %{info | pid: pid, started_at: System.os_time(), peaks: %{}})
+    conns = Map.put(conns, pid, %{info | pid: pid, peaks: %{}})
     %Manager{state | conns: conns}
   end
 
@@ -398,7 +435,16 @@ defmodule DiodeClient.Manager do
     {:reply, Map.get(peaks, shell), state}
   end
 
-  @legal_keys [:server_address, :latency, :server_url, :open_port_count, :peaks]
+  @legal_keys [
+    :server_address,
+    :latency,
+    :server_url,
+    :open_port_count,
+    :peaks,
+    :reset_count,
+    :max_uptime,
+    :started_at
+  ]
   def handle_call({:get_info, cpid}, _from, state = %Manager{conns: conns}) do
     case Map.get(conns, cpid) do
       nil ->
@@ -460,33 +506,34 @@ defmodule DiodeClient.Manager do
         _from,
         state = %Manager{server_list: server_list}
       ) do
-    server_list = Map.put(server_list, key, info)
-    state = %Manager{state | server_list: server_list}
-    {:reply, :ok, restart_conn(key, state)}
+    if Map.has_key?(server_list, key) do
+      {:reply, :ok, state}
+    else
+      server_list = Map.put(server_list, key, info)
+      state = %Manager{state | server_list: server_list}
+      {:reply, :ok, restart_conn(key, state)}
+    end
   end
 
   def handle_call({:reset_server_list, list}, _from, state) do
     {:reply, :ok, restart_all(%{state | server_list: list, sticky: nil, best: [], peaks: %{}})}
   end
 
-  def handle_call(
-        {:drop_connection, key},
-        _from,
-        state = %Manager{server_list: server_list, conns: conns}
-      ) do
+  def handle_call({:drop_connection, key}, _from, state) do
+    {:reply, :ok, do_drop_connection(key, state)}
+  end
+
+  defp do_drop_connection(key, state = %Manager{server_list: server_list, conns: conns}) do
     server_list = Map.delete(server_list, key)
     result = Enum.find(conns, fn {_, %Info{key: key2}} -> key2 == key end)
 
-    state =
-      if result do
-        {pid, _info} = result
-        safe_send(pid, :stop)
-        %{state | server_list: server_list, conns: Map.delete(conns, pid)}
-      else
-        %{state | server_list: server_list}
-      end
-
-    {:reply, :ok, state}
+    if result do
+      {pid, _info} = result
+      safe_send(pid, :stop)
+      %{state | server_list: server_list, conns: Map.delete(conns, pid)}
+    else
+      %{state | server_list: server_list}
+    end
   end
 
   defp connected(%Manager{conns: conns, shells: shells, peaks: peaks}) do

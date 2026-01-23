@@ -3,7 +3,7 @@ defmodule DiodeClient.Control do
   use GenServer
   require Logger
   require Logger
-  alias DiodeClient.{Acceptor, Control, Port, Rlp, Rlpx}
+  alias DiodeClient.{Acceptor, Base16, Control, Port, Rlp, Rlpx}
   @control_port 320_922
   defstruct [:tried, :peer, :resolved_address, :waiting, :socket, :resolved_ports]
 
@@ -56,7 +56,18 @@ defmodule DiodeClient.Control do
         {address, port} = _addr ->
           # Logger.info("resolve_local: #{inspect(addr)}")
           address = String.to_charlist(address)
-          Port.direct_connect(address, port, :client)
+
+          case Port.direct_connect(address, port, :client) do
+            {:ok, ssl} ->
+              {:ok, ssl}
+
+            {:error, reason} ->
+              Logger.debug(
+                "direct_connect failed to connect to #{Base16.encode(peer)} via #{inspect(address)}:#{port} (#{inspect(reason)})"
+              )
+
+              nil
+          end
       end
     end
   end
