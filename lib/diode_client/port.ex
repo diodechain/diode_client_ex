@@ -499,7 +499,15 @@ defmodule DiodeClient.Port do
         "portopen"
       end
 
-    Connection.rpc(conn, [cmd, destination, port, access])
+    try do
+      Connection.rpc(conn, [cmd, destination, port, access])
+    rescue
+      e in RuntimeError ->
+        {:error, e.message}
+    catch
+      :exit, reason ->
+        {:error, reason}
+    end
     |> case do
       ["ok", port_num] when is_integer(port_num) ->
         address = Connection.server_url(conn)
@@ -516,7 +524,8 @@ defmodule DiodeClient.Port do
         tls_connect(pid)
 
       {:error, reason} ->
-        if String.contains?(reason, "not found") do
+        if reason == :connection_shutdown or String.contains?(reason, "not found") or
+             String.contains?(reason, "remote_closed") do
           do_connect(conns, destination, port, options)
         else
           {:error, reason}
