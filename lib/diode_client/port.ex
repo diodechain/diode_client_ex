@@ -79,6 +79,18 @@ defmodule DiodeClient.Port do
     close(pid)
   end
 
+  def close(%Port.Relay{url: url, port: port}) do
+    Enum.find(DiodeClient.Manager.connection_map(), fn {_, info} ->
+      info.server_url == url
+    end)
+    |> case do
+      {conn, _relay} -> Connection.rpc_cast(conn, ["portclose", port])
+      nil -> :ok
+    end
+
+    :ok
+  end
+
   def close(listener = %Acceptor.Listener{}) do
     Acceptor.close(listener)
   end
@@ -97,6 +109,10 @@ defmodule DiodeClient.Port do
   def peer(pid) when is_pid(pid) do
     {:ok, {:undefined, peer}} = peername(pid)
     peer
+  end
+
+  def peer(%Port.Relay{source_addr: source_addr}) do
+    source_addr
   end
 
   def peer(ssl) when is_tuple(ssl) do
@@ -514,7 +530,7 @@ defmodule DiodeClient.Port do
         print? = Keyword.get(options, :print?, false)
 
         if print? do
-          {:ok, "#{address}:#{port_num}"}
+          {:ok, %Port.Relay{url: address, port: port_num, source_addr: destination}}
         else
           direct_connect(address, port_num, :client)
         end

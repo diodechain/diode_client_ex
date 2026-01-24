@@ -873,7 +873,7 @@ defmodule DiodeClient.Connection do
 
   defp handle_request(
          state = %Connection{},
-         [ref, ["portopen2", port, physical_port | _rest]]
+         [ref, ["portopen2", port, physical_port, source_addr | _rest]]
        ) do
     debug("received portopen2 for #{Base16.encode(physical_port)}")
     port = to_num(port)
@@ -881,7 +881,13 @@ defmodule DiodeClient.Connection do
     {state, msg} =
       case GenServer.call(
              Acceptor,
-             {:inject, port, %{type: :open2, from: self(), ref: Rlpx.bin2uint(physical_port)}}
+             {:inject, port,
+              %{
+                type: :open2,
+                from: self(),
+                ref: Rlpx.bin2uint(physical_port),
+                source_addr: source_addr
+              }}
            ) do
         :ok ->
           {state, ["response", physical_port, "ok"]}
@@ -918,6 +924,10 @@ defmodule DiodeClient.Connection do
           GenServer.cast(pid, {:send, msg})
         end
 
+        state
+
+      {"portclose2", [port_ref]} ->
+        debug("received portclose2 for #{Base16.encode(port_ref)}")
         state
 
       {"portclose", [port_ref]} ->

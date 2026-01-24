@@ -50,7 +50,10 @@ defmodule Mix.Tasks.Diode.Udp do
     case DiodeClient.Port.connect(address, port_num, access: "u2", print?: true) do
       {:ok, socket} ->
         IO.puts("Consumed connection on port #{port_num} #{inspect(socket)}")
-        echo_loop(socket)
+        Process.sleep(1000)
+        IO.puts("Closing connection on port #{port_num} #{inspect(socket)}")
+        DiodeClient.Port.close(socket)
+        :ok
 
       {:error, reason} ->
         IO.puts("Error consuming port #{port_num} from #{address}: #{inspect(reason)}")
@@ -69,25 +72,5 @@ defmodule Mix.Tasks.Diode.Udp do
 
     IO.puts("Listening on port #{port_num}")
     :timer.sleep(:infinity)
-  end
-
-  def echo_loop(socket) do
-    receive do
-      msg -> msg
-    end
-    |> case do
-      {:ssl, ^socket, data} ->
-        :ok = :ssl.send(socket, data)
-        IO.puts("Received #{byte_size(data)} bytes")
-        echo_loop(socket)
-
-      {:ssl_closed, ^socket} ->
-        IO.puts("Socket closed")
-        :ok
-
-      other ->
-        IO.puts("Unhandled message: #{inspect(other)}")
-        echo_loop(socket)
-    end
   end
 end

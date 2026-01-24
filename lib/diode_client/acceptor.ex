@@ -133,11 +133,14 @@ defmodule DiodeClient.Acceptor do
     ssl
   end
 
-  defp init_socket(%{type: :open2, from: conn, ref: physical_port}, listener_options) do
+  defp init_socket(
+         %{type: :open2, from: conn, ref: physical_port, source_addr: source_addr},
+         listener_options
+       ) do
     address = DiodeClient.Connection.server_url(conn)
 
     if opt_print?(listener_options) do
-      "#{address}:#{physical_port}"
+      %Port.Relay{url: address, port: physical_port, source_addr: source_addr}
     else
       Port.direct_connect(address, physical_port, :server)
     end
