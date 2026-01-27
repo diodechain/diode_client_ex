@@ -95,7 +95,7 @@ defmodule DiodeClient.Shell.Common do
     if Map.get(opts, :sign, true) do
       Transaction.sign(tx, Wallet.privkey!(wallet))
     else
-      tx
+      %{tx | signature: {:fake, Wallet.address!(wallet)}}
     end
   end
 

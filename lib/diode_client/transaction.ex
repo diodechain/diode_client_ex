@@ -174,8 +174,8 @@ defmodule DiodeClient.Transaction do
   end
 
   @spec origin(DiodeClient.Transaction.t()) :: Wallet.t()
-  def origin(%Transaction{signature: {:fake, pubkey}}) do
-    Wallet.from_address(pubkey)
+  def origin(%Transaction{signature: {:fake, address}}) do
+    Wallet.from_address(address)
   end
 
   def origin(tx) do
@@ -187,7 +187,7 @@ defmodule DiodeClient.Transaction do
     %{tx | signature: Secp256k1.sign(priv, to_message(tx), :kec)}
   end
 
-  def hash(tx = %Transaction{signature: {:fake, _pubkey}}) do
+  def hash(tx = %Transaction{signature: {:fake, _address}}) do
     to_message(tx) |> hash(chain_id(tx))
   end
 
