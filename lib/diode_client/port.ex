@@ -540,13 +540,10 @@ defmodule DiodeClient.Port do
         tls_connect(pid)
 
       {:error, reason} ->
-        retryable = ["not found", "remote_closed", "too many hanging ports"]
+        "failed to connect to #{inspect(DiodeClient.Base16.encode(destination))}:#{port} (#{inspect(reason)})"
+        |> Logger.debug()
 
-        if reason == :connection_shutdown or Enum.any?(retryable, &String.contains?(reason, &1)) do
-          do_connect(conns, destination, port, options)
-        else
-          {:error, reason}
-        end
+        do_connect(conns, destination, port, options)
     end
   end
 
