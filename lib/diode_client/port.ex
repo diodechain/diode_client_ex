@@ -543,7 +543,11 @@ defmodule DiodeClient.Port do
         "failed to connect to #{inspect(DiodeClient.Base16.encode(destination))}:#{port} (#{inspect(reason)})"
         |> Logger.debug()
 
-        do_connect(conns, destination, port, options)
+        if is_binary(reason) and String.contains?(reason, "access_denied") do
+          {:error, "access_denied"}
+        else
+          do_connect(conns, destination, port, options)
+        end
     end
   end
 
