@@ -153,7 +153,7 @@ defmodule DiodeClient.Manager do
     Debouncer.immediate(
       {__MODULE__, :add_connection_address, address},
       fn ->
-        with [server] <- DiodeClient.Shell.get_node(address) do
+        with [server] when byte_size(server) > 0 <- DiodeClient.Shell.get_node(address) do
           DiodeClient.Object.decode_rlp_list!(server)
           |> add_connection(:peer)
         end
