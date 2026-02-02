@@ -23,13 +23,15 @@ defmodule DiodeClient.Shell.Common do
     quote do
       alias DiodeClient.Shell.Common
 
-      if __MODULE__ != DiodeClient.Shell do
+      if __MODULE__ != DiodeClient.Shell and __MODULE__ != DiodeClient.Shell.Anvil do
         defdelegate cached_rpc(args), to: DiodeClient.Shell
         defdelegate uncache_rpc(args), to: DiodeClient.Shell
         defdelegate rpc(args), to: DiodeClient.Shell
       end
 
-      def peak(), do: DiodeClient.Manager.get_peak(__MODULE__)
+      if __MODULE__ != DiodeClient.Shell.Anvil do
+        def peak(), do: DiodeClient.Manager.get_peak(__MODULE__)
+      end
 
       def peak_number(block \\ peak()) do
         DiodeClient.Block.number(block)
@@ -40,9 +42,13 @@ defmodule DiodeClient.Shell.Common do
 
       def gas_price(), do: Common.gas_price(__MODULE__)
 
-      def send_transaction(tx), do: Common.send_transaction(__MODULE__, tx)
+      if __MODULE__ != DiodeClient.Shell.Anvil do
+        def send_transaction(tx), do: Common.send_transaction(__MODULE__, tx)
+      end
 
-      def get_block_header(block_index), do: Common.get_block_header(__MODULE__, block_index)
+      if __MODULE__ != DiodeClient.Shell.Anvil do
+        def get_block_header(block_index), do: Common.get_block_header(__MODULE__, block_index)
+      end
     end
   end
 
@@ -142,7 +148,7 @@ defmodule DiodeClient.Shell.Common do
 
     cmd = [shell.prefix() <> "rpc", "eth_call", params]
 
-    with [json] <- DiodeClient.Shell.cached_rpc(cmd) do
+    with [json] <- shell.cached_rpc(cmd) do
       process_call_result(shell, json, opts)
     end
   end
@@ -198,7 +204,7 @@ defmodule DiodeClient.Shell.Common do
     params = Jason.encode!([tx_hash])
     cmd = [shell.prefix() <> "rpc", "eth_getTransactionReceipt", params]
 
-    with [json] <- DiodeClient.Shell.cached_rpc(cmd) do
+    with [json] <- shell.cached_rpc(cmd) do
       case Jason.decode!(json) do
         %{"result" => result} ->
           result
@@ -213,7 +219,7 @@ defmodule DiodeClient.Shell.Common do
   def gas_price(shell) do
     cmd = [shell.prefix() <> "rpc", "eth_gasPrice", "[]"]
 
-    with [json] <- DiodeClient.Shell.cached_rpc(cmd) do
+    with [json] <- shell.cached_rpc(cmd) do
       case Jason.decode!(json) do
         %{"result" => result} ->
           Base16.decode_int(result)
@@ -246,7 +252,8 @@ defmodule DiodeClient.Shell.Common do
   end
 
   def get_block_header(shell, block_index) do
-    case Shell.cached_rpc([shell.prefix() <> "getblockheader", block_index]) do
+    case shell.cached_rpc([shell.prefix() <> "getblockheader", block_index]) do
+      [block] when is_map(block) -> block
       [block] -> Rlpx.list2map(block)
     end
   end

@@ -19,8 +19,19 @@ defmodule DiodeClient.Contracts.Factory do
                           "0x608060405234801561001057600080fd5b506040516102813803806102818339818101604052604081101561003357600080fd5b5080516020909101517f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc919091557fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103556101ef806100926000396000f3fe60806040526004361061002d5760003560e01c8063277f2594146100445780633b2a0ff2146100775761003c565b3661003c5761003a6100aa565b005b61003a6100aa565b34801561005057600080fd5b5061003a6004803603602081101561006757600080fd5b50356001600160a01b03166100f6565b34801561008357600080fd5b5061003a6004803603602081101561009a57600080fd5b50356001600160a01b031661015d565b7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc543660008037600080366000845af490503d6000803e8080156100ed573d6000f35b600080fd5b5050565b7fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103546001600160a01b03811633141561015257817f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc555061015a565b6100f26100aa565b50565b7fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103546001600160a01b03811633141561015257817fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103555061015a56fea26469706673582212205358925e98d445263a87d7d842203cc81be93e3c6d2c0a4574ba1ddbe434559364736f6c63430007060033"
                         )
 
+  @anvil_contracts_key {__MODULE__, :anvil_contracts}
+
   def shells() do
-    [DiodeClient.Shell, DiodeClient.Shell.Moonbeam, DiodeClient.Shell.OasisSapphire]
+    [DiodeClient.Shell, DiodeClient.Shell.Moonbeam, DiodeClient.Shell.OasisSapphire, DiodeClient.Shell.Anvil]
+  end
+
+  def set_anvil_contracts(%List{} = list) do
+    :persistent_term.put(@anvil_contracts_key, list)
+    list
+  end
+
+  def get_anvil_contracts() do
+    :persistent_term.get(@anvil_contracts_key, nil)
   end
 
   def contracts(TestShell) do
@@ -87,8 +98,28 @@ defmodule DiodeClient.Contracts.Factory do
     }
   end
 
+  def contracts(DiodeClient.Shell.Anvil) do
+    case get_anvil_contracts() do
+      nil ->
+        raise """
+        Anvil contracts not deployed. Call DiodeClient.Contracts.Factory.set_anvil_contracts/1 \
+        with a %DiodeClient.Contracts.List{} (e.g. from DiodeClient.Anvil.Helper.deploy_contracts/1) \
+        after deploying to Anvil.
+        """
+
+      %List{} = list ->
+        list
+    end
+  end
+
   def self_check() do
-    for shell <- shells() do
+    shells_to_check =
+      Enum.reject(shells(), fn
+        DiodeClient.Shell.Anvil -> get_anvil_contracts() == nil
+        _ -> false
+      end)
+
+    for shell <- shells_to_check do
       IO.puts("Validating #{shell}...")
       contracts = contracts(shell)
 
@@ -124,6 +155,17 @@ defmodule DiodeClient.Contracts.Factory do
 
   def proxy_code_hash(shell) do
     contracts(shell).proxy_code_hash
+  end
+
+  @doc """
+  Returns the proxy code hash for a given factory address (EVM/Anvil-compatible constructor).
+  Used by DiodeClient.Anvil.Helper when building the contract list.
+  """
+  def proxy_code_hash_for_factory(factory_address) when is_binary(factory_address) do
+    factory = Hash.to_address(factory_address)
+    Hash.keccak_256(
+      @constructor_moonbeam <> ABI.encode_args(["address", "address"], [0, factory])
+    )
   end
 
   def is_factory(address) do
