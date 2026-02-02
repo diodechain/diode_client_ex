@@ -7,6 +7,7 @@ defmodule DiodeClient.Connection do
     Certs,
     Connection,
     Manager,
+    NodeScorer,
     Port,
     Random,
     Rlp,
@@ -82,7 +83,8 @@ defmodule DiodeClient.Connection do
             shutdown: false,
             started_at: 0,
             reset_count: 0,
-            max_uptime: nil
+            max_uptime: nil,
+            reported_stable: false
 
   def start_link(server, ports) when is_list(ports) do
     GenServer.start_link(__MODULE__, [server, ports],
@@ -179,11 +181,18 @@ defmodule DiodeClient.Connection do
     after
       0 ->
         backoff = min(fib(count) * :timer.seconds(1), :timer.seconds(120))
+        scorer_delay = NodeScorer.get_delay(state.server)
+        delay = max(backoff, scorer_delay)
         port = Enum.at(ports, rem(count, length(ports)))
 
-        if backoff > 0 do
-          debug("connect() delayed by #{backoff}ms, trying port #{port}")
-          Process.sleep(backoff)
+        if delay > 0 do
+          if scorer_delay > backoff do
+            debug("connect() scorer delayed by #{delay}ms (scorer), trying port #{port}")
+          else
+            debug("connect() backoff delayed by #{delay}ms, trying port #{port}")
+          end
+
+          Process.sleep(delay)
         end
 
         case connect(state, port) do
@@ -224,6 +233,7 @@ defmodule DiodeClient.Connection do
 
       {:error, reason} ->
         debug("connect() failed: #{inspect(reason)}")
+        NodeScorer.report_failure(state.server)
 
         state = update_info(%{state | latency: @inital_latency})
         {:retry, state}
@@ -697,6 +707,14 @@ defmodule DiodeClient.Connection do
           |> update_info()
 
         state =
+          if not state.reported_stable do
+            NodeScorer.report_success(state.server)
+            %{state | reported_stable: true}
+          else
+            state
+          end
+
+        state =
           if shell == state.ticket_shell and state.last_ticket == nil,
             do: maybe_create_ticket(state, true),
             else: state
@@ -778,7 +796,8 @@ defmodule DiodeClient.Connection do
         server_wallet: nil,
         started_at: System.os_time(:second),
         reset_count: state.reset_count + 1,
-        max_uptime: max(state.max_uptime || 0, System.os_time(:second) - state.started_at)
+        max_uptime: max(state.max_uptime || 0, System.os_time(:second) - state.started_at),
+        reported_stable: false
     }
     |> update_info()
   end

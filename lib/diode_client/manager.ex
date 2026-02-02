@@ -1,6 +1,6 @@
 defmodule DiodeClient.Manager do
   @moduledoc false
-  alias DiodeClient.{Connection, Manager, Rlpx}
+  alias DiodeClient.{Connection, Manager, NodeScorer, Rlpx}
   use GenServer
   require Logger
 
@@ -321,11 +321,13 @@ defmodule DiodeClient.Manager do
       {%Info{key: key, server_url: server_url, type: type}, conns} ->
         if reason != :normal do
           Logger.info("Connection down: #{inspect(server_url)} for: #{inspect(reason)}")
+          NodeScorer.report_failure(server_url)
         end
 
         state =
           if type == :seed do
-            Process.send_after(self(), {:restart_conn, key}, 15_000)
+            delay = NodeScorer.get_delay(server_url)
+            Process.send_after(self(), {:restart_conn, key}, delay)
             %{state | conns: conns}
           else
             do_drop_connection(key, state)
