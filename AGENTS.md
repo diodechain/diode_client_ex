@@ -35,5 +35,6 @@ Context and conventions for AI agents and contributors working on this repositor
 
 ## Lint and tooling
 
-- **Full check**: `mix lint` (alias in `mix.exs`) runs compile, `format --check-formatted`, Credo, and Dialyzer. Run this before pushing.
+- **Full check**: Run `mix lint` before pushing. The alias (in `mix.exs`) runs: compile, `format --check-formatted`, Credo, and Dialyzer. Resolve any Credo (readability/consistency) and Dialyzer issues; keep code formatted.
+- **For agents**: After changing code, run `mix lint` and fix any reported issues (format, Credo, or Dialyzer) before considering the task complete.
 - **Elixir/OTP**: CI uses Elixir 1.15.8 and OTP 26. Use `.tool-versions` for local version alignment.

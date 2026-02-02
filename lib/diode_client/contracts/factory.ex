@@ -22,10 +22,15 @@ defmodule DiodeClient.Contracts.Factory do
   @anvil_contracts_key {__MODULE__, :anvil_contracts}
 
   def shells() do
-    [DiodeClient.Shell, DiodeClient.Shell.Moonbeam, DiodeClient.Shell.OasisSapphire, DiodeClient.Shell.Anvil]
+    [
+      DiodeClient.Shell,
+      DiodeClient.Shell.Moonbeam,
+      DiodeClient.Shell.OasisSapphire,
+      DiodeClient.Shell.Anvil
+    ]
   end
 
-  def set_anvil_contracts(%List{} = list) do
+  def set_anvil_contracts(list = %List{}) do
     :persistent_term.put(@anvil_contracts_key, list)
     list
   end
@@ -163,6 +168,7 @@ defmodule DiodeClient.Contracts.Factory do
   """
   def proxy_code_hash_for_factory(factory_address) when is_binary(factory_address) do
     factory = Hash.to_address(factory_address)
+
     Hash.keccak_256(
       @constructor_moonbeam <> ABI.encode_args(["address", "address"], [0, factory])
     )

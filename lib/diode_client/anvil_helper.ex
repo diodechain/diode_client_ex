@@ -174,9 +174,9 @@ defmodule DiodeClient.Anvil.Helper do
         args = ["--port", to_string(port)] ++ extra_args
         port_opts = [:binary, :exit_status, :stderr_to_stdout, {:args, args}]
         port = Port.open({:spawn_executable, path}, port_opts)
-    :persistent_term.put(@anvil_port_key, port)
+        :persistent_term.put(@anvil_port_key, port)
 
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
+        deadline = System.monotonic_time(:millisecond) + timeout_ms
 
         if wait_reachable(rpc_url, deadline) do
           {:ok, port}
@@ -230,7 +230,9 @@ defmodule DiodeClient.Anvil.Helper do
   def ensure_repo do
     case repo_path() do
       nil ->
-        dir = Path.join(System.tmp_dir!(), "diode_contract_#{:erlang.unique_integer([:positive])}")
+        dir =
+          Path.join(System.tmp_dir!(), "diode_contract_#{:erlang.unique_integer([:positive])}")
+
         case clone_repo(dir) do
           :ok -> {:ok, dir}
           err -> err
@@ -246,7 +248,9 @@ defmodule DiodeClient.Anvil.Helper do
   end
 
   defp clone_repo(dir) do
-    {output, status} = System.cmd("git", ["clone", "--depth", "1", @repo_url, dir], stderr_to_stdout: true)
+    {output, status} =
+      System.cmd("git", ["clone", "--depth", "1", @repo_url, dir], stderr_to_stdout: true)
+
     case status do
       0 -> :ok
       _ -> {:error, {:clone_failed, output}}
@@ -258,6 +262,7 @@ defmodule DiodeClient.Anvil.Helper do
   """
   def build_repo(path) do
     {output, status} = System.cmd("forge", ["build"], cd: path, stderr_to_stdout: true)
+
     case status do
       0 -> :ok
       _ -> {:error, {:forge_build_failed, output}}
@@ -286,7 +291,7 @@ defmodule DiodeClient.Anvil.Helper do
 
   defp deploy_from_artifacts(path, rpc_url, _opts) do
     out_dir = Path.join(path, "out")
-    unless File.exists?(out_dir), do: raise "out/ not found; run forge build in #{path}"
+    unless File.exists?(out_dir), do: raise("out/ not found; run forge build in #{path}")
 
     # Contract names in deployment order; diode_contract may use different names.
     # Try common artifact paths: Contract.sol/Contract.json
@@ -327,7 +332,7 @@ defmodule DiodeClient.Anvil.Helper do
   defp deploy_artifact(json_path, rpc_url) do
     json = File.read!(json_path) |> Jason.decode!()
     bytecode_hex = get_in(json, ["bytecode", "object"]) || get_in(json, ["bytecode"])
-    unless bytecode_hex, do: raise "no bytecode in #{json_path}"
+    unless bytecode_hex, do: raise("no bytecode in #{json_path}")
 
     bytecode = Base16.decode(bytecode_hex)
     # First Anvil account
@@ -352,11 +357,17 @@ defmodule DiodeClient.Anvil.Helper do
       ],
       id: 1
     }
+
     body_str = Jason.encode!(body)
     url = String.to_charlist(rpc_url)
     headers = [{~c"Content-Type", ~c"application/json"}]
 
-    case :httpc.request(:post, {url, headers, ~c"application/json", body_str}, [timeout: 60_000], []) do
+    case :httpc.request(
+           :post,
+           {url, headers, ~c"application/json", body_str},
+           [timeout: 60_000],
+           []
+         ) do
       {:ok, {{_, 200, _}, _, resp_body}} ->
         case Jason.decode!(resp_body) do
           %{"result" => tx_hash} -> wait_for_receipt(rpc_url, tx_hash)
@@ -374,7 +385,12 @@ defmodule DiodeClient.Anvil.Helper do
     url = String.to_charlist(rpc_url)
     headers = [{~c"Content-Type", ~c"application/json"}]
 
-    case :httpc.request(:post, {url, headers, ~c"application/json", body_str}, [timeout: 5_000], []) do
+    case :httpc.request(
+           :post,
+           {url, headers, ~c"application/json", body_str},
+           [timeout: 5_000],
+           []
+         ) do
       {:ok, {{_, 200, _}, _, resp_body}} ->
         case Jason.decode!(resp_body) do
           %{"result" => nil} when retries > 0 ->

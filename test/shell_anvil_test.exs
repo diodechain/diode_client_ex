@@ -25,7 +25,7 @@ defmodule DiodeClientShellAnvilTest do
       # Default Anvil chain id is 31337
       cid = Anvil.chain_id()
       assert is_integer(cid)
-      assert cid in [31337, String.to_integer(System.get_env("ANVIL_CHAIN_ID") || "31337")]
+      assert cid in [31_337, String.to_integer(System.get_env("ANVIL_CHAIN_ID") || "31337")]
     end
 
     @tag :anvil_config
@@ -113,5 +113,4 @@ defmodule DiodeClientShellAnvilTest do
       assert Factory.contracts(Anvil) == list
     end
   end
-
 end

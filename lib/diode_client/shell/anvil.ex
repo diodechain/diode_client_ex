@@ -117,9 +117,11 @@ defmodule DiodeClient.Shell.Anvil do
          {:ok, code} <- json_rpc_ok("eth_getCode", [addr_hex, block]) do
       balance_bin = decode_hex_to_bin(balance)
       nonce_bin = decode_hex_to_bin(nonce)
+
       code_hash =
-        if code in ["0x", "0x0", nil], do: DiodeClient.Hash.sha3_256(""),
-        else: DiodeClient.Hash.sha3_256(Base16.decode(code))
+        if code in ["0x", "0x0", nil],
+          do: DiodeClient.Hash.sha3_256(""),
+          else: DiodeClient.Hash.sha3_256(Base16.decode(code))
 
       %Account{
         nonce: :binary.decode_unsigned(nonce_bin),
@@ -147,14 +149,17 @@ defmodule DiodeClient.Shell.Anvil do
 
     Enum.map(keys, fn key ->
       key_hex = Base16.encode(key, short: false)
+
       case json_rpc_ok("eth_getStorageAt", [addr_hex, key_hex, block_hex]) do
         {:ok, "0x" <> rest} ->
           bin = Base16.decode("0x" <> rest)
+
           if bin == <<0::256>> do
             :undefined
           else
             bin
           end
+
         {:error, _} ->
           :undefined
       end
@@ -173,6 +178,7 @@ defmodule DiodeClient.Shell.Anvil do
 
   defp do_http_rpc(["getblockheader", block_index]) do
     block_hex = block_num_to_hex(block_index)
+
     case json_rpc("eth_getBlockByNumber", [block_hex, false]) do
       %{"result" => nil} ->
         {:error, "block not found"}
@@ -189,6 +195,7 @@ defmodule DiodeClient.Shell.Anvil do
     case json_rpc("eth_blockNumber", []) do
       %{"result" => hex} ->
         block_hex = hex
+
         case json_rpc("eth_getBlockByNumber", [block_hex, false]) do
           %{"result" => nil} -> {:error, "block not found"}
           %{"result" => block} when is_map(block) -> eth_block_to_diode_block(block)
@@ -221,6 +228,7 @@ defmodule DiodeClient.Shell.Anvil do
   end
 
   defp block_to_hex("latest"), do: "latest"
+
   defp block_to_hex(block) when is_map(block) do
     case block["number"] do
       num when is_binary(num) -> num
@@ -246,12 +254,12 @@ defmodule DiodeClient.Shell.Anvil do
   defp decode_hex_to_bin(nil), do: <<0>>
   defp decode_hex_to_bin("0x"), do: <<0>>
   defp decode_hex_to_bin("0x0"), do: <<0>>
-  defp decode_hex_to_bin(<<"0x", _::binary>> = str), do: Base16.decode(str)
+  defp decode_hex_to_bin(str = <<"0x", _::binary>>), do: Base16.decode(str)
 
   defp hex_to_bin(nil), do: <<0>>
   defp hex_to_bin("0x"), do: <<0>>
   defp hex_to_bin("0x0"), do: <<0>>
-  defp hex_to_bin(<<"0x", _::binary>> = str), do: Base16.decode(str)
+  defp hex_to_bin(str = <<"0x", _::binary>>), do: Base16.decode(str)
 
   defp json_rpc_raw(method, params) do
     body =

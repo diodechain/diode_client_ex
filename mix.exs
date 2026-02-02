@@ -59,7 +59,7 @@ defmodule DiodeClient.MixProject do
   def application do
     [
       mod: {DiodeClient, []},
-      extra_applications: [:logger, :ssl]
+      extra_applications: [:logger, :ssl, :inets]
     ]
   end
 
