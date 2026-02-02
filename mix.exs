@@ -10,7 +10,7 @@ defmodule DiodeClient.MixProject do
       app: :diode_client,
       version: @version,
       name: @name,
-      elixir: "~> 1.11",
+      elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
