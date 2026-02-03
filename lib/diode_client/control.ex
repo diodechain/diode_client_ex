@@ -75,8 +75,11 @@ defmodule DiodeClient.Control do
   @impl true
   def init(state) do
     :global.register_name({__MODULE__, state.peer}, self())
-    Port.listen(@control_port, local: false, callback: &accept_socket/1)
     {:ok, state}
+  end
+
+  def listen() do
+    Port.listen(@control_port, local: false, callback: &accept_socket/1)
   end
 
   defp accept_socket(ssl) do

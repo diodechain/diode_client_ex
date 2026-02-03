@@ -26,7 +26,7 @@ defmodule DiodeClient.Connection do
 
   @ticket_grace 1024 * 1024
   @ticket_size @ticket_grace * 4
-  @vsn 1000
+  @vsn 1001
   @ping 3_000
   @inital_latency 100_000_000_000_000
   @packet_header 2
@@ -63,7 +63,6 @@ defmodule DiodeClient.Connection do
             ports: %{},
             channels: %{},
             channel_usage: 0,
-            unpaid_bytes: 0,
             paid_bytes: 0,
             conns: 1,
             events: nil,
@@ -78,13 +77,14 @@ defmodule DiodeClient.Connection do
             peaks: %{},
             pending_tickets: %{},
             ticket_count: 0,
-            last_ticket: nil,
+            last_ticket: :never,
             blocked: [],
             shutdown: false,
             started_at: 0,
             reset_count: 0,
             max_uptime: nil,
-            reported_stable: false
+            reported_stable: false,
+            subscribed: %{}
 
   def start_link(server, ports) when is_list(ports) do
     GenServer.start_link(__MODULE__, [server, ports],
@@ -101,7 +101,6 @@ defmodule DiodeClient.Connection do
 
     state = %Connection{
       recv_id: %{},
-      unpaid_bytes: bytes,
       paid_bytes: bytes,
       conns: conns,
       events: :queue.new(),
@@ -218,7 +217,7 @@ defmodule DiodeClient.Connection do
 
         spawn_link(fn ->
           for shell <- state.shells do
-            :ok = update_block(pid, shell, nil)
+            subscribe_block!(pid, shell)
           end
         end)
 
@@ -336,7 +335,6 @@ defmodule DiodeClient.Connection do
         end
 
         state = ssl_send!(state, rlp)
-        state = maybe_create_ticket(state)
 
         if reply != nil, do: GenServer.reply(reply, :ok)
         channels = Map.put(channels, id, %{ch | backlog: backlog})
@@ -348,6 +346,14 @@ defmodule DiodeClient.Connection do
   end
 
   @impl true
+  def handle_call({:mark_subscribed, shell}, from, state = %Connection{subscribed: subscribed}) do
+    if Map.has_key?(subscribed, shell) do
+      {:reply, false, state}
+    else
+      {:reply, true, %{state | subscribed: Map.put(subscribed, shell, from)}}
+    end
+  end
+
   def handle_call({:rpc, cmd, req, rlp, time, pid}, from, state) do
     cmd = %Cmd{cmd: cmd, reply: from, time: time, port: pid, size: byte_size(rlp)}
     {:noreply, insert_cmd(state, req, cmd, rlp)}
@@ -401,29 +407,12 @@ defmodule DiodeClient.Connection do
     end
   end
 
-  defp maybe_create_ticket(
-         state = %Connection{unpaid_bytes: ub, paid_bytes: pb, ticket_count: tc},
-         force \\ false
-       ) do
-    if force or ub >= pb + @ticket_grace do
-      {req, state} = do_create_ticket(state)
-
-      if tc < 3 do
-        wait_for_ticket(req, state)
-      else
-        state
-      end
-    else
-      state
-    end
-  end
-
   defp do_create_ticket(state = %Connection{peaks: peaks, ticket_shell: ticket_shell}) do
     peak = Map.get(peaks, ticket_shell)
 
     if peak == nil do
       # setting last_ticket to nil will cause a new ticket to be created as soon as blocks are synced
-      {:error, %{state | last_ticket: nil}}
+      {:error, %{state | last_ticket: :pending}}
     else
       do_create_ticket(state, peak)
     end
@@ -432,7 +421,6 @@ defmodule DiodeClient.Connection do
   defp do_create_ticket(
          state = %Connection{
            conns: conns,
-           unpaid_bytes: unpaid_bytes,
            paid_bytes: paid_bytes,
            server_wallet: server_wallet,
            pending_tickets: pending_tickets,
@@ -442,10 +430,6 @@ defmodule DiodeClient.Connection do
          },
          peak
        ) do
-    count =
-      div(unpaid_bytes + 400 - paid_bytes, @ticket_size)
-      |> max(1)
-
     # Definining an alternative node hint
     # <<0>> means it's a preferred node
     # <<1>> means it's a secondary node
@@ -464,7 +448,7 @@ defmodule DiodeClient.Connection do
         ticket(
           server_id: Wallet.address!(server_wallet),
           total_connections: conns,
-          total_bytes: paid_bytes + @ticket_size * count,
+          total_bytes: paid_bytes + @ticket_size,
           local_address: local,
           block_number: Block.number(peak),
           block_hash: Block.hash(peak),
@@ -476,13 +460,13 @@ defmodule DiodeClient.Connection do
           epoch: Block.epoch(peak),
           chain_id: ticket_shell.chain_id(),
           total_connections: conns,
-          total_bytes: paid_bytes + @ticket_size * count,
+          total_bytes: paid_bytes + @ticket_size,
           local_address: local,
           fleet_contract: DiodeClient.fleet_address()
         )
       end
 
-    if last_ticket != nil and Ticket.epoch(last_ticket) != Ticket.epoch(tck) do
+    if not is_atom(last_ticket) and Ticket.epoch(last_ticket) != Ticket.epoch(tck) do
       raise "DiodeClient epoch mismatch"
     end
 
@@ -513,7 +497,6 @@ defmodule DiodeClient.Connection do
          req,
          state = %Connection{
            events: events,
-           unpaid_bytes: unpaid_bytes,
            pending_tickets: pending_tickets,
            socket: socket,
            server: server
@@ -530,7 +513,6 @@ defmodule DiodeClient.Connection do
       [^req, reply] ->
         tck = Map.get(pending_tickets, req)
         DiodeClient.Stats.submit(:relay, server, :self, byte_size(msg) + @packet_header)
-        state = %{state | unpaid_bytes: unpaid_bytes + byte_size(msg) + @packet_header}
         handle_ticket(state, tck, [req, reply])
 
       _other ->
@@ -552,7 +534,8 @@ defmodule DiodeClient.Connection do
       ["response", "too_low", _peak, rlp_conns, rlp_bytes, _address, _signature] ->
         new_bytes = to_num(rlp_bytes)
         new_conns = to_num(rlp_conns)
-        create_update_ticket(state, new_bytes, new_conns)
+        %{state | paid_bytes: new_bytes, conns: new_conns}
+        create_update_ticket(state)
     end
   end
 
@@ -569,32 +552,34 @@ defmodule DiodeClient.Connection do
       ["response", "too_low", _chain_id, _epoch, rlp_conns, rlp_bytes, _address, _signature] ->
         new_bytes = to_num(rlp_bytes)
         new_conns = to_num(rlp_conns)
-        create_update_ticket(state, new_bytes, new_conns)
+        state = %{state | conns: new_conns, paid_bytes: new_bytes}
+        create_update_ticket(state)
     end
   end
 
-  defp create_update_ticket(state = %Connection{unpaid_bytes: unpaid_bytes}, new_bytes, new_conns) do
-    state =
-      if new_bytes > unpaid_bytes do
-        # this must be a continuiation of a previous connection
-        %{
-          state
-          | conns: new_conns,
-            paid_bytes: new_bytes,
-            unpaid_bytes: new_bytes + min(unpaid_bytes, @ticket_size)
-        }
-      else
-        %{state | conns: new_conns + 1}
-      end
-
+  defp create_update_ticket(state = %Connection{}) do
     {req, state} = do_create_ticket(state)
     wait_for_ticket(req, state)
   end
 
   @impl true
-  def handle_info({:subscribe, shell}, state = %Connection{}) do
-    state = %{state | shells: MapSet.put(state.shells, shell)}
-    queue_update_blocks(state)
+  def handle_info({:peak, shell, peak}, state = %Connection{}) do
+    state =
+      consume_block(state, shell, peak)
+      |> update_info()
+
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:subscribe, shell}, state = %Connection{shells: old_shells}) do
+    state = %{state | shells: MapSet.put(old_shells, shell)}
+
+    if not MapSet.member?(old_shells, shell) do
+      pid = self()
+      spawn_link(fn -> subscribe_block!(pid, shell) end)
+    end
+
     {:noreply, state}
   end
 
@@ -638,8 +623,6 @@ defmodule DiodeClient.Connection do
   end
 
   def handle_info(what, state) do
-    state = maybe_create_ticket(state)
-
     case clientloop(what, state) do
       {:noreply, state = %Connection{socket: socket}} ->
         if :queue.is_empty(state.events) do
@@ -666,6 +649,7 @@ defmodule DiodeClient.Connection do
   defp clientloop({:ssl_closed, socket}, state = %Connection{}) do
     if socket == state.socket do
       debug("ssl_closed()")
+      NodeScorer.report_failure(state.server)
       {:noreply, reset(state), {:continue, :init}}
     else
       debug("flushing ssl_close #{inspect(socket)} != #{inspect(state.socket)}")
@@ -673,14 +657,14 @@ defmodule DiodeClient.Connection do
     end
   end
 
-  defp clientloop(what, state = %Connection{socket: socket, blocked: blocked, peaks: peaks}) do
+  defp clientloop(what, state = %Connection{socket: socket}) do
     case what do
       {pid, :quit} ->
         send(pid, {:ret, :ok})
         {:stop, :quit, state}
 
       {pid, :bytes} ->
-        send(pid, {:ret, state.unpaid_bytes - state.paid_bytes})
+        send(pid, {:ret, state.paid_bytes})
         {:noreply, state}
 
       {pid, :ping} ->
@@ -691,38 +675,7 @@ defmodule DiodeClient.Connection do
         send(pid, {:ret, Wallet.from_pubkey(Certs.extract(socket))})
         {:noreply, state}
 
-      {:peak, shell, peak} ->
-        blocked =
-          Enum.filter(blocked, fn {s, from} ->
-            if s == shell do
-              GenServer.reply(from, peak)
-              false
-            else
-              true
-            end
-          end)
-
-        state =
-          %{state | peaks: Map.put(peaks, shell, peak), blocked: blocked}
-          |> update_info()
-
-        state =
-          if not state.reported_stable do
-            NodeScorer.report_success(state.server)
-            %{state | reported_stable: true}
-          else
-            state
-          end
-
-        state =
-          if shell == state.ticket_shell and state.last_ticket == nil,
-            do: maybe_create_ticket(state, true),
-            else: state
-
-        {:noreply, state}
-
       :ping ->
-        queue_update_blocks(state)
         {:noreply, state}
 
       msg ->
@@ -731,29 +684,33 @@ defmodule DiodeClient.Connection do
     end
   end
 
-  defp queue_update_blocks(%Connection{shells: shells, peaks: peaks}, pid \\ self()) do
-    for shell <- shells do
-      Debouncer.immediate(
-        {pid, shell},
-        fn -> update_block(pid, shell, peaks[shell]) end,
-        shell.block_time()
-      )
+  defp subscribe_block!(pid, shell) do
+    if GenServer.call(pid, {:mark_subscribed, shell}, :infinity) do
+      case rpc(pid, [shell.prefix() <> "subscribe"]) do
+        ["ok"] ->
+          :ok
+
+        {:error, _} ->
+          spawn_link(fn ->
+            Process.monitor(pid)
+            poll(pid, shell)
+          end)
+      end
     end
   end
 
-  @block_delay 3
-  defp update_block(pid, shell, peak) do
-    last_peak_num = if peak == nil, do: 0, else: Block.number(peak)
+  defp poll(pid, shell) do
+    timeout = shell.block_time()
 
-    with [binnum] <- rpc(pid, [shell.prefix() <> "getblockpeak"]) do
-      new_peak_num = to_num(binnum) - @block_delay
-
-      if new_peak_num > last_peak_num do
-        with [block] <- rpc(pid, [shell.prefix() <> "getblockheader", new_peak_num]) do
-          send(pid, {:peak, shell, Rlpx.list2map(block)})
-          :ok
-        end
-      end
+    receive do
+      {:DOWN, _ref, :process, ^pid, _reason} ->
+        :ok
+    after
+      timeout ->
+        [binnum] = rpc(pid, [shell.prefix() <> "getblockpeak"])
+        [block] = rpc(pid, [shell.prefix() <> "getblockheader", binnum])
+        send(pid, {:peak, shell, block})
+        poll(pid, shell)
     end
   end
 
@@ -819,7 +776,6 @@ defmodule DiodeClient.Connection do
   defp handle_msg(
          rlp,
          state = %Connection{
-           unpaid_bytes: ub,
            ports: ports,
            recv_id: recv_id,
            pending_tickets: pending_tickets,
@@ -827,7 +783,6 @@ defmodule DiodeClient.Connection do
          }
        ) do
     DiodeClient.Stats.submit(:relay, server, :self, byte_size(rlp) + @packet_header)
-    state = %{state | unpaid_bytes: ub + byte_size(rlp) + @packet_header}
     msg = [req | _rest] = decode!(rlp)
 
     case Map.get(recv_id, req) do
@@ -928,6 +883,20 @@ defmodule DiodeClient.Connection do
          [_ref, [command | params]]
        ) do
     case {command, params} do
+      {"blockheader", [chain_id, header]} ->
+        chain_id = to_num(chain_id)
+
+        shell =
+          Enum.find(state.shells, fn shell ->
+            shell.chain_id() == chain_id
+          end)
+
+        if shell != nil do
+          consume_block(state, shell, header)
+        else
+          state
+        end
+
       {"block", [_num]} ->
         state
 
@@ -936,7 +905,7 @@ defmodule DiodeClient.Connection do
 
       {"ticket_request", [usage]} ->
         usage = to_num(usage)
-        create_update_ticket(state, usage, state.conns)
+        create_update_ticket(%{state | paid_bytes: usage})
 
       {"portsend", [port_ref, msg]} ->
         with {pid, :up} <- ports[port_ref] do
@@ -975,6 +944,41 @@ defmodule DiodeClient.Connection do
         debug("ignoring unknown server event #{inspect(other)}")
         state
     end
+  end
+
+  defp consume_block(
+         state = %Connection{peaks: peaks, blocked: blocked, last_ticket: last_ticket},
+         shell,
+         peak
+       ) do
+    peak = Rlpx.list2map(peak)
+
+    blocked =
+      Enum.reject(blocked, fn {s, from} ->
+        if s == shell do
+          GenServer.reply(from, peak)
+          true
+        end
+      end)
+
+    state = %{state | peaks: Map.put(peaks, shell, peak), blocked: blocked}
+
+    state =
+      if not state.reported_stable and not is_atom(last_ticket) do
+        NodeScorer.report_success(state.server)
+        %{state | reported_stable: true}
+      else
+        state
+      end
+
+    state =
+      if last_ticket == :pending do
+        create_update_ticket(state)
+      else
+        state
+      end
+
+    update_info(state)
   end
 
   def rpc(pid, data = [cmd | _rest], opts \\ []) do
@@ -1071,14 +1075,14 @@ defmodule DiodeClient.Connection do
       end
   end
 
-  defp ssl_send!(state = %Connection{socket: socket, unpaid_bytes: up, server: server}, msg) do
+  defp ssl_send!(state = %Connection{socket: socket, server: server}, msg) do
     with {:error, reason} <- :ssl.send(socket, msg) do
       warning("SSL send error: #{inspect(reason)}")
       send(self(), {:ssl_closed, socket})
     end
 
     DiodeClient.Stats.submit(:relay, :self, server, byte_size(msg) + @packet_header)
-    %Connection{state | unpaid_bytes: up + byte_size(msg) + @packet_header}
+    state
   end
 
   defp set_keepalive(socket) do

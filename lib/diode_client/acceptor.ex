@@ -22,7 +22,12 @@ defmodule DiodeClient.Acceptor do
 
   def start_link([]) do
     state = %Acceptor{backlog: %{}, ports: %{}, local_ports: %{}, backup: %{}}
-    GenServer.start_link(__MODULE__, state, name: __MODULE__, hibernate_after: 5_000)
+
+    with {:ok, pid} <-
+           GenServer.start_link(__MODULE__, state, name: __MODULE__, hibernate_after: 5_000) do
+      DiodeClient.Control.listen()
+      {:ok, pid}
+    end
   end
 
   @impl true

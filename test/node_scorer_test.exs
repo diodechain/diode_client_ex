@@ -54,7 +54,10 @@ defmodule DiodeClient.NodeScorerTest do
       node = "very_bad.node"
       # 20 failures => score clamped at -100 => extra = min(120_000, 100_000) = 100_000
       for _ <- 1..20, do: DiodeClient.NodeScorer.report_failure(node)
-      expected = @base_delay_ms + min(@max_extra_delay_ms, -@min_score * @delay_factor_ms_per_point)
+
+      expected =
+        @base_delay_ms + min(@max_extra_delay_ms, -@min_score * @delay_factor_ms_per_point)
+
       assert DiodeClient.NodeScorer.get_delay(node) == expected
     end
 
@@ -80,15 +83,19 @@ defmodule DiodeClient.NodeScorerTest do
       node = "recovering.node"
       DiodeClient.NodeScorer.report_failure(node)
       DiodeClient.NodeScorer.report_failure(node)
-      assert DiodeClient.NodeScorer.get_delay(node) == @base_delay_ms + 20 * @delay_factor_ms_per_point
+
+      assert DiodeClient.NodeScorer.get_delay(node) ==
+               @base_delay_ms + 20 * @delay_factor_ms_per_point
 
       DiodeClient.NodeScorer.report_success(node)
       # score -20 + 5 = -15 => extra 15_000
-      assert DiodeClient.NodeScorer.get_delay(node) == @base_delay_ms + 15 * @delay_factor_ms_per_point
+      assert DiodeClient.NodeScorer.get_delay(node) ==
+               @base_delay_ms + 15 * @delay_factor_ms_per_point
 
       DiodeClient.NodeScorer.report_success(node)
       # score -15 + 5 = -10
-      assert DiodeClient.NodeScorer.get_delay(node) == @base_delay_ms + 10 * @delay_factor_ms_per_point
+      assert DiodeClient.NodeScorer.get_delay(node) ==
+               @base_delay_ms + 10 * @delay_factor_ms_per_point
     end
 
     test "enough successes after failures bring delay back to base" do

@@ -209,7 +209,9 @@ defmodule DiodeClient.Manager do
     get_connection and get_peak are linked in that peak will never return a block
     higher than any of the connections returned by get_connection has reported.
   """
-  def get_peak(shell) do
+  def get_peak(shell) when is_atom(shell) do
+    _chain_id = shell.chain_id()
+
     case GenServer.call(__MODULE__, {:get_peak, shell}, :infinity) do
       nil -> Connection.peak(get_connection(), shell)
       peak -> peak
