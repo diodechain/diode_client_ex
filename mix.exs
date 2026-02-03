@@ -67,7 +67,7 @@ defmodule DiodeClient.MixProject do
   defp deps do
     [
       {:oncrash, "~> 0.1"},
-      {:debouncer, "~> 0.1"},
+      {:debouncer, "~> 1.0"},
       {:ex_sha3, "~> 0.1.1"},
       {:libsecp256k1, "~> 0.1", hex: :libsecp256k1_diode_fork},
       {:network_monitor, "~> 1.1"},
