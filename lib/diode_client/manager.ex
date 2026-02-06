@@ -434,7 +434,6 @@ defmodule DiodeClient.Manager do
         state = %Manager{peaks: peaks, conns: conns, shells: shells}
       ) do
     state = %{state | shells: MapSet.put(shells, shell)}
-
     for c <- Map.keys(conns), do: safe_send(c, {:subscribe, shell})
     {:reply, Map.get(peaks, shell), state}
   end
@@ -606,6 +605,7 @@ defmodule DiodeClient.Manager do
   defp update_peaks(state = %Manager{peaks: last_peaks, shells: shells}) do
     connected = Map.values(connected(state))
     len = length(connected)
+    min_agreement = min(2, min_connections())
 
     drop =
       if len > 1 do
@@ -619,18 +619,33 @@ defmodule DiodeClient.Manager do
     # Get the highest peak for each shell
     peaks =
       for shell <- shells do
+        blocks = Enum.map(connected, fn %Info{peaks: peaks} -> peaks[shell] end)
+
         peak =
-          Enum.map(connected, fn %Info{peaks: peaks} -> peaks[shell] end)
+          blocks
           |> Enum.sort_by(&block_number/1, :desc)
           # We remove the bottom 20% of the connected nodes to avoid stale peaks
           |> Enum.take(len - drop)
           |> List.last()
 
-        if block_number(peak) > block_number(last_peaks[shell]) do
-          {shell, peak}
-        else
-          {shell, last_peaks[shell]}
+        blocks = Enum.filter(blocks, fn block -> block_number(block) == block_number(peak) end)
+        candidates = Enum.group_by(blocks, fn block -> block_hash(block) end)
+
+        if map_size(candidates) > 1 do
+          Logger.warning(
+            "Multiple blocks with the same block_number=#{block_number(peak)} found for shell #{shell}"
+          )
         end
+
+        if block_number(peak) > 0 do
+          {_hash, agreement = [peak | _]} =
+            Enum.max_by(candidates, fn {_hash, blocks} -> length(blocks) end)
+
+          if length(agreement) >= min_agreement and
+               block_number(peak) > block_number(last_peaks[shell]) do
+            {shell, peak}
+          end
+        end || {shell, last_peaks[shell]}
       end
       |> Map.new()
 
@@ -679,6 +694,8 @@ defmodule DiodeClient.Manager do
 
   defp block_number(nil), do: 0
   defp block_number(block), do: Rlpx.bin2uint(block["number"])
+  defp block_hash(nil), do: nil
+  defp block_hash(block), do: DiodeClient.Base16.encode(block["block_hash"])
 
   @impl true
   def handle_continue(:init, state) do

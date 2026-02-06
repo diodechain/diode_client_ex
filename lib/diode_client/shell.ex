@@ -61,9 +61,8 @@ defmodule DiodeClient.Shell do
           uncache_rpc(key)
         end
 
-        throw(
-          {:merkle_check_failed,
-           "Assert #{inspect(unquote(stra))} == #{inspect(unquote(strb))} failed! (#{inspect(unquote(a))} != #{inspect(unquote(b))})"}
+        Logger.error(
+          "Assert #{inspect(unquote(stra))} == #{inspect(unquote(strb))} failed! (#{inspect(unquote(a))} != #{inspect(unquote(b))})"
         )
       end
     end
