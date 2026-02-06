@@ -22,12 +22,17 @@ defmodule DiodeClient.Contracts.Factory do
   @anvil_contracts_key {__MODULE__, :anvil_contracts}
 
   def shells() do
-    [
+    base = [
       DiodeClient.Shell,
       DiodeClient.Shell.Moonbeam,
-      DiodeClient.Shell.OasisSapphire,
-      DiodeClient.Shell.Anvil
+      DiodeClient.Shell.OasisSapphire
     ]
+
+    if get_anvil_contracts() != nil do
+      base ++ [DiodeClient.Shell.Anvil]
+    else
+      base
+    end
   end
 
   def set_anvil_contracts(list = %List{}) do
@@ -125,13 +130,14 @@ defmodule DiodeClient.Contracts.Factory do
       end)
 
     for shell <- shells_to_check do
-      IO.puts("Validating #{shell}...")
+      block_number = shell.peak_number() - 3
+      IO.puts("Validating #{shell} @ #{block_number}...")
       contracts = contracts(shell)
 
       [
-        {"Drive", contracts.drive_version, Utils.version(shell, contracts.drive, nil)},
+        {"Drive", contracts.drive_version, Utils.version(shell, contracts.drive, block_number)},
         {"Drive member", contracts.drive_member_version,
-         Utils.version(shell, contracts.drive_member, nil)}
+         Utils.version(shell, contracts.drive_member, block_number)}
       ]
       |> Enum.map(fn {name, expected, actual} ->
         if expected != actual do
