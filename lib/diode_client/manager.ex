@@ -633,13 +633,24 @@ defmodule DiodeClient.Manager do
 
         if map_size(candidates) > 1 do
           Logger.warning(
-            "Multiple blocks with the same block_number=#{block_number(peak)} found for shell #{shell}"
+            "Multiple uncle blocks with the same block_number=#{block_number(peak)} found for shell #{shell}"
           )
         end
 
         if block_number(peak) > 0 do
-          {_hash, agreement = [peak | _]} =
-            Enum.max_by(candidates, fn {_hash, blocks} -> length(blocks) end)
+          {agreement, peak} =
+            Enum.sort_by(candidates, fn {_hash, blocks} -> length(blocks) end, :desc)
+            |> case do
+              [{_hash, agreement = [block | _]}] ->
+                {agreement, block}
+
+              [{_hash, agreement = [block | _]}, {_challenger_hash, challenger} | _rest] ->
+                if length(agreement) > length(challenger) do
+                  {agreement, block}
+                else
+                  {[], nil}
+                end
+            end
 
           if length(agreement) >= min_agreement and
                block_number(peak) > block_number(last_peaks[shell]) do
