@@ -117,7 +117,7 @@ defmodule DiodeClientShellAnvilTest do
 
   test "BNS is deployed" do
     assert {:ok, _} = DiodeClient.Anvil.Helper.deploy_contracts()
-    assert {[_tx_hash], _tx} = BNS.register("anviltest.anvil", DiodeClient.address())
+    assert {["ok", _tx_hash], _tx} = BNS.register("anviltest.anvil", DiodeClient.address())
     assert DiodeClient.address() == BNS.resolve_name("anviltest.anvil")
     assert BNS.is_bns(Factory.contracts(Anvil).bns)
   end

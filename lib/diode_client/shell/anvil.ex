@@ -76,7 +76,7 @@ defmodule DiodeClient.Shell.Anvil do
 
     case json_rpc("eth_sendRawTransaction", [hex]) do
       %{"result" => tx_hash} ->
-        {[tx_hash], tx}
+        {["ok",tx_hash], tx}
 
       %{"error" => error} ->
         {{:error, inspect(error)}, tx}
