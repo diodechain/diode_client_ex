@@ -45,21 +45,15 @@ defmodule DiodeClient.Anvil.Helper do
   def anvil_reachable?(rpc_url \\ nil) do
     url = rpc_url || Anvil.rpc_url()
     body = Jason.encode!(%{jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 1})
-    headers = [{~c"Content-Type", ~c"application/json"}]
 
-    case :httpc.request(
-           :post,
-           {String.to_charlist(url), headers, ~c"application/json", body},
-           [timeout: 3_000],
-           []
-         ) do
-      {:ok, {{_, 200, _}, _, resp_body}} when is_binary(resp_body) ->
+    case post(url, body, 3_000) do
+      {:ok, resp_body} ->
         case Jason.decode(resp_body) do
           {:ok, %{"result" => _}} -> true
           _ -> false
         end
 
-      _ ->
+      {:error, _} ->
         false
     end
   end
@@ -359,16 +353,9 @@ defmodule DiodeClient.Anvil.Helper do
     }
 
     body_str = Jason.encode!(body)
-    url = String.to_charlist(rpc_url)
-    headers = [{~c"Content-Type", ~c"application/json"}]
 
-    case :httpc.request(
-           :post,
-           {url, headers, ~c"application/json", body_str},
-           [timeout: 60_000],
-           []
-         ) do
-      {:ok, {{_, 200, _}, _, resp_body}} ->
+    case post(rpc_url, body_str, 60_000) do
+      {:ok, resp_body} ->
         case Jason.decode!(resp_body) do
           %{"result" => tx_hash} -> wait_for_receipt(rpc_url, tx_hash)
           %{"error" => err} -> {:error, err}
@@ -382,16 +369,9 @@ defmodule DiodeClient.Anvil.Helper do
   defp wait_for_receipt(rpc_url, tx_hash, retries \\ 20) do
     body = %{jsonrpc: "2.0", method: "eth_getTransactionReceipt", params: [tx_hash], id: 1}
     body_str = Jason.encode!(body)
-    url = String.to_charlist(rpc_url)
-    headers = [{~c"Content-Type", ~c"application/json"}]
 
-    case :httpc.request(
-           :post,
-           {url, headers, ~c"application/json", body_str},
-           [timeout: 5_000],
-           []
-         ) do
-      {:ok, {{_, 200, _}, _, resp_body}} ->
+    case post(rpc_url, body_str, 5_000) do
+      {:ok, resp_body} ->
         case Jason.decode!(resp_body) do
           %{"result" => nil} when retries > 0 ->
             Process.sleep(200)
@@ -427,5 +407,25 @@ defmodule DiodeClient.Anvil.Helper do
     }
 
     {:ok, list}
+  end
+
+  def post(url, body, timeout) do
+    headers = [{~c"Content-Type", ~c"application/json"}]
+
+    case :httpc.request(
+           :post,
+           {String.to_charlist(url), headers, ~c"application/json", body},
+           [timeout: timeout],
+           []
+         ) do
+      {:ok, {{_, 200, _}, _, resp_body}} when is_binary(resp_body) ->
+        {:ok, resp_body}
+
+      {:ok, {{_, 200, _}, _, resp_body}} when is_list(resp_body) ->
+        {:ok, :erlang.list_to_binary(resp_body)}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 end

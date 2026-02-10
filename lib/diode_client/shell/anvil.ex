@@ -266,23 +266,9 @@ defmodule DiodeClient.Shell.Anvil do
       %{jsonrpc: "2.0", method: method, params: params, id: 1}
       |> Jason.encode!()
 
-    url = String.to_charlist(rpc_url())
-    headers = [{~c"content-type", ~c"application/json"}]
-
-    case :httpc.request(
-           :post,
-           {url, headers, ~c"application/json", body},
-           [timeout: 30_000],
-           []
-         ) do
-      {:ok, {{_, 200, _}, _headers, resp_body}} when is_binary(resp_body) ->
+    case DiodeClient.Anvil.Helper.post(rpc_url(), body, 30_000) do
+      {:ok, resp_body} ->
         resp_body
-
-      {:ok, {{_, 200, _}, _headers, _resp_body}} ->
-        Jason.encode!(%{"error" => %{"message" => "invalid response"}})
-
-      {:ok, {{_, status, _}, _, _}} ->
-        Jason.encode!(%{"error" => %{"message" => "HTTP #{status}"}})
 
       {:error, reason} ->
         Jason.encode!(%{"error" => %{"message" => inspect(reason)}})
