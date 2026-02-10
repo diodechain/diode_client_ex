@@ -9,6 +9,7 @@ defmodule DiodeClientShellAnvilTest do
 
   alias DiodeClient.Shell.Anvil
   alias DiodeClient.Contracts.Factory
+  alias DiodeClient.Contracts.BNS
 
   describe "default config" do
     @tag :anvil_config
@@ -112,5 +113,12 @@ defmodule DiodeClientShellAnvilTest do
       assert Factory.get_anvil_contracts() == list
       assert Factory.contracts(Anvil) == list
     end
+  end
+
+  test "BNS is deployed" do
+    assert {:ok, _} = DiodeClient.Anvil.Helper.deploy_contracts()
+    assert {[_tx_hash], _tx} = BNS.register("anviltest.anvil", DiodeClient.address())
+    assert DiodeClient.address() == BNS.resolve_name("anviltest.anvil")
+    assert BNS.is_bns(Factory.contracts(Anvil).bns)
   end
 end

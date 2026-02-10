@@ -27,6 +27,6 @@ diode_client-*.tar
 # Temporary files for e.g. tests
 /tmp
 
-diode_client
-diode_client_test
-test_anvil
+/diode_client
+/diode_client_test
+/test_anvil

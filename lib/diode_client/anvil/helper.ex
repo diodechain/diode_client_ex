@@ -29,6 +29,7 @@ defmodule DiodeClient.Anvil.Helper do
   alias DiodeClient.Contracts.{Factory, List}
   alias DiodeClient.Shell.Anvil
 
+  require Logger
   @repo_url "https://github.com/diodechain/diode_contract"
 
   @doc """
@@ -107,6 +108,8 @@ defmodule DiodeClient.Anvil.Helper do
         {:error, _} -> :ok
         _ -> :ok
       end
+
+      Anvil.set_balance(DiodeClient.address(), DiodeClient.Shell.ether(1))
     end
 
     if deploy_contracts do
@@ -224,8 +227,7 @@ defmodule DiodeClient.Anvil.Helper do
   def ensure_repo do
     case repo_path() do
       nil ->
-        dir =
-          Path.join(System.tmp_dir!(), "diode_contract_#{:erlang.unique_integer([:positive])}")
+        dir = Path.join(Mix.Project.build_path(), "lib/diode_client/diode_contract")
 
         case clone_repo(dir) do
           :ok -> {:ok, dir}
@@ -242,12 +244,18 @@ defmodule DiodeClient.Anvil.Helper do
   end
 
   defp clone_repo(dir) do
-    {output, status} =
-      System.cmd("git", ["clone", "--depth", "1", @repo_url, dir], stderr_to_stdout: true)
+    if File.exists?(dir) do
+      :ok
+    else
+      File.mkdir_p!(Path.dirname(dir))
 
-    case status do
-      0 -> :ok
-      _ -> {:error, {:clone_failed, output}}
+      {output, status} =
+        System.cmd("git", ["clone", "--depth", "1", @repo_url, dir], stderr_to_stdout: true)
+
+      case status do
+        0 -> :ok
+        _ -> {:error, {:clone_failed, output}}
+      end
     end
   end
 
@@ -255,6 +263,7 @@ defmodule DiodeClient.Anvil.Helper do
   Runs `forge build` in the given repo path. Returns `:ok` or `{:error, reason}`.
   """
   def build_repo(path) do
+    Logger.info("Building diode_contract in #{path}")
     {output, status} = System.cmd("forge", ["build"], cd: path, stderr_to_stdout: true)
 
     case status do

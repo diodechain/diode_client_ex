@@ -100,7 +100,8 @@ defmodule DiodeClient.Shell.Anvil do
   def create_transaction(address, function_name, types, values, opts \\ [])
       when is_list(types) and is_list(values) do
     callcode = ABI.encode_call(function_name, types, values)
-    DiodeClient.Shell.Common.create_transaction(__MODULE__, address, callcode, Map.new(opts))
+    opts = Map.merge(Map.new(opts), %{version: 2, max_priority_fee_per_gas: base_fee()})
+    DiodeClient.Shell.Common.create_transaction(__MODULE__, address, callcode, opts)
   end
 
   def get_meta_nonce(_address, _peak \\ peak(), _opts \\ []) do
@@ -168,6 +169,17 @@ defmodule DiodeClient.Shell.Anvil do
 
   def call(address, method, types, args, opts \\ []) do
     DiodeClient.Shell.Common.call(__MODULE__, address, method, types, args, opts)
+  end
+
+  def base_fee() do
+    # %{"result" => hex} = json_rpc("eth_baseFee", [])
+    # Base16.decode_int(hex)
+    1_000_000_000
+  end
+
+  def set_balance(address, balance) do
+    %{"result" => nil} = json_rpc("anvil_setBalance", [Base16.encode(address), balance])
+    :ok
   end
 
   # Private: HTTP JSON-RPC. For "rpc" commands return raw JSON string so Common can Jason.decode! it.

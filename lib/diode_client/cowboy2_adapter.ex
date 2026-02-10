@@ -22,8 +22,9 @@ defmodule DiodeClient.Cowboy2Adapter do
       end
 
     {refs, child_specs} = Enum.unzip(refs_and_specs)
+    drainer = refs != [] && Keyword.get(config, :drainer, [])
 
-    if drainer = refs != [] && Keyword.get(config, :drainer, []) do
+    if drainer do
       child_specs ++ [{Plug.Cowboy.Drainer, Keyword.put_new(drainer, :refs, refs)}]
     else
       child_specs
