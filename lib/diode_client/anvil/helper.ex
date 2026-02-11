@@ -25,7 +25,7 @@ defmodule DiodeClient.Anvil.Helper do
       {:ok, list} = DiodeClient.Anvil.Helper.deploy_contracts()
       DiodeClient.Contracts.Factory.set_anvil_contracts(list)
   """
-  alias DiodeClient.{Base16, Hash}
+  alias DiodeClient.{ABI, Base16, Hash}
   alias DiodeClient.Contracts.{Factory, List}
   alias DiodeClient.Shell.Anvil
 
@@ -298,46 +298,87 @@ defmodule DiodeClient.Anvil.Helper do
 
     # Contract names in deployment order; diode_contract may use different names.
     # Try common artifact paths: Contract.sol/Contract.json
-    contract_names = ["Factory", "Drive", "DriveMember", "BNS", "DriveInvites", "FleetMember"]
+    contract_names = [
+      "BNS",
+      "DriveFactory",
+      "Drive",
+      "DriveMember",
+      "DriveInvites",
+      "DiodeToken",
+      "DiodeRegistryLight",
+      "FleetContractUpgradeable"
+    ]
+
     addresses = deploy_contracts_in_order(out_dir, contract_names, rpc_url)
 
     if map_size(addresses) == 0 do
       {:error, :no_contracts_deployed}
     else
-      factory = addresses["Factory"] || hd(Map.values(addresses))
-      build_list(addresses, factory)
+      build_list(addresses)
     end
   end
 
   defp deploy_contracts_in_order(out_dir, contract_names, rpc_url) do
     Enum.reduce(contract_names, %{}, fn name, acc ->
-      case find_and_deploy_contract(out_dir, name, rpc_url) do
+      case find_and_deploy_contract(out_dir, name, rpc_url, acc) do
         {:ok, addr} -> Map.put(acc, name, addr)
         _ -> acc
       end
     end)
   end
 
-  defp find_and_deploy_contract(out_dir, name, rpc_url) do
+  defp find_and_deploy_contract(out_dir, name, rpc_url, acc) do
     # Foundry layout: out/ContractName.sol/ContractName.json
     pattern = Path.join(out_dir, "**/#{name}.json")
     paths = Path.wildcard(pattern)
 
     case paths do
       [json_path | _] ->
-        deploy_artifact(json_path, rpc_url)
+        deploy_artifact(name, json_path, rpc_url, acc)
 
       [] ->
         {:error, {:artifact_not_found, name}}
     end
   end
 
-  defp deploy_artifact(json_path, rpc_url) do
+  defp deploy_artifact(name, json_path, rpc_url, acc) do
     json = File.read!(json_path) |> Jason.decode!()
     bytecode_hex = get_in(json, ["bytecode", "object"]) || get_in(json, ["bytecode"])
     unless bytecode_hex, do: raise("no bytecode in #{json_path}")
 
     bytecode = Base16.decode(bytecode_hex)
+
+    bytecode =
+      case name do
+        "Drive" ->
+          bns = acc["BNS"] || raise("BNS not deployed")
+          bytecode <> ABI.encode_args(["address"], [bns])
+
+        "DriveInvites" ->
+          factory = acc["DriveFactory"] || raise("DriveFactory not deployed")
+          bytecode <> ABI.encode_args(["address"], [factory])
+
+        "DiodeToken" ->
+          foundation = ""
+          bridge = ""
+          transferable = true
+
+          bytecode <>
+            ABI.encode_args(["address", "address", "bool"], [foundation, bridge, transferable])
+
+        "DiodeRegistryLight" ->
+          foundation = ""
+          token = acc["DiodeToken"] || raise("DiodeToken not deployed")
+          bytecode <> ABI.encode_args(["address", "address"], [foundation, token])
+
+        "FleetContractUpgradeable" ->
+          registry = acc["DiodeRegistryLight"] || raise("DiodeRegistryLight not deployed")
+          bytecode <> ABI.encode_args(["address"], [registry])
+
+        _ ->
+          bytecode
+      end
+
     # First Anvil account
     from = Base16.decode("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
 
@@ -398,21 +439,24 @@ defmodule DiodeClient.Anvil.Helper do
     end
   end
 
-  defp build_list(addresses, factory) do
-    factory_bin = Hash.to_address(factory)
-    proxy_code_hash = Factory.proxy_code_hash_for_factory(factory_bin)
+  defp build_list(addresses) do
+    factory = addresses["DriveFactory"]
 
     list = %List{
-      bns: Map.get(addresses, "BNS") || factory_bin,
+      bns: Map.get(addresses, "BNS") || factory,
       bns_postfix: "anvil",
-      drive_invites: Map.get(addresses, "DriveInvites") || factory_bin,
+      drive_invites: Map.get(addresses, "DriveInvites") || factory,
       drive_member_version: 114,
-      drive_member: Map.get(addresses, "DriveMember") || factory_bin,
+      drive_member: Map.get(addresses, "DriveMember") || factory,
       drive_version: 159,
-      drive: Map.get(addresses, "Drive") || factory_bin,
-      factory: factory_bin,
+      drive: Map.get(addresses, "Drive") || factory,
+      factory: factory,
       fleet_member: Map.get(addresses, "FleetMember") || Hash.to_address(0),
-      proxy_code_hash: proxy_code_hash
+      proxy_code_hash:
+        Hash.keccak_256(
+          Factory.proxy_code(Anvil, factory) <>
+            ABI.encode_args(["address", "address"], [0, factory])
+        )
     }
 
     {:ok, list}

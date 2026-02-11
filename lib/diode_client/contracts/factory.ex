@@ -168,16 +168,8 @@ defmodule DiodeClient.Contracts.Factory do
     contracts(shell).proxy_code_hash
   end
 
-  @doc """
-  Returns the proxy code hash for a given factory address (EVM/Anvil-compatible constructor).
-  Used by DiodeClient.Anvil.Helper when building the contract list.
-  """
-  def proxy_code_hash_for_factory(factory_address) when is_binary(factory_address) do
-    factory = Hash.to_address(factory_address)
-
-    Hash.keccak_256(
-      @constructor_moonbeam <> ABI.encode_args(["address", "address"], [0, factory])
-    )
+  def proxy_code(shell, factory_address) when is_binary(factory_address) do
+    shell.call(factory_address, "ProxyCode", [], [], result_types: "bytes")
   end
 
   def is_factory(address) do

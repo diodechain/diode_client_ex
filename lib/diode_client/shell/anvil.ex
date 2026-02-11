@@ -76,7 +76,7 @@ defmodule DiodeClient.Shell.Anvil do
 
     case json_rpc("eth_sendRawTransaction", [hex]) do
       %{"result" => tx_hash} ->
-        {["ok",tx_hash], tx}
+        {["ok", tx_hash], tx}
 
       %{"error" => error} ->
         {{:error, inspect(error)}, tx}
@@ -113,28 +113,26 @@ defmodule DiodeClient.Shell.Anvil do
     addr_hex = Base16.encode(address, short: false)
     block = "latest"
 
-    with {:ok, balance} <- json_rpc_ok("eth_getBalance", [addr_hex, block]),
-         {:ok, nonce} <- json_rpc_ok("eth_getTransactionCount", [addr_hex, block]),
-         {:ok, code} <- json_rpc_ok("eth_getCode", [addr_hex, block]) do
-      balance_bin = decode_hex_to_bin(balance)
-      nonce_bin = decode_hex_to_bin(nonce)
-
-      code_hash =
-        if code in ["0x", "0x0", nil],
-          do: DiodeClient.Hash.sha3_256(""),
-          else: DiodeClient.Hash.sha3_256(Base16.decode(code))
+    with {:ok,
+          %{
+            "codeHash" => code_hash,
+            "nonce" => nonce,
+            "balance" => balance,
+            "storageRoot" => storage_root
+          }} <- json_rpc_ok("eth_getAccount", [addr_hex, block]) do
+      storage_root = Base16.decode(storage_root)
 
       %Account{
-        nonce: :binary.decode_unsigned(nonce_bin),
-        balance: :binary.decode_unsigned(balance_bin),
-        storage_root: nil,
-        code_hash: code_hash
+        nonce: Base16.decode_int(nonce),
+        balance: Base16.decode_int(balance),
+        storage_root: if(storage_root != null_root(), do: storage_root),
+        code_hash: Base16.decode(code_hash)
       }
     end
   end
 
-  def get_account_root(_address, _peak \\ peak()) do
-    nil
+  def get_account_root(address, block \\ peak()) do
+    get_account(address, block).storage_root
   end
 
   def get_account_value(address, key = <<_::256>>, peak \\ peak())
@@ -263,11 +261,6 @@ defmodule DiodeClient.Shell.Anvil do
     }
   end
 
-  defp decode_hex_to_bin(nil), do: <<0>>
-  defp decode_hex_to_bin("0x"), do: <<0>>
-  defp decode_hex_to_bin("0x0"), do: <<0>>
-  defp decode_hex_to_bin(str = <<"0x", _::binary>>), do: Base16.decode(str)
-
   defp hex_to_bin(nil), do: <<0>>
   defp hex_to_bin("0x"), do: <<0>>
   defp hex_to_bin("0x0"), do: <<0>>
@@ -296,5 +289,10 @@ defmodule DiodeClient.Shell.Anvil do
       %{"result" => result} -> {:ok, result}
       %{"error" => err} -> {:error, err}
     end
+  end
+
+  defp null_root() do
+    <<86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72, 224, 27,
+      153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33>>
   end
 end

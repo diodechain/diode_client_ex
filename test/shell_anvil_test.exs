@@ -8,6 +8,8 @@ defmodule DiodeClientShellAnvilTest do
   @moduletag timeout: 10_000
 
   alias DiodeClient.Shell.Anvil
+  alias DiodeClient.Wallet
+  alias DiodeClient.Hash
   alias DiodeClient.Contracts.Factory
   alias DiodeClient.Contracts.BNS
 
@@ -120,5 +122,36 @@ defmodule DiodeClientShellAnvilTest do
     assert {["ok", _tx_hash], _tx} = BNS.register("anviltest.anvil", DiodeClient.address())
     assert DiodeClient.address() == BNS.resolve_name("anviltest.anvil")
     assert BNS.is_bns(Factory.contracts(Anvil).bns)
+  end
+
+  test "get_account returns Account struct" do
+    assert {:ok, _} = DiodeClient.Anvil.Helper.deploy_contracts()
+    assert {["ok", _tx_hash], _tx} = BNS.register("anviltest2.anvil", DiodeClient.address())
+    account = Anvil.get_account(DiodeClient.address())
+    assert account.nonce > 0
+    assert account.balance > 0
+    assert account.code_hash == DiodeClient.Hash.keccak_256("")
+    assert account.storage_root == Anvil.get_account_root(DiodeClient.address())
+    assert account.storage_root == Anvil.get_account_root(Wallet.address!(Wallet.new()))
+    assert account.storage_root == nil
+
+    contract = Anvil.get_account(Factory.contracts(Anvil).bns)
+    assert byte_size(contract.code_hash) == 32
+    assert byte_size(contract.storage_root) == 32
+  end
+
+  test "identity salt" do
+    assert {:ok, _} = DiodeClient.Anvil.Helper.deploy_contracts()
+
+    shell = DiodeClient.Shell.Anvil
+    c = Factory.contracts(shell)
+    identity = Hash.create2(c.factory, c.proxy_code_hash, Factory.identity_salt(shell))
+
+    real_identity =
+      shell.call(c.factory, "Create2Address", ["bytes32"], [Factory.identity_salt(shell)],
+        result_types: "address"
+      )
+
+    assert identity == real_identity
   end
 end
