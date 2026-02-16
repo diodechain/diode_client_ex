@@ -263,12 +263,16 @@ defmodule DiodeClient.Anvil.Helper do
   Runs `forge build` in the given repo path. Returns `:ok` or `{:error, reason}`.
   """
   def build_repo(path) do
-    Logger.info("Building diode_contract in #{path}")
-    {output, status} = System.cmd("forge", ["build"], cd: path, stderr_to_stdout: true)
+    if not File.dir?(Path.join(path, "out")) do
+      Logger.info("Building diode_contract in #{path}")
+      {output, status} = System.cmd("forge", ["build"], cd: path, stderr_to_stdout: true)
 
-    case status do
-      0 -> :ok
-      _ -> {:error, {:forge_build_failed, output}}
+      case status do
+        0 -> :ok
+        _ -> {:error, {:forge_build_failed, output}}
+      end
+    else
+      :ok
     end
   end
 
@@ -416,7 +420,14 @@ defmodule DiodeClient.Anvil.Helper do
     end
   end
 
+  defp mine(rpc_url) do
+    body = %{jsonrpc: "2.0", method: "anvil_mine", params: [], id: 1}
+    body_str = Jason.encode!(body)
+    {:ok, _resp_body} = post(rpc_url, body_str, 5_000)
+  end
+
   defp wait_for_receipt(rpc_url, tx_hash, retries \\ 20) do
+    mine(rpc_url)
     body = %{jsonrpc: "2.0", method: "eth_getTransactionReceipt", params: [tx_hash], id: 1}
     body_str = Jason.encode!(body)
 
