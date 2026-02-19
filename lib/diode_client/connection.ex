@@ -754,7 +754,8 @@ defmodule DiodeClient.Connection do
         started_at: System.os_time(:second),
         reset_count: state.reset_count + 1,
         max_uptime: max(state.max_uptime || 0, System.os_time(:second) - state.started_at),
-        reported_stable: false
+        reported_stable: false,
+        subscribed: %{}
     }
     |> update_info()
   end
