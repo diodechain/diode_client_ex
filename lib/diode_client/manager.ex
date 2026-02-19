@@ -8,12 +8,15 @@ defmodule DiodeClient.Manager do
     :conns,
     :server_list,
     :waiting,
+    :waiting_for_peak,
     :best,
+    :physical_peaks,
     :peaks,
     :online,
     :shells,
     :sticky,
-    :best_timestamp
+    :best_timestamp,
+    :debounce_timeout
   ]
 
   defmodule Info do
@@ -37,6 +40,8 @@ defmodule DiodeClient.Manager do
     ]
   end
 
+  @initial_debounce_timeout 100
+
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__, hibernate_after: 5_000)
   end
@@ -50,11 +55,14 @@ defmodule DiodeClient.Manager do
     state = %Manager{
       conns: %{},
       online: true,
+      physical_peaks: %{},
       peaks: %{},
       server_list: seed_list(),
       shells: MapSet.new(default_shells()),
       waiting: [],
-      best: []
+      waiting_for_peak: %{},
+      best: [],
+      debounce_timeout: @initial_debounce_timeout
     }
 
     {:ok, state, {:continue, :init}}
@@ -210,12 +218,9 @@ defmodule DiodeClient.Manager do
     higher than any of the connections returned by get_connection has reported.
   """
   def get_peak(shell) when is_atom(shell) do
+    # sanity check that the shell is valid
     _chain_id = shell.chain_id()
-
-    case GenServer.call(__MODULE__, {:get_peak, shell}, :infinity) do
-      nil -> Connection.peak(get_connection(), shell)
-      peak -> peak
-    end
+    GenServer.call(__MODULE__, {:get_peak, shell}, :infinity)
   end
 
   def connections() do
@@ -280,7 +285,7 @@ defmodule DiodeClient.Manager do
           add_connection()
         end
 
-        new_len - @target_connections
+        max(0, new_len - @target_connections)
       else
         0
       end
@@ -434,12 +439,20 @@ defmodule DiodeClient.Manager do
 
   def handle_call(
         {:get_peak, shell},
-        _from,
+        from,
         state = %Manager{peaks: peaks, conns: conns, shells: shells}
       ) do
     state = %{state | shells: MapSet.put(shells, shell)}
     for c <- Map.keys(conns), do: safe_send(c, {:subscribe, shell})
-    {:reply, Map.get(peaks, shell), state}
+
+    if peak = Map.get(peaks, shell) do
+      {:reply, peak, state}
+    else
+      waiting_for_peak = Map.get(state.waiting_for_peak, shell, []) ++ [from]
+
+      {:noreply,
+       %{state | waiting_for_peak: Map.put(state.waiting_for_peak, shell, waiting_for_peak)}}
+    end
   end
 
   @legal_keys [
@@ -523,7 +536,15 @@ defmodule DiodeClient.Manager do
   end
 
   def handle_call({:reset_server_list, list}, _from, state) do
-    {:reply, :ok, restart_all(%{state | server_list: list, sticky: nil, best: [], peaks: %{}})}
+    {:reply, :ok,
+     restart_all(%{
+       state
+       | server_list: list,
+         sticky: nil,
+         best: [],
+         peaks: %{},
+         physical_peaks: %{}
+     })}
   end
 
   def handle_call({:drop_connection, key}, _from, state) do
@@ -568,14 +589,11 @@ defmodule DiodeClient.Manager do
 
   defp schedule_update(state) do
     pid = self()
-    debounce_timeout = if state.best == [], do: 100, else: 5_000
 
     Debouncer.immediate(
       {__MODULE__, :update},
-      fn ->
-        send(pid, :update)
-      end,
-      debounce_timeout
+      fn -> send(pid, :update) end,
+      state.debounce_timeout
     )
 
     state
@@ -606,7 +624,7 @@ defmodule DiodeClient.Manager do
     end
   end
 
-  defp update_peaks(state = %Manager{peaks: last_peaks, shells: shells}) do
+  defp update_peaks(state = %Manager{physical_peaks: last_peaks, shells: shells}) do
     connected = Map.values(connected(state))
     len = length(connected)
     min_agreement = min(2, min_connections())
@@ -621,7 +639,7 @@ defmodule DiodeClient.Manager do
       end
 
     # Get the highest peak for each shell
-    peaks =
+    physical_peaks =
       for shell <- shells do
         blocks = Enum.map(connected, fn %Info{peaks: peaks} -> peaks[shell] end)
 
@@ -664,10 +682,46 @@ defmodule DiodeClient.Manager do
       end
       |> Map.new()
 
-    %Manager{state | peaks: peaks}
+    best_peaks = Enum.map(state.best, fn pid -> Map.get(state.conns[pid], :peaks) end)
+
+    reported_peaks =
+      for {shell, _peak} <- physical_peaks do
+        best_shell_peaks = Enum.map(best_peaks, fn peaks -> peaks[shell] end)
+        min_peak = Enum.min_by(best_shell_peaks, fn peak -> block_number(peak) end, fn -> nil end)
+        {shell, min_peak}
+      end
+      |> Map.new()
+
+    debounce_timeout =
+      if state.debounce_timeout == @initial_debounce_timeout and
+           state.best != [] and
+           not Enum.any?(state.peaks, fn {_shell, peak} -> block_number(peak) == 0 end) do
+        5_000
+      else
+        state.debounce_timeout
+      end
+
+    waiting_for_peak =
+      Enum.filter(state.waiting_for_peak, fn {shell, pids} ->
+        if peak = reported_peaks[shell] do
+          for pid <- pids, do: GenServer.reply(pid, peak)
+          false
+        else
+          true
+        end
+      end)
+      |> Map.new()
+
+    %Manager{
+      state
+      | physical_peaks: physical_peaks,
+        peaks: reported_peaks,
+        waiting_for_peak: waiting_for_peak,
+        debounce_timeout: debounce_timeout
+    }
   end
 
-  defp update_best(state = %Manager{waiting: waiting, best: prev_best, peaks: peaks}) do
+  defp update_best(state = %Manager{waiting: waiting, best: prev_best, physical_peaks: peaks}) do
     new_best =
       Map.values(connected(state))
       # Filter out nodes that have a lower peak than the current best

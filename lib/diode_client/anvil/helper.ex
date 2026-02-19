@@ -126,7 +126,34 @@ defmodule DiodeClient.Anvil.Helper do
     end
   end
 
-  @anvil_port_key {__MODULE__, :anvil_port}
+  @doc """
+  Stops the Anvil process (if running) and clears the stored port.
+
+  Returns `:ok`. Safe to call when Anvil was not started by this helper.
+  """
+  def stop_anvil(nil), do: :ok
+
+  def stop_anvil(port) do
+    with {:os_pid, os_pid} <- Port.info(port, :os_pid) do
+      :erlang.monitor(:port, port)
+      # Kill process group so child processes (RPC server) are terminated
+      _ =
+        System.cmd("bash", [
+          "-c",
+          """
+          kill #{os_pid}
+          """
+        ])
+
+      receive do
+        {:DOWN, _ref, :port, ^port, _reason} ->
+          :ok
+      after
+        10_000 ->
+          raise "Anvil port #{port} did not die after 10 seconds"
+      end
+    end
+  end
 
   @doc """
   Spawns Anvil in the background and waits until the RPC endpoint is reachable.
@@ -159,29 +186,55 @@ defmodule DiodeClient.Anvil.Helper do
   """
   def start_anvil(opts \\ []) do
     rpc_url = Keyword.get(opts, :rpc_url) || Anvil.rpc_url()
-    timeout_ms = Keyword.get(opts, :timeout, 15_000)
     port = Keyword.get(opts, :port) || port_from_rpc_url(rpc_url)
-    extra_args = Keyword.get(opts, :args, [])
 
     case System.find_executable("anvil") do
       nil ->
         {:error, :executable_not_found}
 
       path ->
-        args = ["--port", to_string(port)] ++ extra_args
-        port_opts = [:binary, :exit_status, :stderr_to_stdout, {:args, args}]
-        port = Port.open({:spawn_executable, path}, port_opts)
-        :persistent_term.put(@anvil_port_key, port)
+        args = ["--port", to_string(port)]
+        port_opts = [:binary, :exit_status, :use_stdio, :stderr_to_stdout, {:args, args}]
+        creator = self()
 
-        deadline = System.monotonic_time(:millisecond) + timeout_ms
+        sup =
+          spawn_link(fn ->
+            port = Port.open({:spawn_executable, path}, port_opts)
+            await_exit_status(creator, port)
+          end)
 
-        if wait_reachable(rpc_url, deadline) do
-          {:ok, port}
-        else
-          if Port.info(port) != nil, do: Port.close(port)
-          :persistent_term.erase(@anvil_port_key)
-          {:error, :timeout}
+        receive do
+          {^sup, :started, port} ->
+            System.at_exit(fn _ -> stop_anvil(port) end)
+            {:ok, port}
         end
+    end
+  end
+
+  defp await_exit_status(creator, port, data \\ "") do
+    receive do
+      any -> any
+    end
+    |> case do
+      {^port, {:data, new_data}} ->
+        data = data <> new_data
+
+        if creator != nil and String.contains?(data, "Listening on") do
+          send(creator, {self(), :started, port})
+          await_exit_status(creator, port, new_data)
+        else
+          await_exit_status(creator, port, data <> new_data)
+        end
+
+      {^port, {:exit_status, 0}} ->
+        exit(:normal)
+
+      {^port, {:exit_status, status}} ->
+        Logger.error(
+          "Anvil port #{inspect(port)} died: #{inspect(status)} output: #{inspect(data)}"
+        )
+
+        exit({:anvil_died, status})
     end
   end
 
@@ -194,19 +247,6 @@ defmodule DiodeClient.Anvil.Helper do
   end
 
   defp port_from_rpc_url(_), do: 8545
-
-  defp wait_reachable(rpc_url, deadline) do
-    if anvil_reachable?(rpc_url) do
-      true
-    else
-      if System.monotonic_time(:millisecond) >= deadline do
-        false
-      else
-        Process.sleep(200)
-        wait_reachable(rpc_url, deadline)
-      end
-    end
-  end
 
   @doc """
   Returns the path to the diode_contract repo. Uses ANVIL_CONTRACT_REPO_PATH if set;

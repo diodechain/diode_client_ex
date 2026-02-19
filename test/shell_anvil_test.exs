@@ -154,4 +154,25 @@ defmodule DiodeClientShellAnvilTest do
 
     assert identity == real_identity
   end
+
+  describe "Anvil process death" do
+    @tag :anvil
+    test "when anvil dies, anvil_reachable? is false" do
+      # Start a fresh Anvil on a distinct port so we don't kill the shared one
+      port_num = 28_546
+      rpc_url = "http://127.0.0.1:#{port_num}"
+      assert {:ok, port} = DiodeClient.Anvil.Helper.start_anvil(port: port_num, rpc_url: rpc_url)
+
+      assert DiodeClient.Anvil.Helper.anvil_reachable?(rpc_url) == true
+
+      # Artificially kill the anvil process (simulates crash or external kill)
+      DiodeClient.Anvil.Helper.stop_anvil(port)
+
+      # Allow process to fully terminate before checking reachability
+      Process.sleep(300)
+
+      assert DiodeClient.Anvil.Helper.anvil_reachable?(rpc_url) == false,
+             "expected anvil to be unreachable after process kill"
+    end
+  end
 end
