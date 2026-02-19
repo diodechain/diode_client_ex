@@ -274,14 +274,17 @@ defmodule DiodeClient.Manager do
 
     new_len = length(ranked_connections())
 
-    if seed_list_override() == nil and new_len < @target_connections do
+    added = if seed_list_override() == nil and new_len < @target_connections do
       for _ <- (new_len + 1)..@target_connections do
         add_connection()
       end
+
+      (new_len) - @target_connections
+    else
+      0
     end
 
     removed = len - new_len
-    added = max(0, @target_connections - new_len)
 
     Logger.debug(
       "DiodeClient.Manager: removed #{removed}, added #{added} connections, new length #{new_len + added}"
