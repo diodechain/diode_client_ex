@@ -1,3 +1,7 @@
+# Feb 19th 2026
+
+DiodeClient.Shell.rpc(["getaccount", DiodeClient.Shell.peak_number + 1, DiodeClient.Contracts.Factory.contracts(DiodeClient.Shell).bns])
+
 # Dec 28th 2025
 
 device_id = DiodeClient.Base16.decode("0x0fcf0a7f1b9f16f272c136af9d5bd662a5479301")
