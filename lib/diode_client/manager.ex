@@ -624,6 +624,61 @@ defmodule DiodeClient.Manager do
     end
   end
 
+  defp physical_peak_for_shell(shell, connected, len, drop, min_agreement, last_peaks) do
+    blocks = Enum.map(connected, fn %Info{peaks: peaks} -> peaks[shell] end)
+
+    peak =
+      blocks
+      |> Enum.sort_by(&block_number/1, :desc)
+      |> Enum.take(len - drop)
+      |> List.last()
+
+    blocks_at_peak =
+      Enum.filter(blocks, fn block -> block_number(block) == block_number(peak) end)
+
+    candidates = Enum.group_by(blocks_at_peak, fn block -> block_hash(block) end)
+
+    if map_size(candidates) > 1 do
+      Logger.warning(
+        "Multiple uncle blocks with the same block_number=#{block_number(peak)} found for shell #{shell}"
+      )
+    end
+
+    result = resolve_peak_from_candidates(candidates)
+
+    cond do
+      result == nil ->
+        {shell, last_peaks[shell]}
+
+      block_number(peak) <= 0 ->
+        {shell, last_peaks[shell]}
+
+      length(elem(result, 0)) >= min_agreement and
+          block_number(peak) > block_number(last_peaks[shell]) ->
+        {shell, elem(result, 1)}
+
+      true ->
+        {shell, last_peaks[shell]}
+    end
+  end
+
+  defp resolve_peak_from_candidates(candidates) do
+    case Enum.sort_by(candidates, fn {_hash, blocks} -> length(blocks) end, :desc) do
+      [{_hash, agreement = [block | _]}] ->
+        {agreement, block}
+
+      [{_hash, agreement = [block | _]}, {_challenger_hash, challenger} | _rest] ->
+        if length(agreement) > length(challenger) do
+          {agreement, block}
+        else
+          nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
   defp update_peaks(state = %Manager{physical_peaks: last_peaks, shells: shells}) do
     connected = Map.values(connected(state))
     len = length(connected)
@@ -641,44 +696,7 @@ defmodule DiodeClient.Manager do
     # Get the highest peak for each shell
     physical_peaks =
       for shell <- shells do
-        blocks = Enum.map(connected, fn %Info{peaks: peaks} -> peaks[shell] end)
-
-        peak =
-          blocks
-          |> Enum.sort_by(&block_number/1, :desc)
-          # We remove the bottom 20% of the connected nodes to avoid stale peaks
-          |> Enum.take(len - drop)
-          |> List.last()
-
-        blocks = Enum.filter(blocks, fn block -> block_number(block) == block_number(peak) end)
-        candidates = Enum.group_by(blocks, fn block -> block_hash(block) end)
-
-        if map_size(candidates) > 1 do
-          Logger.warning(
-            "Multiple uncle blocks with the same block_number=#{block_number(peak)} found for shell #{shell}"
-          )
-        end
-
-        if block_number(peak) > 0 do
-          {agreement, peak} =
-            Enum.sort_by(candidates, fn {_hash, blocks} -> length(blocks) end, :desc)
-            |> case do
-              [{_hash, agreement = [block | _]}] ->
-                {agreement, block}
-
-              [{_hash, agreement = [block | _]}, {_challenger_hash, challenger} | _rest] ->
-                if length(agreement) > length(challenger) do
-                  {agreement, block}
-                else
-                  {[], nil}
-                end
-            end
-
-          if length(agreement) >= min_agreement and
-               block_number(peak) > block_number(last_peaks[shell]) do
-            {shell, peak}
-          end
-        end || {shell, last_peaks[shell]}
+        physical_peak_for_shell(shell, connected, len, drop, min_agreement, last_peaks)
       end
       |> Map.new()
 

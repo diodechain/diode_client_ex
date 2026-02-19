@@ -303,7 +303,9 @@ defmodule DiodeClient.Anvil.Helper do
   Runs `forge build` in the given repo path. Returns `:ok` or `{:error, reason}`.
   """
   def build_repo(path) do
-    if not File.dir?(Path.join(path, "out")) do
+    if File.dir?(Path.join(path, "out")) do
+      :ok
+    else
       Logger.info("Building diode_contract in #{path}")
       {output, status} = System.cmd("forge", ["build"], cd: path, stderr_to_stdout: true)
 
@@ -311,8 +313,6 @@ defmodule DiodeClient.Anvil.Helper do
         0 -> :ok
         _ -> {:error, {:forge_build_failed, output}}
       end
-    else
-      :ok
     end
   end
 
@@ -391,37 +391,7 @@ defmodule DiodeClient.Anvil.Helper do
     unless bytecode_hex, do: raise("no bytecode in #{json_path}")
 
     bytecode = Base16.decode(bytecode_hex)
-
-    bytecode =
-      case name do
-        "Drive" ->
-          bns = acc["BNS"] || raise("BNS not deployed")
-          bytecode <> ABI.encode_args(["address"], [bns])
-
-        "DriveInvites" ->
-          factory = acc["DriveFactory"] || raise("DriveFactory not deployed")
-          bytecode <> ABI.encode_args(["address"], [factory])
-
-        "DiodeToken" ->
-          foundation = ""
-          bridge = ""
-          transferable = true
-
-          bytecode <>
-            ABI.encode_args(["address", "address", "bool"], [foundation, bridge, transferable])
-
-        "DiodeRegistryLight" ->
-          foundation = ""
-          token = acc["DiodeToken"] || raise("DiodeToken not deployed")
-          bytecode <> ABI.encode_args(["address", "address"], [foundation, token])
-
-        "FleetContractUpgradeable" ->
-          registry = acc["DiodeRegistryLight"] || raise("DiodeRegistryLight not deployed")
-          bytecode <> ABI.encode_args(["address"], [registry])
-
-        _ ->
-          bytecode
-      end
+    bytecode = append_constructor_args(name, bytecode, acc)
 
     # First Anvil account
     from = Base16.decode("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
@@ -431,6 +401,38 @@ defmodule DiodeClient.Anvil.Helper do
       err -> err
     end
   end
+
+  defp append_constructor_args("Drive", bytecode, acc) do
+    bns = acc["BNS"] || raise("BNS not deployed")
+    bytecode <> ABI.encode_args(["address"], [bns])
+  end
+
+  defp append_constructor_args("DriveInvites", bytecode, acc) do
+    factory = acc["DriveFactory"] || raise("DriveFactory not deployed")
+    bytecode <> ABI.encode_args(["address"], [factory])
+  end
+
+  defp append_constructor_args("DiodeToken", bytecode, _acc) do
+    foundation = ""
+    bridge = ""
+    transferable = true
+
+    bytecode <>
+      ABI.encode_args(["address", "address", "bool"], [foundation, bridge, transferable])
+  end
+
+  defp append_constructor_args("DiodeRegistryLight", bytecode, acc) do
+    foundation = ""
+    token = acc["DiodeToken"] || raise("DiodeToken not deployed")
+    bytecode <> ABI.encode_args(["address", "address"], [foundation, token])
+  end
+
+  defp append_constructor_args("FleetContractUpgradeable", bytecode, acc) do
+    registry = acc["DiodeRegistryLight"] || raise("DiodeRegistryLight not deployed")
+    bytecode <> ABI.encode_args(["address"], [registry])
+  end
+
+  defp append_constructor_args(_name, bytecode, _acc), do: bytecode
 
   defp send_creation_tx(rpc_url, from, data) do
     body = %{
