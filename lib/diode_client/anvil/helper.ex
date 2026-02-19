@@ -457,7 +457,7 @@ defmodule DiodeClient.Anvil.Helper do
       bns: Map.get(addresses, "BNS") || factory,
       bns_postfix: "anvil",
       drive_invites: Map.get(addresses, "DriveInvites") || factory,
-      drive_member_version: 114,
+      drive_member_version: 123,
       drive_member: Map.get(addresses, "DriveMember") || factory,
       drive_version: 159,
       drive: Map.get(addresses, "Drive") || factory,
