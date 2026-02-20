@@ -204,12 +204,17 @@ defmodule DiodeClient.Shell.OasisSapphire do
   end
 
   defp prepare_signed_call(transaction, opts) do
+    # For some reason calls to blocks with higher numbers are getting this error:
+    #  roothash: block not found: client: failed to fetch annotated block from history: roothash: block not found
+    # So we stay back by two blocks to avoid this issue.
+    max_block = peak_number() - 2
+
     block =
       case Keyword.get(opts, :block) do
-        nil -> get_block_header(peak_number() - 1)
-        "latest" -> get_block_header(peak_number() - 1)
-        block when is_integer(block) -> get_block_header(block - 1)
-        block when is_map(block) -> get_block_header(Block.number(block) - 1)
+        nil -> get_block_header(max_block)
+        "latest" -> get_block_header(max_block)
+        block when is_integer(block) -> min(block, max_block)
+        block when is_map(block) -> get_block_header(min(Block.number(block), max_block))
       end
 
     block_number = Block.number(block) + 1
