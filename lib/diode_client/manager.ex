@@ -700,7 +700,10 @@ defmodule DiodeClient.Manager do
       end
       |> Map.new()
 
-    best_peaks = Enum.map(state.best, fn pid -> Map.get(state.conns[pid], :peaks) end)
+    best_peaks =
+      state.best
+      |> Enum.filter(&Map.has_key?(state.conns, &1))
+      |> Enum.map(fn pid -> Map.get(state.conns[pid], :peaks) end)
 
     reported_peaks =
       for {shell, _peak} <- physical_peaks do
