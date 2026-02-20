@@ -211,11 +211,12 @@ defmodule DiodeClient.Shell.OasisSapphire do
 
     block =
       case Keyword.get(opts, :block) do
-        nil -> get_block_header(max_block)
-        "latest" -> get_block_header(max_block)
+        nil -> max_block
+        "latest" -> max_block
         block when is_integer(block) -> min(block, max_block)
-        block when is_map(block) -> get_block_header(min(Block.number(block), max_block))
+        block when is_map(block) -> min(Block.number(block), max_block)
       end
+      |> get_block_header()
 
     block_number = Block.number(block) + 1
     block_hash = block["block_hash"]
