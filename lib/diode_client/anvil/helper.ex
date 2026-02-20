@@ -68,7 +68,7 @@ defmodule DiodeClient.Anvil.Helper do
 
   ## Options
 
-    * `:wallet` – Path or callback for `DiodeClient.set_wallet/1`. If set, ensures
+    * `:wallet` – Path or callback for setting the wallet. If set, ensures
       a wallet is set (e.g. `"test_anvil"` creates/uses that file). Skip if your
       tests do not send transactions. Default: no change.
     * `:deploy_contracts` – If `true`, ensures diode_contract repo is available,
