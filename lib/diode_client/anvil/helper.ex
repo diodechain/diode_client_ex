@@ -516,6 +516,14 @@ defmodule DiodeClient.Anvil.Helper do
   end
 
   def post(url, body, timeout) do
+    post(url, body, timeout, 0, nil)
+  end
+
+  def post(_url, _body, _timeout, 3, last_error) do
+    {:error, last_error}
+  end
+
+  def post(url, body, timeout, retries, _last_error) do
     headers = [{~c"Content-Type", ~c"application/json"}]
 
     case :httpc.request(
@@ -529,6 +537,12 @@ defmodule DiodeClient.Anvil.Helper do
 
       {:ok, {{_, 200, _}, _, resp_body}} when is_list(resp_body) ->
         {:ok, :erlang.list_to_binary(resp_body)}
+
+      {:error, {:failed_connect, _} = reason} ->
+        retries = retries + 1
+        Logger.info("Anvil connection refused, retrying... #{retries}/3")
+        Process.sleep(retries * retries * 500)
+        post(url, body, timeout, retries, reason)
 
       {:error, reason} ->
         {:error, reason}
