@@ -263,7 +263,7 @@ defmodule DiodeClient.Acceptor do
     end
   end
 
-  def handle_inject(nil, _request, state) do
+  def handle_inject(nil, _port, _request, state) do
     {{:error, :access_denied}, state}
   end
 
