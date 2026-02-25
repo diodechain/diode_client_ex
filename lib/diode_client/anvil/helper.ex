@@ -237,16 +237,6 @@ defmodule DiodeClient.Anvil.Helper do
     end
   end
 
-  defp port_from_rpc_url("http://127.0.0.1:" <> rest) do
-    rest |> String.split("/") |> hd() |> String.to_integer()
-  end
-
-  defp port_from_rpc_url("http://localhost:" <> rest) do
-    rest |> String.split("/") |> hd() |> String.to_integer()
-  end
-
-  defp port_from_rpc_url(_), do: 8545
-
   @doc """
   Returns the path to the diode_contract repo. Uses ANVIL_CONTRACT_REPO_PATH if set;
   otherwise returns nil (caller must clone or set path).
