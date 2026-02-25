@@ -185,8 +185,7 @@ defmodule DiodeClient.Anvil.Helper do
     * `{:error, {:spawn_failed, reason}}` – Failed to start the process.
   """
   def start_anvil(opts \\ []) do
-    rpc_url = Keyword.get(opts, :rpc_url) || Anvil.rpc_url()
-    port = Keyword.get(opts, :port) || port_from_rpc_url(rpc_url)
+    port = Keyword.get(opts, :port) || Anvil.port()
 
     case System.find_executable("anvil") do
       nil ->

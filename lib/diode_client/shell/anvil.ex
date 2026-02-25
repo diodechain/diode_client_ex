@@ -17,7 +17,12 @@ defmodule DiodeClient.Shell.Anvil do
   use DiodeClient.Shell.Common
 
   def rpc_url do
-    System.get_env("ANVIL_RPC_URL", "http://127.0.0.1:8545")
+    System.get_env("ANVIL_RPC_URL", "http://127.0.0.1:#{port()}")
+  end
+
+  def port do
+    System.get_env("ANVIL_PORT", "8545")
+    |> String.to_integer()
   end
 
   def chain_id do
