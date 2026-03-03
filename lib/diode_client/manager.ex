@@ -16,7 +16,9 @@ defmodule DiodeClient.Manager do
     :shells,
     :sticky,
     :best_timestamp,
-    :debounce_timeout
+    :debounce_timeout,
+    :peak_subscribers,
+    :peak_subscriber_refs
   ]
 
   defmodule Info do
@@ -62,7 +64,9 @@ defmodule DiodeClient.Manager do
       waiting: [],
       waiting_for_peak: %{},
       best: [],
-      debounce_timeout: @initial_debounce_timeout
+      debounce_timeout: @initial_debounce_timeout,
+      peak_subscribers: %{},
+      peak_subscriber_refs: %{}
     }
 
     {:ok, state, {:continue, :init}}
@@ -223,6 +227,25 @@ defmodule DiodeClient.Manager do
     GenServer.call(__MODULE__, {:get_peak, shell}, :infinity)
   end
 
+  @doc """
+  Subscribes the calling process to peak changes for the given shell.
+
+  The caller receives `{DiodeClient.Manager, shell, :peak, block}` on every new peak.
+  Use `unsubscribe_peak/1` to unsubscribe, or the subscription is cleared when the process exits.
+  """
+  def subscribe_peak(shell) when is_atom(shell) do
+    _chain_id = shell.chain_id()
+    GenServer.call(__MODULE__, {:subscribe_peak, shell}, :infinity)
+  end
+
+  @doc """
+  Unsubscribes the calling process from peak changes for the given shell.
+  """
+  def unsubscribe_peak(shell) when is_atom(shell) do
+    _chain_id = shell.chain_id()
+    GenServer.call(__MODULE__, {:unsubscribe_peak, shell}, :infinity)
+  end
+
   def connections() do
     connection_map()
     |> Map.keys()
@@ -306,7 +329,8 @@ defmodule DiodeClient.Manager do
   end
 
   @impl true
-  def handle_info({:DOWN, _ref, :process, pid, reason}, state) do
+  def handle_info({:DOWN, ref, :process, pid, reason}, state) do
+    state = remove_peak_subscriber(ref, state)
     handle_exit(pid, reason, state)
   end
 
@@ -452,6 +476,25 @@ defmodule DiodeClient.Manager do
 
       {:noreply,
        %{state | waiting_for_peak: Map.put(state.waiting_for_peak, shell, waiting_for_peak)}}
+    end
+  end
+
+  def handle_call({:subscribe_peak, shell}, {pid, _tag}, state) do
+    state = ensure_shell_subscription(shell, state)
+    ref = Process.monitor(pid)
+
+    subscribers = Map.get(state.peak_subscribers, shell, []) ++ [{pid, ref}]
+    peak_subscribers = Map.put(state.peak_subscribers, shell, subscribers)
+    peak_subscriber_refs = Map.put(state.peak_subscriber_refs, ref, {shell, pid})
+
+    {:reply, :ok,
+     %{state | peak_subscribers: peak_subscribers, peak_subscriber_refs: peak_subscriber_refs}}
+  end
+
+  def handle_call({:unsubscribe_peak, shell}, {pid, _tag}, state) do
+    case remove_peak_subscriber_for_pid(pid, shell, state) do
+      {:ok, new_state} -> {:reply, :ok, new_state}
+      :error -> {:reply, :ok, state}
     end
   end
 
@@ -733,6 +776,8 @@ defmodule DiodeClient.Manager do
       end)
       |> Map.new()
 
+    notify_peak_subscribers(state.peak_subscribers, state.peaks, reported_peaks)
+
     %Manager{
       state
       | physical_peaks: physical_peaks,
@@ -740,6 +785,20 @@ defmodule DiodeClient.Manager do
         waiting_for_peak: waiting_for_peak,
         debounce_timeout: debounce_timeout
     }
+  end
+
+  defp notify_peak_subscribers(peak_subscribers, old_peaks, new_peaks) do
+    for {shell, subscribers} <- peak_subscribers,
+        new_block = new_peaks[shell],
+        block_number(new_block) != block_number(Map.get(old_peaks, shell)) do
+      msg = {__MODULE__, shell, :peak, new_block}
+
+      for {pid, _ref} <- subscribers do
+        send(pid, msg)
+      end
+    end
+
+    :ok
   end
 
   defp update_best(state = %Manager{waiting: waiting, best: prev_best, physical_peaks: peaks}) do
@@ -834,4 +893,53 @@ defmodule DiodeClient.Manager do
   defp safe_send(nil, _message), do: :ok
   defp safe_send(pid, message) when is_atom(pid), do: safe_send(Process.whereis(pid), message)
   defp safe_send(pid, message) when is_pid(pid), do: send(pid, message)
+
+  defp ensure_shell_subscription(shell, state = %Manager{shells: shells, conns: conns}) do
+    state = %{state | shells: MapSet.put(shells, shell)}
+    for c <- Map.keys(conns), do: safe_send(c, {:subscribe, shell})
+    state
+  end
+
+  defp remove_peak_subscriber(ref, state = %Manager{peak_subscriber_refs: refs}) do
+    case Map.pop(refs, ref) do
+      {nil, _} ->
+        state
+
+      {{shell, pid}, refs} ->
+        subscribers =
+          (state.peak_subscribers[shell] || [])
+          |> Enum.reject(fn {p, _} -> p == pid end)
+
+        peak_subscribers =
+          if subscribers == [] do
+            Map.delete(state.peak_subscribers, shell)
+          else
+            Map.put(state.peak_subscribers, shell, subscribers)
+          end
+
+        %{state | peak_subscribers: peak_subscribers, peak_subscriber_refs: refs}
+    end
+  end
+
+  defp remove_peak_subscriber_for_pid(pid, shell, state) do
+    subscribers = state.peak_subscribers[shell] || []
+
+    case Enum.split_with(subscribers, fn {p, _} -> p == pid end) do
+      {[], _} ->
+        :error
+
+      {[{^pid, ref}], rest} ->
+        Process.demonitor(ref, [:flush])
+        refs = Map.delete(state.peak_subscriber_refs, ref)
+
+        peak_subscribers =
+          if rest == [] do
+            Map.delete(state.peak_subscribers, shell)
+          else
+            Map.put(state.peak_subscribers, shell, rest)
+          end
+
+        {:ok, %{state | peak_subscribers: peak_subscribers, peak_subscriber_refs: refs}}
+    end
+  end
 end
