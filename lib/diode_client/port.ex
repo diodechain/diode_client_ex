@@ -1,6 +1,6 @@
 defmodule DiodeClient.Port do
   @moduledoc false
-  alias DiodeClient.{Acceptor, Control, Port, Certs, Connection, Wallet}
+  alias DiodeClient.{Acceptor, Control, Port, Certs, Connection, Wallet, Manager, Shell, Ticket}
   use GenServer
   require Logger
 
@@ -433,7 +433,7 @@ defmodule DiodeClient.Port do
 
   def connect_address(destination, port, options \\ [], _timeout \\ 5_000)
       when is_list(options) and is_integer(port) do
-    access = Keyword.get(options, :access, "rw")
+    access = access(options)
     local = Keyword.get(options, :local, true)
 
     case local do
@@ -479,46 +479,57 @@ defmodule DiodeClient.Port do
   end
 
   defp do_connect(destination, port, options) do
-    conns =
-      case DiodeClient.Shell.get_object(destination) do
-        nil ->
-          [DiodeClient.default_conn()]
-
-        ticket ->
-          preferred_ids = DiodeClient.Ticket.preferred_server_ids(ticket)
-
-          Enum.each(preferred_ids, fn addr -> DiodeClient.Manager.add_connection_address(addr) end)
-
-          conns =
-            DiodeClient.Manager.connected_connections()
-            |> Enum.sort_by(fn {_, %{latency: latency}} -> latency end)
-
-          {preferred, others} =
-            Enum.split_with(conns, fn {_, %{server_address: addr}} ->
-              addr in preferred_ids
-            end)
-
-          {seeds, rest} = Enum.split_with(others, fn {_, %{type: type}} -> type == :seed end)
-
-          _canidates_by_priority =
-            Enum.map(preferred ++ seeds ++ rest, fn {pid, _info} -> pid end)
-      end
-
+    conns = server_candidates(destination, options)
     do_connect(conns, destination, port, options)
   end
 
-  defp do_connect([conn | conns], destination, port, options) do
-    access = Keyword.get(options, :access, "rw")
+  defp server_candidates(destination, options) do
+    preferred_ids =
+      case Shell.get_object(destination) do
+        nil -> []
+        ticket -> Ticket.preferred_server_ids(ticket)
+      end
 
+    Enum.each(preferred_ids, fn addr -> Manager.add_connection_address(addr) end)
+
+    conns =
+      Manager.connected_connections()
+      |> Enum.sort_by(fn {_, %{latency: latency}} -> latency end)
+
+    {preferred, rest} =
+      Enum.split_with(conns, fn {_, %{server_address: addr}} ->
+        addr in preferred_ids
+      end)
+
+    {seeds, rest} = Enum.split_with(rest, fn {_, %{type: type}} -> type == :seed end)
+
+    canidates_by_priority = preferred ++ seeds ++ rest
+
+    if portopen2?(options) do
+      seeds
+    else
+      canidates_by_priority
+    end
+  end
+
+  defp portopen2?(options) do
+    String.contains?(access(options), "2")
+  end
+
+  defp access(options) do
+    Keyword.get(options, :access, "rw")
+  end
+
+  defp do_connect([conn | conns], destination, port, options) do
     cmd =
-      if String.contains?(access, "2") do
+      if portopen2?(options) do
         "portopen2"
       else
         "portopen"
       end
 
     try do
-      Connection.rpc(conn, [cmd, destination, port, access])
+      Connection.rpc(conn, [cmd, destination, port, access(options)])
     rescue
       e in RuntimeError ->
         {:error, e.message}
