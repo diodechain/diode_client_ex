@@ -184,20 +184,39 @@ defmodule DiodeClient.Connection do
         delay = max(backoff, scorer_delay)
         port = Enum.at(ports, rem(count, length(ports)))
 
-        if delay > 0 do
-          if scorer_delay > backoff do
-            debug("connect() scorer delayed by #{delay}ms (scorer), trying port #{port}")
-          else
-            debug("connect() backoff delayed by #{delay}ms, trying port #{port}")
-          end
+        state =
+          if delay > 0 do
+            if scorer_delay > backoff do
+              debug("connect() scorer delayed by #{delay}ms (scorer), trying port #{port}")
+            else
+              debug("connect() backoff delayed by #{delay}ms, trying port #{port}")
+            end
 
-          Process.sleep(delay)
-        end
+            now = timestamp()
+            idle_until(state, now + delay)
+          else
+            state
+          end
 
         case connect(state, port) do
           {:retry, state} -> init_loop(state, count + 1)
           {:noreply, state} -> {:noreply, state}
         end
+    end
+  end
+
+  defp idle_until(state = %Connection{}, deadline) do
+    timeout = deadline - timestamp()
+
+    receive do
+      :ping ->
+        idle_until(state, deadline)
+
+      msg = {:subscribe, _} ->
+        {:noreply, state} = handle_info(msg, state)
+        idle_until(state, deadline)
+    after
+      timeout -> state
     end
   end
 
