@@ -134,19 +134,12 @@ defmodule DiodeClient.Anvil.Helper do
   def stop_anvil(nil), do: :ok
 
   def stop_anvil(port) do
-    with {:os_pid, os_pid} <- Port.info(port, :os_pid) do
-      :erlang.monitor(:port, port)
-      # Kill process group so child processes (RPC server) are terminated
-      _ =
-        System.cmd("bash", [
-          "-c",
-          """
-          kill #{os_pid}
-          """
-        ])
+    with {:connected, owner} <- Port.info(port, :connected) do
+      Process.monitor(owner)
+      send(port, {owner, {:command, ~c"stop\n"}})
 
       receive do
-        {:DOWN, _ref, :port, ^port, _reason} ->
+        {:DOWN, _ref, :process, ^owner, _reason} ->
           :ok
       after
         10_000 ->
@@ -192,13 +185,29 @@ defmodule DiodeClient.Anvil.Helper do
         {:error, :executable_not_found}
 
       path ->
-        args = ["--port", to_string(port)]
+        wrap_script = """
+        #{path} --port #{port} &
+        apid=$!
+        while read -r line; do
+          echo "$line";
+          if [ "$line" == "stop" ]; then
+            break;
+          fi;
+        done
+        kill $apid;
+        wait;
+        """
+
+        args = ["-c", wrap_script]
+
         port_opts = [:binary, :exit_status, :use_stdio, :stderr_to_stdout, {:args, args}]
         creator = self()
 
         sup =
           spawn_link(fn ->
-            port = Port.open({:spawn_executable, path}, port_opts)
+            Process.flag(:trap_exit, true)
+            bash = System.find_executable("bash")
+            port = Port.open({:spawn_executable, bash}, port_opts)
             await_exit_status(creator, port)
           end)
 
@@ -215,7 +224,13 @@ defmodule DiodeClient.Anvil.Helper do
       any -> any
     end
     |> case do
+      {:EXIT, ^port, :epipe} ->
+        # This happens on a port.close()
+        # IO.puts("exit:epipe")
+        exit(:normal)
+
       {^port, {:data, new_data}} ->
+        # IO.puts(new_data)
         data = data <> new_data
 
         if creator != nil and String.contains?(data, "Listening on") do
@@ -226,6 +241,7 @@ defmodule DiodeClient.Anvil.Helper do
         end
 
       {^port, {:exit_status, 0}} ->
+        # IO.puts("exit:0")
         exit(:normal)
 
       {^port, {:exit_status, status}} ->
@@ -233,6 +249,7 @@ defmodule DiodeClient.Anvil.Helper do
           "Anvil port #{inspect(port)} died: #{inspect(status)} output: #{inspect(data)}"
         )
 
+        # IO.puts("exit:#{status}")
         exit({:anvil_died, status})
     end
   end

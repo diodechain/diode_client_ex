@@ -18,8 +18,8 @@ defmodule DiodeClientShellAnvilTest do
     test "rpc_url default when ANVIL_RPC_URL unset" do
       # Cannot unset env in another process; test default by checking module
       assert Anvil.rpc_url() in [
-               "http://127.0.0.1:8545",
-               System.get_env("ANVIL_RPC_URL") || "http://127.0.0.1:8545"
+               "http://127.0.0.1:#{Anvil.port()}",
+               System.get_env("ANVIL_RPC_URL")
              ]
     end
 
@@ -159,10 +159,12 @@ defmodule DiodeClientShellAnvilTest do
     @tag :anvil
     test "when anvil dies, anvil_reachable? is false" do
       # Start a fresh Anvil on a distinct port so we don't kill the shared one
-      port_num = 28_546
+      {:ok, socket} = :gen_tcp.listen(0, [])
+      {:ok, {_, port_num}} = :inet.sockname(socket)
+      :gen_tcp.close(socket)
+
       rpc_url = "http://127.0.0.1:#{port_num}"
       assert {:ok, port} = DiodeClient.Anvil.Helper.start_anvil(port: port_num, rpc_url: rpc_url)
-
       assert DiodeClient.Anvil.Helper.anvil_reachable?(rpc_url) == true
 
       # Artificially kill the anvil process (simulates crash or external kill)

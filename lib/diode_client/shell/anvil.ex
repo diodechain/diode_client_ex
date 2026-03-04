@@ -21,8 +21,17 @@ defmodule DiodeClient.Shell.Anvil do
   end
 
   def port do
-    System.get_env("ANVIL_PORT", "8545")
-    |> String.to_integer()
+    case System.get_env("ANVIL_PORT", "session") do
+      "session" ->
+        {:ok, socket} = :gen_tcp.listen(0, [])
+        {:ok, {_, port}} = :inet.sockname(socket)
+        :gen_tcp.close(socket)
+        System.put_env("ANVIL_PORT", to_string(port))
+        port
+
+      port when is_binary(port) ->
+        String.to_integer(port)
+    end
   end
 
   def chain_id do
