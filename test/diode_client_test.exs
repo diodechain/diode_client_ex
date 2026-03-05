@@ -3,7 +3,11 @@ defmodule DiodeClientTest do
   doctest DiodeClient
 
   test "restore" do
-    assert {:ok, sup} = DiodeClient.interface_add("diode_client_test", DiodeClient.Sup)
+    sup =
+      case DiodeClient.interface_add("diode_client_test", DiodeClient.Sup) do
+        {:ok, s} -> s
+        {:error, {:already_started, s}} -> s
+      end
 
     DiodeClient.port_listen(5000,
       callback: fn socket ->
