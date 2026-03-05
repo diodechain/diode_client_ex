@@ -1063,6 +1063,21 @@ defmodule DiodeClient.Connection do
     # Can be :server or :client
     role = Keyword.get(opts, :role, :server)
     wallet = DiodeClient.wallet()
+
+    key = {__MODULE__, :ssl_options, role, wallet}
+
+    case :persistent_term.get(key, nil) do
+      nil ->
+        options = do_ssl_options(role, wallet)
+        :persistent_term.put(key, options)
+        options
+
+      options ->
+        options
+    end
+  end
+
+  defp do_ssl_options(role, wallet) do
     private = Wallet.privkey!(wallet)
     public = Wallet.pubkey_long!(wallet)
     cert = Secp256k1.selfsigned(private, public)
