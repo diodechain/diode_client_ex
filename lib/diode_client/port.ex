@@ -520,7 +520,7 @@ defmodule DiodeClient.Port do
     Keyword.get(options, :access, "rw")
   end
 
-  defp do_connect([conn | conns], destination, port, options) do
+  defp do_connect([{pid, _info} | conns], destination, port, options) do
     cmd =
       if portopen2?(options) do
         "portopen2"
@@ -529,7 +529,7 @@ defmodule DiodeClient.Port do
       end
 
     try do
-      Connection.rpc(conn, [cmd, destination, port, access(options)])
+      Connection.rpc(pid, [cmd, destination, port, access(options)])
     rescue
       e in RuntimeError ->
         {:error, e.message}
@@ -539,7 +539,7 @@ defmodule DiodeClient.Port do
     end
     |> case do
       ["ok", port_num] when is_integer(port_num) ->
-        address = Connection.server_url(conn)
+        address = Connection.server_url(pid)
         print? = Keyword.get(options, :print?, false)
 
         if print? do
