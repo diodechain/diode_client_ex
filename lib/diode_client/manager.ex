@@ -644,24 +644,15 @@ defmodule DiodeClient.Manager do
 
   defp update(state) do
     state = update_peaks(state)
-
-    pids =
-      Map.values(state.conns)
-      |> Enum.filter(fn %Info{server_address: addr, peaks: conn_peaks} ->
-        # 1. Remove connections that have no address
-        # 2. Remove connections that have a lower peak than the current best
-        addr != nil and
-          Enum.all?(state.peaks, fn {shell, peak} ->
-            block_number(conn_peaks[shell]) >= block_number(peak)
-          end)
-      end)
-      |> Enum.map(fn %{pid: pid} -> pid end)
-
+    # Compute connected once and reuse for pids filter and update_best
+    connected = connected(state)
+    connected_list = Map.values(connected)
+    pids = Enum.map(connected_list, fn %Info{pid: pid} -> pid end)
     best = Enum.filter(state.best, fn pid -> pid in pids end)
 
     if best == [] or
          System.os_time(:second) - state.best_timestamp > 30 do
-      update_best(state)
+      update_best(state, connected_list)
     else
       %{state | best: best}
     end
@@ -669,35 +660,49 @@ defmodule DiodeClient.Manager do
 
   defp physical_peak_for_shell(shell, connected, len, drop, min_agreement, last_peaks) do
     blocks = Enum.map(connected, fn %Info{peaks: peaks} -> peaks[shell] end)
+    # Precompute block_number once per block to avoid hundreds of Rlpx.bin2uint calls
+    blocks_with_num = Enum.map(blocks, fn b -> {b, block_number(b)} end)
 
-    peak =
-      blocks
-      |> Enum.sort_by(&block_number/1, :desc)
-      |> Enum.take(len - drop)
-      |> List.last()
+    take_count = max(1, len - drop)
+
+    peak_num =
+      blocks_with_num
+      |> Enum.map(&elem(&1, 1))
+      |> Enum.sort(:desc)
+      |> Enum.at(take_count - 1)
 
     blocks_at_peak =
-      Enum.filter(blocks, fn block -> block_number(block) == block_number(peak) end)
+      if peak_num != nil do
+        Enum.filter(blocks_with_num, fn {_, n} -> n == peak_num end)
+        |> Enum.map(&elem(&1, 0))
+      else
+        []
+      end
 
-    candidates = Enum.group_by(blocks_at_peak, fn block -> block_hash(block) end)
+    # Cache block_hash per unique block to avoid repeated Base16.encode
+    hash_cache = Map.new(Enum.uniq(blocks_at_peak), fn b -> {b, block_hash(b)} end)
+
+    candidates =
+      Enum.group_by(blocks_at_peak, fn block -> Map.fetch!(hash_cache, block) end)
 
     if map_size(candidates) > 1 do
       Logger.warning(
-        "Multiple uncle blocks with the same block_number=#{block_number(peak)} found for shell #{shell}"
+        "Multiple uncle blocks with the same block_number=#{peak_num} found for shell #{shell}"
       )
     end
 
     result = resolve_peak_from_candidates(candidates)
+    last_peak_num = block_number(last_peaks[shell])
+    peak_num = peak_num || 0
 
     cond do
       result == nil ->
         {shell, last_peaks[shell]}
 
-      block_number(peak) <= 0 ->
+      peak_num <= 0 ->
         {shell, last_peaks[shell]}
 
-      length(elem(result, 0)) >= min_agreement and
-          block_number(peak) > block_number(last_peaks[shell]) ->
+      length(elem(result, 0)) >= min_agreement and peak_num > last_peak_num ->
         {shell, elem(result, 1)}
 
       true ->
@@ -801,9 +806,12 @@ defmodule DiodeClient.Manager do
     :ok
   end
 
-  defp update_best(state = %Manager{waiting: waiting, best: prev_best, physical_peaks: peaks}) do
+  defp update_best(
+         state = %Manager{waiting: waiting, best: prev_best, physical_peaks: peaks},
+         connected_list
+       ) do
     new_best =
-      Map.values(connected(state))
+      connected_list
       # Filter out nodes that have a lower peak than the current best
       |> Enum.filter(fn %Info{peaks: conn_peaks} ->
         Enum.all?(peaks, fn {shell, peak} ->
