@@ -468,7 +468,8 @@ defmodule DiodeClient.Anvil.Helper do
     end
   end
 
-  defp mine(rpc_url) do
+  def mine(rpc_url \\ nil) do
+    rpc_url = rpc_url || Anvil.rpc_url()
     body = %{jsonrpc: "2.0", method: "anvil_mine", params: [], id: 1}
     body_str = Jason.encode!(body)
     {:ok, _resp_body} = post(rpc_url, body_str, 5_000)
