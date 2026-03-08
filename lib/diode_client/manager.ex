@@ -1,6 +1,6 @@
 defmodule DiodeClient.Manager do
   @moduledoc false
-  alias DiodeClient.{Connection, Manager, NodeScorer, Rlpx}
+  alias DiodeClient.{Connection, Manager, Manager.LocalPeakPoller, NodeScorer, Rlpx}
   use GenServer
   require Logger
 
@@ -18,7 +18,8 @@ defmodule DiodeClient.Manager do
     :best_timestamp,
     :debounce_timeout,
     :peak_subscribers,
-    :peak_subscriber_refs
+    :peak_subscriber_refs,
+    :local_peak_pollers
   ]
 
   defmodule Info do
@@ -66,7 +67,8 @@ defmodule DiodeClient.Manager do
       best: [],
       debounce_timeout: @initial_debounce_timeout,
       peak_subscribers: %{},
-      peak_subscriber_refs: %{}
+      peak_subscriber_refs: %{},
+      local_peak_pollers: %{}
     }
 
     {:ok, state, {:continue, :init}}
@@ -381,6 +383,31 @@ defmodule DiodeClient.Manager do
     {:noreply, do_set_online(state, new_online)}
   end
 
+  def handle_cast({:local_peak, shell, block}, state = %Manager{peaks: peaks}) do
+    old_peaks = peaks
+    reported_peaks = %{shell => block}
+    notify_peak_subscribers(state.peak_subscribers, old_peaks, reported_peaks)
+
+    # Reply to any get_peak waiters
+    waiting_for_peak =
+      case Map.pop(state.waiting_for_peak, shell) do
+        {nil, rest} ->
+          rest
+
+        {pids, rest} ->
+          for pid <- pids, do: GenServer.reply(pid, block)
+          rest
+      end
+
+    state =
+      state
+      |> Map.put(:peaks, Map.put(peaks, shell, block))
+      |> Map.put(:physical_peaks, Map.put(state.physical_peaks, shell, block))
+      |> Map.put(:waiting_for_peak, waiting_for_peak)
+
+    {:noreply, state}
+  end
+
   @impl true
   def handle_cast({:set_connection, cpid}, state = %Manager{conns: _conns}) do
     {:noreply, %{state | best: [cpid]}}
@@ -466,21 +493,35 @@ defmodule DiodeClient.Manager do
         from,
         state = %Manager{peaks: peaks, conns: conns, shells: shells}
       ) do
-    state = %{state | shells: MapSet.put(shells, shell)}
-    for c <- Map.keys(conns), do: safe_send(c, {:subscribe, shell})
+    # Local shells (e.g. Anvil) use HTTP/WS; fetch peak directly when not in state
+    if local_shell?(shell) and Map.get(peaks, shell) == nil do
+      peak = shell.peak()
 
-    if peak = Map.get(peaks, shell) do
+      state = %{
+        state
+        | peaks: Map.put(peaks, shell, peak),
+          physical_peaks: Map.put(state.physical_peaks, shell, peak)
+      }
+
       {:reply, peak, state}
     else
-      waiting_for_peak = Map.get(state.waiting_for_peak, shell, []) ++ [from]
+      state = %{state | shells: MapSet.put(shells, shell)}
+      for c <- Map.keys(conns), do: safe_send(c, {:subscribe, shell})
 
-      {:noreply,
-       %{state | waiting_for_peak: Map.put(state.waiting_for_peak, shell, waiting_for_peak)}}
+      if peak = Map.get(peaks, shell) do
+        {:reply, peak, state}
+      else
+        waiting_for_peak = Map.get(state.waiting_for_peak, shell, []) ++ [from]
+
+        {:noreply,
+         %{state | waiting_for_peak: Map.put(state.waiting_for_peak, shell, waiting_for_peak)}}
+      end
     end
   end
 
   def handle_call({:subscribe_peak, shell}, {pid, _tag}, state) do
     state = ensure_shell_subscription(shell, state)
+    state = ensure_local_peak_poller(shell, state)
     ref = Process.monitor(pid)
 
     subscribers = Map.get(state.peak_subscribers, shell, []) ++ [{pid, ref}]
@@ -902,6 +943,42 @@ defmodule DiodeClient.Manager do
   defp safe_send(pid, message) when is_atom(pid), do: safe_send(Process.whereis(pid), message)
   defp safe_send(pid, message) when is_pid(pid), do: send(pid, message)
 
+  defp local_shell?(shell) do
+    function_exported?(shell, :local_peak?, 0) and shell.local_peak?()
+  end
+
+  defp ensure_local_peak_poller(shell, state = %Manager{local_peak_pollers: pollers}) do
+    if local_shell?(shell) and not Map.has_key?(pollers, shell) do
+      case LocalPeakPoller.start_link(shell) do
+        {:ok, pid} -> %{state | local_peak_pollers: Map.put(pollers, shell, pid)}
+        {:error, _} -> state
+      end
+    else
+      state
+    end
+  end
+
+  defp stop_local_peak_poller_if_unsubscribed(
+         shell,
+         state = %Manager{
+           peak_subscribers: subs,
+           local_peak_pollers: pollers
+         }
+       ) do
+    if local_shell?(shell) and (subs[shell] || []) == [] do
+      case Map.pop(pollers, shell) do
+        {nil, _} ->
+          state
+
+        {pid, pollers} ->
+          Process.exit(pid, :normal)
+          %{state | local_peak_pollers: pollers}
+      end
+    else
+      state
+    end
+  end
+
   defp ensure_shell_subscription(shell, state = %Manager{shells: shells, conns: conns}) do
     state = %{state | shells: MapSet.put(shells, shell)}
     for c <- Map.keys(conns), do: safe_send(c, {:subscribe, shell})
@@ -925,7 +1002,8 @@ defmodule DiodeClient.Manager do
             Map.put(state.peak_subscribers, shell, subscribers)
           end
 
-        %{state | peak_subscribers: peak_subscribers, peak_subscriber_refs: refs}
+        state = %{state | peak_subscribers: peak_subscribers, peak_subscriber_refs: refs}
+        stop_local_peak_poller_if_unsubscribed(shell, state)
     end
   end
 
@@ -947,7 +1025,9 @@ defmodule DiodeClient.Manager do
             Map.put(state.peak_subscribers, shell, rest)
           end
 
-        {:ok, %{state | peak_subscribers: peak_subscribers, peak_subscriber_refs: refs}}
+        new_state = %{state | peak_subscribers: peak_subscribers, peak_subscriber_refs: refs}
+        new_state = stop_local_peak_poller_if_unsubscribed(shell, new_state)
+        {:ok, new_state}
     end
   end
 end

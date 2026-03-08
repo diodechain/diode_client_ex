@@ -20,6 +20,20 @@ defmodule DiodeClient.Shell.Anvil do
     System.get_env("ANVIL_RPC_URL", "http://127.0.0.1:#{port()}")
   end
 
+  @doc """
+  WebSocket URL for eth_subscribe (e.g. newHeads). Derived from rpc_url.
+  """
+  def ws_url do
+    rpc_url()
+    |> String.replace_leading("http://", "ws://")
+    |> String.replace_leading("https://", "wss://")
+  end
+
+  @doc false
+  def local_peak? do
+    true
+  end
+
   def port do
     case System.get_env("ANVIL_PORT", "session") do
       "session" ->
@@ -261,6 +275,11 @@ defmodule DiodeClient.Shell.Anvil do
   end
 
   defp block_to_hex(n) when is_integer(n), do: block_num_to_hex(n)
+
+  @doc false
+  def eth_header_to_diode_block(block) when is_map(block) do
+    eth_block_to_diode_block(block)
+  end
 
   defp eth_block_to_diode_block(block) do
     %{

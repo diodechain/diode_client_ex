@@ -61,6 +61,28 @@ defmodule DiodeClientManagerTest do
       assert :ok = Manager.unsubscribe_peak(shell)
       assert received != nil, "expected peak message (Moonbeam ~12s block time)"
     end
+
+    @tag :anvil
+    test "receives peak when Anvil produces new block via WebSocket" do
+      # subscribe_peak(Anvil) starts LocalPeakPoller with eth_subscribe newHeads
+      assert :ok = Manager.subscribe_peak(Anvil)
+
+      # Mine a block to trigger WebSocket notification
+      assert {:ok, _} = DiodeClient.Anvil.Helper.mine()
+
+      received =
+        receive do
+          {Manager, Anvil, :peak, block} ->
+            Rlpx.bin2uint(block["number"])
+        after
+          5_000 -> nil
+        end
+
+      assert :ok = Manager.unsubscribe_peak(Anvil)
+
+      assert received != nil,
+             "expected peak message from Anvil WebSocket (eth_subscribe newHeads)"
+    end
   end
 
   describe "update and connected optimizations" do
