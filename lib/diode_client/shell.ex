@@ -61,7 +61,7 @@ defmodule DiodeClient.Shell do
           uncache_rpc(key)
         end
 
-        Logger.error(
+        Logger.warning(
           "Assert #{inspect(unquote(stra))} == #{inspect(unquote(strb))} failed! (#{inspect(unquote(a))} != #{inspect(unquote(b))})"
         )
       end
