@@ -317,9 +317,11 @@ defmodule DiodeClient.Manager do
 
     removed = len - new_len
 
-    Logger.debug(
-      "DiodeClient.Manager: removed #{removed}, added #{added} connections, new length #{new_len + added}"
-    )
+    if removed > 0 or added > 0 do
+      Logger.debug(
+        "DiodeClient.Manager: removed #{removed}, added #{added} connections, new length #{new_len + added}"
+      )
+    end
   end
 
   def online?() do
