@@ -38,6 +38,8 @@ defmodule DiodeClient.Rlp do
   @short_list 0xC0
   @long_list 0xF7
   @short_max_size 55
+  # Hardening: cap to prevent hostile length fields from triggering multi-GB allocations
+  @max_rlp_byte_size 100_000_000
 
   @doc """
     Encode an Elixir term to RLP. Integers are converted
@@ -88,9 +90,16 @@ defmodule DiodeClient.Rlp do
   end
 
   @spec decode!(binary()) :: rlp()
+  # Hardening: raise on trailing bytes instead of MatchError
   def decode!(bin) do
-    {term, ""} = do_decode!(bin)
-    term
+    case do_decode!(bin) do
+      {term, ""} ->
+        term
+
+      {_term, trailing} when is_binary(trailing) ->
+        raise ArgumentError,
+              "RLP decode: #{byte_size(trailing)} unexpected trailing byte(s)"
+    end
   end
 
   @spec decode(binary()) :: {rlp(), binary()}
@@ -136,6 +145,10 @@ defmodule DiodeClient.Rlp do
     Rlpx.uint2bin(num)
   end
 
+  # Hardening: reject empty input with a clear error instead of FunctionClauseError
+  defp do_decode!(<<>>),
+    do: raise(ArgumentError, "RLP decode: unexpected end of input (empty binary)")
+
   defp do_decode!(<<x::unsigned-size(8), rest::binary>>) when x <= 0x7F do
     {<<x::unsigned>>, rest}
   end
@@ -146,9 +159,22 @@ defmodule DiodeClient.Rlp do
     {item, rest}
   end
 
+  # Hardening: validate size before allocating to prevent multi-GB allocation from hostile length fields
   defp do_decode!(<<head::unsigned-size(8), rest::binary>>) when head <= 0xBF do
     length_size = (head - @long_string) * 8
-    <<size::unsigned-size(length_size), item::binary-size(size), rest::binary>> = rest
+    <<size::unsigned-size(length_size), rest::binary>> = rest
+
+    if size > @max_rlp_byte_size do
+      raise ArgumentError,
+            "RLP decode: string length #{size} exceeds maximum #{@max_rlp_byte_size}"
+    end
+
+    if byte_size(rest) < size do
+      raise ArgumentError,
+            "RLP decode: string claims #{size} bytes but only #{byte_size(rest)} available"
+    end
+
+    <<item::binary-size(size), rest::binary>> = rest
     {item, rest}
   end
 
@@ -158,18 +184,23 @@ defmodule DiodeClient.Rlp do
     {do_decode_list!([], list), rest}
   end
 
+  # Hardening: validate size before allocating; reject truncated input instead of zero-padding
   defp do_decode!(<<head::unsigned-size(8), rest::binary>>) when head <= 0xFF do
     length_size = (head - @long_list) * 8
+    <<size::unsigned-size(length_size), rest::binary>> = rest
 
-    case rest do
-      <<size::unsigned-size(length_size), list::binary-size(size), rest::binary>> ->
-        {do_decode_list!([], list), rest}
-
-      <<size::unsigned-size(length_size), rest::binary>> ->
-        # Too short binary
-        list = String.pad_trailing(rest, byte_size(rest) + size, <<0>>)
-        {:error, {"too short binary", {do_decode_list!([], list), rest}}}
+    if size > @max_rlp_byte_size do
+      raise ArgumentError,
+            "RLP decode: list length #{size} exceeds maximum #{@max_rlp_byte_size}"
     end
+
+    if byte_size(rest) < size do
+      raise ArgumentError,
+            "RLP decode: list claims #{size} bytes but only #{byte_size(rest)} available"
+    end
+
+    <<list::binary-size(size), rest::binary>> = rest
+    {do_decode_list!([], list), rest}
   end
 
   defp do_decode_list!(list, "") do
