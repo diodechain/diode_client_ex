@@ -25,4 +25,8 @@ defmodule DiodeClientRlpxTest do
     assert Rlpx.list2map(Rlp.encode!(input_list) |> Rlp.decode!(), atoms: 1, recursive: true) ==
              input_map
   end
+
+  test "failed decode" do
+    assert DiodeClient.Base16.decode("0xbe3afef029034d72de7a30908d95c747") |> DiodeClient.Rlp.decode() == {:error, "RLP decode: string length 16605856082906482 exceeds maximum 8"}
+  end
 end

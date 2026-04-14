@@ -93,6 +93,9 @@ defmodule DiodeClient.Rlp do
   # Hardening: raise on trailing bytes instead of MatchError
   def decode!(bin) do
     case do_decode!(bin) do
+      {:error, error} ->
+        raise ArgumentError, error
+
       {term, ""} ->
         term
 
@@ -163,19 +166,14 @@ defmodule DiodeClient.Rlp do
   defp do_decode!(<<head::unsigned-size(8), rest::binary>>) when head <= 0xBF do
     length_size = (head - @long_string) * 8
     <<size::unsigned-size(length_size), rest::binary>> = rest
+    max_rlp_byte_size = min(byte_size(rest), @max_rlp_byte_size)
 
-    if size > @max_rlp_byte_size do
-      raise ArgumentError,
-            "RLP decode: string length #{size} exceeds maximum #{@max_rlp_byte_size}"
+    if size > max_rlp_byte_size do
+      {:error, "RLP decode: string length #{size} exceeds maximum #{max_rlp_byte_size}"}
+    else
+      <<item::binary-size(size), rest::binary>> = rest
+      {item, rest}
     end
-
-    if byte_size(rest) < size do
-      raise ArgumentError,
-            "RLP decode: string claims #{size} bytes but only #{byte_size(rest)} available"
-    end
-
-    <<item::binary-size(size), rest::binary>> = rest
-    {item, rest}
   end
 
   defp do_decode!(<<head::unsigned-size(8), rest::binary>>) when head <= 0xF7 do
@@ -189,18 +187,14 @@ defmodule DiodeClient.Rlp do
     length_size = (head - @long_list) * 8
     <<size::unsigned-size(length_size), rest::binary>> = rest
 
-    if size > @max_rlp_byte_size do
-      raise ArgumentError,
-            "RLP decode: list length #{size} exceeds maximum #{@max_rlp_byte_size}"
-    end
+    max_rlp_byte_size = min(byte_size(rest), @max_rlp_byte_size)
 
-    if byte_size(rest) < size do
-      raise ArgumentError,
-            "RLP decode: list claims #{size} bytes but only #{byte_size(rest)} available"
+    if size > max_rlp_byte_size do
+      {:error, "RLP decode: list length #{size} exceeds maximum #{max_rlp_byte_size}"}
+    else
+      <<list::binary-size(size), rest::binary>> = rest
+      {do_decode_list!([], list), rest}
     end
-
-    <<list::binary-size(size), rest::binary>> = rest
-    {do_decode_list!([], list), rest}
   end
 
   defp do_decode_list!(list, "") do
