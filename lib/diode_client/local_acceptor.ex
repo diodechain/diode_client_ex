@@ -54,23 +54,7 @@ defmodule DiodeClient.LocalAcceptor do
   def local_address(family) do
     case :os.type() do
       {:win32, _} ->
-        {ret, 0} = System.cmd("ipconfig", [])
-
-        regex =
-          case family do
-            :inet ->
-              ~r/IPv4.+ (([0-9]{1,3}\.){3}([0-9]{1,3}))/
-
-            :inet6 ->
-              ~r/IPv4.+ (([0-9]{1,3}\.){3}([0-9]{1,3}))/
-              # TODO
-              # :inet6 -> ~r/IPv6.+ (([0-9]{1,3}\.){3}([0-9]{1,3}))/
-          end
-
-        case Regex.run(regex, ret) do
-          nil -> nil
-          [_ret, match | _rest] -> match
-        end
+        windows_local_address(family)
 
       {:unix, _} ->
         case :net.getifaddrs() do
@@ -89,6 +73,87 @@ defmodule DiodeClient.LocalAcceptor do
             nil
         end
     end
+  end
+
+  # On Windows :net.getifaddrs/0 is not available, so we first try the
+  # cross-platform :inet.getifaddrs/0 (no subprocess required) and only
+  # fall back to parsing `ipconfig` output if that returns nothing usable.
+  # Some Windows installs don't have `ipconfig` on PATH, so we try the
+  # absolute System32 path first.
+  defp windows_local_address(family) do
+    case inet_getifaddrs_pick(family) do
+      nil -> windows_ipconfig_address(family)
+      address -> address
+    end
+  end
+
+  defp inet_getifaddrs_pick(family) do
+    expected_size =
+      case family do
+        :inet -> 4
+        :inet6 -> 8
+      end
+
+    case :inet.getifaddrs() do
+      {:ok, ifs} ->
+        Enum.find_value(ifs, fn {_name, props} ->
+          flags = Keyword.get(props, :flags, [])
+
+          if :up in flags and :running in flags and :loopback not in flags do
+            props
+            |> Keyword.get_values(:addr)
+            |> Enum.find(fn addr -> is_tuple(addr) and tuple_size(addr) == expected_size end)
+            |> case do
+              nil -> nil
+              addr -> List.to_string(:inet.ntoa(addr))
+            end
+          end
+        end)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp windows_ipconfig_address(family) do
+    regex =
+      case family do
+        :inet ->
+          ~r/IPv4.+ (([0-9]{1,3}\.){3}([0-9]{1,3}))/
+
+        :inet6 ->
+          ~r/IPv4.+ (([0-9]{1,3}\.){3}([0-9]{1,3}))/
+          # TODO
+          # :inet6 -> ~r/IPv6.+ (([0-9]{1,3}\.){3}([0-9]{1,3}))/
+      end
+
+    with {:ok, ret} <- run_ipconfig(),
+         [_ret, match | _rest] <- Regex.run(regex, ret) do
+      match
+    else
+      _ -> nil
+    end
+  end
+
+  defp run_ipconfig() do
+    Enum.find_value(ipconfig_candidates(), fn path ->
+      with exe when is_binary(exe) <- System.find_executable(path),
+           {out, 0} <- System.cmd(exe, []) do
+        {:ok, out}
+      else
+        _ -> nil
+      end
+    end)
+  end
+
+  defp ipconfig_candidates() do
+    system_root = System.get_env("SystemRoot") || System.get_env("WINDIR") || "C:\\Windows"
+
+    Enum.uniq([
+      Path.join([system_root, "System32", "ipconfig.exe"]),
+      "C:\\Windows\\System32\\ipconfig.exe",
+      "ipconfig"
+    ])
   end
 
   @tls_timeout 5_000
