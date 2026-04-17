@@ -122,9 +122,7 @@ defmodule DiodeClient.LocalAcceptor do
           ~r/IPv4.+ (([0-9]{1,3}\.){3}([0-9]{1,3}))/
 
         :inet6 ->
-          ~r/IPv4.+ (([0-9]{1,3}\.){3}([0-9]{1,3}))/
-          # TODO
-          # :inet6 -> ~r/IPv6.+ (([0-9]{1,3}\.){3}([0-9]{1,3}))/
+          ~r/IPv6.+ (([a-f0-9:]+:+)+[a-f0-9]+)/i
       end
 
     with {:ok, ret} <- run_ipconfig(),
