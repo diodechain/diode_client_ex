@@ -97,21 +97,29 @@ defmodule DiodeClient.LocalAcceptor do
     case :inet.getifaddrs() do
       {:ok, ifs} ->
         Enum.find_value(ifs, fn {_name, props} ->
-          flags = Keyword.get(props, :flags, [])
-
-          if :up in flags and :running in flags and :loopback not in flags do
-            props
-            |> Keyword.get_values(:addr)
-            |> Enum.find(fn addr -> is_tuple(addr) and tuple_size(addr) == expected_size end)
-            |> case do
-              nil -> nil
-              addr -> List.to_string(:inet.ntoa(addr))
-            end
-          end
+          inet_getifaddrs_props_address(props, expected_size)
         end)
 
       _ ->
         nil
+    end
+  end
+
+  defp inet_getifaddrs_props_address(props, expected_size) do
+    flags = Keyword.get(props, :flags, [])
+
+    if :up in flags and :running in flags and :loopback not in flags do
+      inet_getifaddrs_first_addr(props, expected_size)
+    end
+  end
+
+  defp inet_getifaddrs_first_addr(props, expected_size) do
+    props
+    |> Keyword.get_values(:addr)
+    |> Enum.find(fn addr -> is_tuple(addr) and tuple_size(addr) == expected_size end)
+    |> case do
+      nil -> nil
+      addr -> List.to_string(:inet.ntoa(addr))
     end
   end
 
