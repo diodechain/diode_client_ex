@@ -27,6 +27,8 @@ defmodule DiodeClientRlpxTest do
   end
 
   test "failed decode" do
-    assert DiodeClient.Base16.decode("0xbe3afef029034d72de7a30908d95c747") |> DiodeClient.Rlp.decode() == {:error, "RLP decode: string length 16605856082906482 exceeds maximum 8"}
+    assert DiodeClient.Base16.decode("0xbe3afef029034d72de7a30908d95c747")
+           |> DiodeClient.Rlp.decode() ==
+             {:error, "RLP decode: string length 16605856082906482 exceeds maximum 8"}
   end
 end

@@ -1,5 +1,7 @@
 # Start Anvil in background so :anvil tests run; if Foundry is not installed or Anvil
 # fails to start, exclude :anvil tests so mix test still passes.
+require Logger
+
 case DiodeClient.Anvil.Helper.start_anvil() do
   {:ok, _} ->
     DiodeClient.Anvil.Helper.ensure_test_env(wallet: "test_anvil", deploy_contracts: true)
