@@ -22,7 +22,7 @@ defmodule DiodeClient.Anvil.Helper do
   ## Example (manual steps)
 
       # With Anvil running (e.g. anvil) and diode_contract deployed:
-      {:ok, list} = DiodeClient.Anvil.Helper.deploy_contracts()
+      {:ok, list, addresses} = DiodeClient.Anvil.Helper.deploy_contracts()
       DiodeClient.Contracts.Factory.set_anvil_contracts(list)
   """
   alias DiodeClient.{ABI, Base16, Hash}
@@ -115,7 +115,7 @@ defmodule DiodeClient.Anvil.Helper do
     if deploy_contracts do
       if anvil_reachable?(rpc_url) do
         case deploy_contracts(rpc_url, opts) do
-          {:ok, _} -> :ok
+          {:ok, _, _} -> :ok
           err -> err
         end
       else
@@ -328,7 +328,8 @@ defmodule DiodeClient.Anvil.Helper do
   Option A: If a deploy script exists (e.g. `script/DeployAnvil.s.sol`), run it and parse
   broadcast output. Option B: Read `out/` artifacts and send deployment transactions.
 
-  Returns `{:ok, %List{}}` and calls `Factory.set_anvil_contracts(list)` so
+  Returns `{:ok, %List{}, addresses}` where `addresses` is a map of contract name => deployed
+  address (`<<_::160>>`). Calls `Factory.set_anvil_contracts(list)` so
   `Factory.contracts(DiodeClient.Shell.Anvil)` works. Returns `{:error, reason}` on failure.
   """
   def deploy_contracts(rpc_url \\ nil, opts \\ []) do
@@ -336,9 +337,9 @@ defmodule DiodeClient.Anvil.Helper do
 
     with {:ok, path} <- ensure_repo(),
          :ok <- build_repo(path),
-         {:ok, list} <- deploy_from_artifacts(path, rpc_url, opts) do
+         {:ok, list, addresses} <- deploy_from_artifacts(path, rpc_url, opts) do
       Factory.set_anvil_contracts(list)
-      {:ok, list}
+      {:ok, list, addresses}
     end
   end
 
@@ -356,15 +357,24 @@ defmodule DiodeClient.Anvil.Helper do
       "DriveInvites",
       "DiodeToken",
       "DiodeRegistryLight",
-      "FleetContractUpgradeable"
+      "FleetContractUpgradeable",
+      "FleetContractFactory"
     ]
 
     addresses = deploy_contracts_in_order(out_dir, contract_names, rpc_url)
 
-    if map_size(addresses) == 0 do
-      {:error, :no_contracts_deployed}
-    else
-      build_list(addresses)
+    cond do
+      map_size(addresses) == 0 ->
+        {:error, :no_contracts_deployed}
+
+      not Map.has_key?(addresses, "FleetContractFactory") ->
+        {:error,
+         {:fleet_contract_factory_not_deployed,
+          %{deployed_names: Map.keys(addresses)}}}
+
+      true ->
+        {:ok, list} = build_list(addresses)
+        {:ok, list, addresses}
     end
   end
 
@@ -436,6 +446,13 @@ defmodule DiodeClient.Anvil.Helper do
   defp append_constructor_args("FleetContractUpgradeable", bytecode, acc) do
     registry = acc["DiodeRegistryLight"] || raise("DiodeRegistryLight not deployed")
     bytecode <> ABI.encode_args(["address"], [registry])
+  end
+
+  defp append_constructor_args("FleetContractFactory", bytecode, acc) do
+    implementation =
+      acc["FleetContractUpgradeable"] || raise("FleetContractUpgradeable not deployed")
+
+    bytecode <> ABI.encode_args(["address"], [implementation])
   end
 
   defp append_constructor_args(_name, bytecode, _acc), do: bytecode

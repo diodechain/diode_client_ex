@@ -113,7 +113,7 @@ defmodule DiodeClient.Contracts.Factory do
       nil ->
         raise """
         Anvil contracts not deployed. Call DiodeClient.Contracts.Factory.set_anvil_contracts/1 \
-        with a %DiodeClient.Contracts.List{} (e.g. from DiodeClient.Anvil.Helper.deploy_contracts/1) \
+        with the %DiodeClient.Contracts.List{} returned from DiodeClient.Anvil.Helper.deploy_contracts/{0,2} \
         after deploying to Anvil.
         """
 
