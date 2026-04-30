@@ -729,7 +729,7 @@ defmodule DiodeClient.Manager do
       Enum.group_by(blocks_at_peak, fn block -> Map.fetch!(hash_cache, block) end)
 
     if map_size(candidates) > 1 do
-      Logger.warning(
+      Logger.debug(
         "Multiple uncle blocks with the same block_number=#{peak_num} found for shell #{shell}"
       )
     end
