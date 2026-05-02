@@ -368,9 +368,7 @@ defmodule DiodeClient.Anvil.Helper do
         {:error, :no_contracts_deployed}
 
       not Map.has_key?(addresses, "FleetContractFactory") ->
-        {:error,
-         {:fleet_contract_factory_not_deployed,
-          %{deployed_names: Map.keys(addresses)}}}
+        {:error, {:fleet_contract_factory_not_deployed, %{deployed_names: Map.keys(addresses)}}}
 
       true ->
         {:ok, list} = build_list(addresses)

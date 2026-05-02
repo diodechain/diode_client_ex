@@ -204,15 +204,48 @@ defmodule DiodeClient.Shell.Common do
     params = Jason.encode!([tx_hash])
     cmd = [shell.prefix() <> "rpc", "eth_getTransactionReceipt", params]
 
-    with [json] <- shell.cached_rpc(cmd) do
-      case Jason.decode!(json) do
-        %{"result" => result} ->
-          result
+    case eth_get_transaction_receipt_json(shell, cmd) do
+      {:ok, json} ->
+        case Jason.decode!(json) do
+          %{"result" => result} ->
+            result
 
-        %{"error" => error} ->
-          Logger.error("#{shell.prefix()}eth_getTransactionReceipt: #{inspect(error)}")
-          nil
-      end
+          %{"error" => error} ->
+            Logger.error("#{shell.prefix()}eth_getTransactionReceipt: #{inspect(error)}")
+            nil
+        end
+
+      {:error, reason} ->
+        Logger.warning("#{shell.prefix()}eth_getTransactionReceipt rpc: #{inspect(reason)}")
+        nil
+    end
+  end
+
+  # Replies from eth_getTransactionReceipt change from JSON null → object as soon as the tx is mined.
+  # Routing them through Shell.cached_rpc/1 wedges the LRU: the first `"result": null` response is
+  # cached indefinitely, so callers never observe the mined receipt even though the relay would
+  # return one on an uncached call. Mirror cached_rpc resilience (moonbeam quirks, remote_closed
+  # retry) but always hit the network.
+  defp eth_get_transaction_receipt_json(shell, cmd) do
+    case shell.rpc(cmd) do
+      [json] when is_binary(json) ->
+        if String.contains?(json, "failed to retrieve Runtime Api version") do
+          {:error, :runtime_api_version}
+        else
+          {:ok, json}
+        end
+
+      {:error, "remote_closed"} ->
+        case shell.rpc(cmd) do
+          [json] when is_binary(json) -> {:ok, json}
+          other -> {:error, other}
+        end
+
+      {:error, other} ->
+        {:error, other}
+
+      other ->
+        {:error, {:unexpected, other}}
     end
   end
 
