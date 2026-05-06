@@ -5,7 +5,8 @@ defmodule DiodeClientPortTest do
   Connection.rpc to avoid FunctionClauseError in GenServer.whereis/1.
   """
   use ExUnit.Case, async: false
-  @moduletag timeout: 15_000
+  # connect_address may iterate peers and scorer delays before returning {:error, _}
+  @moduletag timeout: 60_000
 
   alias DiodeClient.{Manager, Port}
 

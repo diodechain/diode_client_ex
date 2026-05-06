@@ -118,14 +118,14 @@ defmodule DiodeClientShellAnvilTest do
   end
 
   test "BNS is deployed" do
-    assert {:ok, _} = DiodeClient.Anvil.Helper.deploy_contracts()
+    assert {:ok, _, _} = DiodeClient.Anvil.Helper.deploy_contracts()
     assert {["ok", _tx_hash], _tx} = BNS.register("anviltest.anvil", DiodeClient.address())
     assert DiodeClient.address() == BNS.resolve_name("anviltest.anvil")
     assert BNS.is_bns(Factory.contracts(Anvil).bns)
   end
 
   test "get_account returns Account struct" do
-    assert {:ok, _} = DiodeClient.Anvil.Helper.deploy_contracts()
+    assert {:ok, _, _} = DiodeClient.Anvil.Helper.deploy_contracts()
     assert {["ok", _tx_hash], _tx} = BNS.register("anviltest2.anvil", DiodeClient.address())
     account = Anvil.get_account(DiodeClient.address())
     assert account.nonce > 0
@@ -141,7 +141,7 @@ defmodule DiodeClientShellAnvilTest do
   end
 
   test "identity salt" do
-    assert {:ok, _} = DiodeClient.Anvil.Helper.deploy_contracts()
+    assert {:ok, _, _} = DiodeClient.Anvil.Helper.deploy_contracts()
 
     shell = DiodeClient.Shell.Anvil
     c = Factory.contracts(shell)
