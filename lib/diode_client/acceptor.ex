@@ -253,7 +253,7 @@ defmodule DiodeClient.Acceptor do
       list = Map.get(state.backlog, portnum, [])
 
       if length(list) >= @max_backlog do
-        close_socket(request.ref, :backlog_full)
+        close_socket(request, :backlog_full)
         {{:error, :backlog_full}, state}
       else
         state = %{state | backlog: Map.put(state.backlog, portnum, list ++ [request])}
