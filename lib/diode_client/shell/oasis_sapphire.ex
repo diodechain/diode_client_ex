@@ -47,7 +47,7 @@ defmodule DiodeClient.Shell.OasisSapphire do
     if meta_transaction do
       wallet = DiodeClient.ensure_wallet()
       from = Wallet.address!(wallet)
-      nonce = Keyword.get(opts, :nonce) || get_meta_nonce(from)
+      nonce = Keyword.get(opts, :nonce) || get_meta_nonce(from, peak(), opts)
 
       create_meta_transaction(address, function_name, types, values, nonce, opts)
       # |> MetaTransaction.simulate(__MODULE__)

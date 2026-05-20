@@ -29,6 +29,14 @@ defmodule Mix.Tasks.Bns do
     IO.puts("Whoami: #{DiodeClient.Wallet.printable(DiodeClient.wallet())}")
   end
 
+  def run(["version"]) do
+    init()
+
+    for shell <- DiodeClient.Contracts.Factory.shells() do
+      IO.puts("Version: #{shell} #{DiodeClient.Contracts.BNS.version(shell, "latest")}")
+    end
+  end
+
   def run(_) do
     IO.puts("Usage: mix bns register <name> <destination>")
     IO.puts("Usage: mix bns unregister <name>")

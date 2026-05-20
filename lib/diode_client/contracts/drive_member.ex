@@ -6,7 +6,7 @@ defmodule DiodeClient.Contracts.DriveMember do
   alias DiodeClient.{Base16, Hash}
   alias DiodeClient.Contracts, as: Contract
 
-  @slot_owner 51
+  # @slot_owner 51
   @slot_members_list 53
   @slot_drive_address 54
   @slot_addtl_drive_addresses 55
@@ -14,29 +14,29 @@ defmodule DiodeClient.Contracts.DriveMember do
   @slot_target 0x360894A13BA1A3210667C828492DB98DCA3E2076CC3735A920A3CA505D382BBC
   @slot_factory 0xB53127684A568B3173AE13B9F8A6016E243E63B6E8EE1178D6A717850B5D6103
 
-  def transfer_ownership(shell, address, new_owner) do
-    cast(shell, address, "transferOwnership", ["address"], [new_owner])
+  def transfer_ownership(shell, address, new_owner, opts \\ []) do
+    cast(shell, address, "transferOwnership", ["address"], [new_owner], opts)
   end
 
   # def set_drive(address, drive_address) do
   #   cast(address, "SetDrive", ["address"], [drive_address])
   # end
 
-  def add_drive(shell, address, drive_address) do
-    cast(shell, address, "AddDrive", ["address"], [drive_address])
+  def add_drive(shell, address, drive_address, opts \\ []) do
+    cast(shell, address, "AddDrive", ["address"], [drive_address], opts)
   end
 
-  def add_member(shell, address, member) do
-    cast(shell, address, "AddMember", ["address"], [member])
+  def add_member(shell, address, member, opts \\ []) do
+    cast(shell, address, "AddMember", ["address"], [member], opts)
   end
 
-  def remove_member(shell, address, member) do
-    cast(shell, address, "RemoveMember", ["address"], [member])
+  def remove_member(shell, address, member, opts \\ []) do
+    cast(shell, address, "RemoveMember", ["address"], [member], opts)
   end
 
   # todo
-  def submit_transaction(shell, address, drive_address = <<_::160>>, tx) do
-    cast(shell, address, "SubmitTransaction", ["address", "bytes"], [drive_address, tx])
+  def submit_transaction(shell, address, drive_address = <<_::160>>, tx, opts \\ []) do
+    cast(shell, address, "SubmitTransaction", ["address", "bytes"], [drive_address, tx], opts)
   end
 
   def owner(shell, address, block) do
@@ -52,15 +52,23 @@ defmodule DiodeClient.Contracts.DriveMember do
   end
 
   def owner?(shell, address, block) do
-    Contract.Utils.address(shell, address, @slot_owner, block) || false
+    if shell.get_account_root(address) != nil do
+      Contract.Utils.call(shell, address, "owner", [], [], "address", block)
+    else
+      false
+    end
   end
 
   def drive_address(shell, address, block) do
     Contract.Utils.address(shell, address, @slot_drive_address, block) || <<0::256>>
   end
 
-  def addtl_drive_addresses(shell, address, block) do
+  def addtl_drive_addresses(shell = DiodeClient.Shell, address, block) do
     Contract.Utils.list_at(shell, address, @slot_addtl_drive_addresses, block)
+  end
+
+  def addtl_drive_addresses(shell, address, block) do
+    Contract.Utils.call(shell, address, "Drives", [], [], "address[]", block)
   end
 
   def proxy_factory(shell, address, block) do
@@ -113,7 +121,7 @@ defmodule DiodeClient.Contracts.DriveMember do
     shell.get_account_root(address, block)
   end
 
-  defp cast(shell, address, name, types, args) do
-    shell.send_transaction(address, name, types, args)
+  defp cast(shell, address, name, types, args, opts) do
+    shell.send_transaction(address, name, types, args, opts)
   end
 end
