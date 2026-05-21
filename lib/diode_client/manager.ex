@@ -375,7 +375,10 @@ defmodule DiodeClient.Manager do
         {:noreply, schedule_update(state)}
 
       {nil, _conns} ->
-        Logger.debug("Connection down: #{inspect(pid)} #{inspect(reason)}")
+        if reason != :normal do
+          Logger.debug("Connection down: #{inspect(pid)} #{inspect(reason)}")
+        end
+
         {:noreply, state}
     end
   end
@@ -687,17 +690,27 @@ defmodule DiodeClient.Manager do
 
   defp update(state) do
     state = update_peaks(state)
-    # Compute connected once and reuse for pids filter and update_best
-    connected = connected(state)
-    connected_list = Map.values(connected)
-    pids = Enum.map(connected_list, fn %Info{pid: pid} -> pid end)
-    best = Enum.filter(state.best, fn pid -> pid in pids end)
+    connected_list = Map.values(connected(state))
+    viable_best = Enum.filter(state.best, &best_pid_viable?(state, &1))
 
-    if best == [] or
+    if viable_best == [] or
          System.os_time(:second) - state.best_timestamp > 30 do
       update_best(state, connected_list)
     else
-      %{state | best: best}
+      %{state | best: viable_best}
+    end
+  end
+
+  # Best PID is still usable: live connection, authenticated, peaks at least reported.
+  defp best_pid_viable?(%Manager{conns: conns, shells: shells, peaks: reported}, pid) do
+    case Map.get(conns, pid) do
+      %Info{server_address: addr, peaks: conn_peaks} when addr != nil ->
+        Enum.all?(shells, fn shell ->
+          block_number(Map.get(conn_peaks, shell)) >= block_number(Map.get(reported, shell))
+        end)
+
+      _ ->
+        false
     end
   end
 
@@ -850,15 +863,15 @@ defmodule DiodeClient.Manager do
   end
 
   defp update_best(
-         state = %Manager{waiting: waiting, best: prev_best, physical_peaks: peaks},
+         state = %Manager{waiting: waiting, best: prev_best, peaks: reported_peaks},
          connected_list
        ) do
     new_best =
       connected_list
-      # Filter out nodes that have a lower peak than the current best
+      # Use reported peaks (same threshold as connected/1), not physical_peaks.
       |> Enum.filter(fn %Info{peaks: conn_peaks} ->
-        Enum.all?(peaks, fn {shell, peak} ->
-          block_number(peak) <= block_number(conn_peaks[shell])
+        Enum.all?(reported_peaks, fn {shell, peak} ->
+          block_number(peak) <= block_number(Map.get(conn_peaks, shell))
         end)
       end)
       # Sort by latency
@@ -888,7 +901,10 @@ defmodule DiodeClient.Manager do
           best_timestamp: System.os_time(:second)
       }
     else
-      %Manager{state | best: []}
+      # Keep previous best while still viable (e.g. transient < min_connections quorum).
+      best = Enum.filter(prev_best, &best_pid_viable?(state, &1))
+
+      %Manager{state | best: best}
     end
   end
 
@@ -1031,5 +1047,62 @@ defmodule DiodeClient.Manager do
         new_state = stop_local_peak_poller_if_unsubscribed(shell, new_state)
         {:ok, new_state}
     end
+  end
+
+  # Test-only helpers for diagnosing "Best connection changed" log behavior.
+  @doc false
+  def __test_simulate_update__(state) do
+    prev_best = state.best
+    prev_urls = __test_best_urls__(state, prev_best)
+
+    state = update_peaks(state)
+    connected_map = connected(state)
+    connected_list = Map.values(connected_map)
+    viable_best = Enum.filter(state.best, &best_pid_viable?(state, &1))
+
+    recompute_reason =
+      cond do
+        viable_best == [] -> :best_not_viable
+        System.os_time(:second) - state.best_timestamp > 30 -> :timestamp_expired
+        true -> :no_recompute
+      end
+
+    {state, would_log} =
+      case recompute_reason do
+        :no_recompute ->
+          {%{state | best: viable_best}, false}
+
+        _ ->
+          prev_for_log = state.best
+          state = update_best(state, connected_list)
+          {state, prev_for_log != state.best}
+      end
+
+    new_best = state.best
+    new_urls = __test_best_urls__(state, new_best)
+
+    diag = %{
+      prev_best: prev_best,
+      new_best: new_best,
+      prev_urls: prev_urls,
+      new_urls: new_urls,
+      would_log: would_log,
+      pids_changed: prev_best != new_best,
+      urls_unchanged_pids_changed: prev_urls == new_urls and prev_best != new_best,
+      recompute_reason: recompute_reason,
+      connected_count: map_size(connected_map)
+    }
+
+    {state, diag}
+  end
+
+  @doc false
+  def __test_best_urls__(state, pids) do
+    Enum.map(pids, fn pid ->
+      case Map.get(state.conns, pid) do
+        %Info{server_url: url} -> url
+        _ -> nil
+      end
+    end)
   end
 end
