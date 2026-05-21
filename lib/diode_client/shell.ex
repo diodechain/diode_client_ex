@@ -129,6 +129,13 @@ defmodule DiodeClient.Shell do
     Connection.rpc(conn(), ["getnode", key])
   end
 
+  def get_node_record(key) do
+    case get_node(key) do
+      [node] -> DiodeClient.Object.decode_rlp_list!(node)
+      _other -> nil
+    end
+  end
+
   def get_nodes(key) do
     case Connection.rpc(conn(), ["getnodes", key]) do
       [nodes] -> Enum.map(nodes, &DiodeClient.Object.decode_rlp_list!/1)

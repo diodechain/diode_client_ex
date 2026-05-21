@@ -27,4 +27,24 @@ defmodule DiodeClient.Contracts.NodeRegistry do
       block
     )
   end
+
+  def node(address, block \\ nil) do
+    # struct Node {
+    #   address accountant;
+    #   address nodeAddress;
+    #   uint256 stake;
+
+    [accountant, node_address, stake] =
+      DiodeClient.Contracts.Utils.call(
+        @shell,
+        @address,
+        "nodes",
+        ["address"],
+        [address],
+        "(address,address,uint256)",
+        block
+      )
+
+    %{accountant: accountant, node_address: node_address, stake: stake}
+  end
 end
