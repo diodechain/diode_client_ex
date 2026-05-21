@@ -19,7 +19,8 @@ defmodule DiodeClient.Manager do
     :debounce_timeout,
     :peak_subscribers,
     :peak_subscriber_refs,
-    :local_peak_pollers
+    :local_peak_pollers,
+    :last_reported_uncle_block
   ]
 
   defmodule Info do
@@ -68,7 +69,8 @@ defmodule DiodeClient.Manager do
       debounce_timeout: @initial_debounce_timeout,
       peak_subscribers: %{},
       peak_subscriber_refs: %{},
-      local_peak_pollers: %{}
+      local_peak_pollers: %{},
+      last_reported_uncle_block: %{}
     }
 
     {:ok, state, {:continue, :init}}
@@ -714,7 +716,15 @@ defmodule DiodeClient.Manager do
     end
   end
 
-  defp physical_peak_for_shell(shell, connected, len, drop, min_agreement, last_peaks) do
+  defp physical_peak_for_shell(
+         shell,
+         connected,
+         len,
+         drop,
+         min_agreement,
+         last_peaks,
+         last_reported_uncle_block
+       ) do
     blocks = Enum.map(connected, fn %Info{peaks: peaks} -> peaks[shell] end)
     # Precompute block_number once per block to avoid hundreds of Rlpx.bin2uint calls
     blocks_with_num = Enum.map(blocks, fn b -> {b, block_number(b)} end)
@@ -741,29 +751,37 @@ defmodule DiodeClient.Manager do
     candidates =
       Enum.group_by(blocks_at_peak, fn block -> Map.fetch!(hash_cache, block) end)
 
-    if map_size(candidates) > 1 do
-      Logger.debug(
-        "Multiple uncle blocks with the same block_number=#{peak_num} found for shell #{shell}"
-      )
-    end
+    last_reported_uncle_block =
+      if map_size(candidates) > 1 and Map.get(last_reported_uncle_block, shell) != peak_num do
+        Logger.debug(
+          "Multiple uncle blocks with the same block_number=#{peak_num} found for shell #{shell}"
+        )
+
+        Map.put(last_reported_uncle_block, shell, peak_num)
+      else
+        last_reported_uncle_block
+      end
 
     result = resolve_peak_from_candidates(candidates)
     last_peak_num = block_number(last_peaks[shell])
     peak_num = peak_num || 0
 
-    cond do
-      result == nil ->
-        {shell, last_peaks[shell]}
+    peak =
+      cond do
+        result == nil ->
+          last_peaks[shell]
 
-      peak_num <= 0 ->
-        {shell, last_peaks[shell]}
+        peak_num <= 0 ->
+          last_peaks[shell]
 
-      length(elem(result, 0)) >= min_agreement and peak_num > last_peak_num ->
-        {shell, elem(result, 1)}
+        length(elem(result, 0)) >= min_agreement and peak_num > last_peak_num ->
+          elem(result, 1)
 
-      true ->
-        {shell, last_peaks[shell]}
-    end
+        true ->
+          last_peaks[shell]
+      end
+
+    {{shell, peak}, last_reported_uncle_block}
   end
 
   defp resolve_peak_from_candidates(candidates) do
@@ -783,7 +801,13 @@ defmodule DiodeClient.Manager do
     end
   end
 
-  defp update_peaks(state = %Manager{physical_peaks: last_peaks, shells: shells}) do
+  defp update_peaks(
+         state = %Manager{
+           physical_peaks: last_peaks,
+           shells: shells,
+           last_reported_uncle_block: last_reported_uncle_block
+         }
+       ) do
     connected = Map.values(connected(state))
     len = length(connected)
     min_agreement = min(2, min_connections())
@@ -798,11 +822,21 @@ defmodule DiodeClient.Manager do
       end
 
     # Get the highest peak for each shell
-    physical_peaks =
-      for shell <- shells do
-        physical_peak_for_shell(shell, connected, len, drop, min_agreement, last_peaks)
-      end
-      |> Map.new()
+    {physical_peaks, last_reported_uncle_block} =
+      Enum.reduce(shells, {%{}, last_reported_uncle_block}, fn shell, {peaks, reported} ->
+        {{shell, peak}, reported} =
+          physical_peak_for_shell(
+            shell,
+            connected,
+            len,
+            drop,
+            min_agreement,
+            last_peaks,
+            reported
+          )
+
+        {Map.put(peaks, shell, peak), reported}
+      end)
 
     best_peaks =
       state.best
@@ -844,7 +878,8 @@ defmodule DiodeClient.Manager do
       | physical_peaks: physical_peaks,
         peaks: reported_peaks,
         waiting_for_peak: waiting_for_peak,
-        debounce_timeout: debounce_timeout
+        debounce_timeout: debounce_timeout,
+        last_reported_uncle_block: last_reported_uncle_block
     }
   end
 
