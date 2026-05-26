@@ -1,5 +1,11 @@
-defmodule Mix.Tasks.Resolve do
-  @moduledoc false
+defmodule Mix.Tasks.Diode.Resolve do
+  @moduledoc """
+  Resolves an Ethereum address or BNS name (drive ownership, members, aliases).
+  """
+  @shortdoc "Resolve an address or BNS name"
+
+  use Mix.Task
+
   alias DiodeClient.{Base16, Contracts}
 
   def run([address]) do
@@ -11,7 +17,7 @@ defmodule Mix.Tasks.Resolve do
   end
 
   def run(_) do
-    IO.puts("Usage: mix resolve <address>")
+    IO.puts("Usage: mix diode.resolve <address>")
     System.halt(1)
   end
 

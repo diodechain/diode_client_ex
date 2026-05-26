@@ -1,5 +1,11 @@
-defmodule Mix.Tasks.Nodes do
-  @moduledoc false
+defmodule Mix.Tasks.Diode.Nodes do
+  @moduledoc """
+  List or fetch Diode network nodes (`mix diode.nodes list`, `mix diode.nodes get <address>`).
+  """
+  @shortdoc "List or fetch Diode network nodes"
+
+  use Mix.Task
+
   import DiodeClient.Object.Server
   alias DiodeClient.{Base16, Hash}
 
@@ -8,6 +14,11 @@ defmodule Mix.Tasks.Nodes do
     Application.ensure_all_started(:diode_client)
     DiodeClient.ensure_wallet()
     process(args)
+  end
+
+  def process([]) do
+    Mix.shell().error("Usage: mix diode.nodes list | get <address>")
+    System.halt(1)
   end
 
   def process(["list"]) do

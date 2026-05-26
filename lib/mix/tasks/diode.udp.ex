@@ -1,7 +1,11 @@
 defmodule Mix.Tasks.Diode.Udp do
   @moduledoc """
-  Diode Publish CLI
+  Diode UDP port publish and consume CLI
   """
+  @shortdoc "Publish or consume a Diode UDP port"
+
+  use Mix.Task
+
   require Logger
 
   defp init(whom) do

@@ -51,7 +51,7 @@ defmodule DiodeClient.MixProject do
       maintainers: @maintainers,
       licenses: ["DIODE"],
       links: %{github: @url},
-      files: ~w(lib LICENSE.md mix.exs README.md)
+      files: ~w(docs lib LICENSE.md mix.exs README.md)
     ]
   end
 

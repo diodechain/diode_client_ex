@@ -2,6 +2,10 @@ defmodule Mix.Tasks.Diode.Publish do
   @moduledoc """
   Diode Publish CLI
   """
+  @shortdoc "Listen on a Diode port and echo traffic"
+
+  use Mix.Task
+
   require Logger
 
   defp init() do

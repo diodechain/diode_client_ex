@@ -1,9 +1,13 @@
-defmodule Mix.Tasks.Bns do
+defmodule Mix.Tasks.Diode.Bns do
   @moduledoc """
   BNS CLI
 
   export SEED_LIST=us1.prenet.diode.io
   """
+  @shortdoc "Diode BNS register, unregister, whoami, and version"
+
+  use Mix.Task
+
   alias DiodeClient.{Base16, Contracts, Transaction, Block}
 
   defp init() do
@@ -38,9 +42,9 @@ defmodule Mix.Tasks.Bns do
   end
 
   def run(_) do
-    IO.puts("Usage: mix bns register <name> <destination>")
-    IO.puts("Usage: mix bns unregister <name>")
-    IO.puts("Usage: mix bns whoami")
+    IO.puts("Usage: mix diode.bns register <name> <destination>")
+    IO.puts("Usage: mix diode.bns unregister <name>")
+    IO.puts("Usage: mix diode.bns whoami")
     System.halt(1)
   end
 

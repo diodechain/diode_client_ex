@@ -54,130 +54,62 @@ For example `server_address = "0x389eba94b330140579cdce1feb1a6e905ff876e6"`
   end)
 ```
 
-And the client. Here insert in the server address the address that has been printed above.
-For example `server_address = "0x389eba94b330140579cdce1feb1a6e905ff876e6"`
-
-```elixir
-  # Client:
-  server_address = "0x389eba94b330140579cdce1feb1a6e905ff876e6"
-  DiodeClient.interface_add("example_client_interface")
-
-  spawn_link(fn ->
-    {:ok, ssl} = DiodeClient.port_connect(server_address, 5000)
-    :ssl.controlling_process(ssl, self())
-    :ssl.setopts(ssl, [packet: :line, active: true])
-    Enum.reduce_while(1..10, nil, fn _, _ ->
-      receive do
-        {:ssl, _ssl, msg} -> {:cont, IO.inspect(msg)}
-        other -> {:halt, IO.inspect(other)}
-      end
-    end)
-    :ssl.close(ssl)
-    IO.puts("closed!")
-  end)
-```
-
 ## Blockchain Interaction
 
-For limited access to supported blockchain source of truth data :diode_client supports reading from smart contracts and calling contract methods. For each supported blockchain there is a `Shell` configured, currently supported blockchains are:
+For limited access to supported blockchain source of truth data `:diode_client` supports reading from smart contracts and calling contract methods. For each supported blockchain there is a `Shell` configured, currently supported blockchains are:
 
-- Diode L1 (DiodeClient.Shell) - deprecated
-- Moonbeam (Diodeclient.Shell.Moonbeam) - https://moonbeam.network/
-- Oasis Sapphire (DiodeClient.Shell.OasisSapphire) - https://oasis.net/sapphire
+- Diode L1 (`DiodeClient.Shell`) - deprecated
+- Moonbeam (`DiodeClient.Shell.Moonbeam`) - https://moonbeam.network/
+- Oasis Sapphire (`DiodeClient.Shell.OasisSapphire`) - https://oasis.net/sapphire
+- Anvil (`DiodeClient.Shell.Anvil`) – local test chain from [Foundry](https://getfoundry.sh/); see [docs/anvil.md](docs/anvil.md) for test setup
 
-Each of these support `call/5` and other methods to read contract data and send transactions.
-
-- **Anvil** (DiodeClient.Shell.Anvil) – local test chain from [Foundry](https://getfoundry.sh/). Use it in **unit and integration tests** so downstream libraries can run tests against a temporary chain without hitting real networks. RPC URL and chain ID are configurable via `ANVIL_RPC_URL` (default `http://127.0.0.1:8545`) and `ANVIL_CHAIN_ID` (default `31337`).
+Each shell supports `call/5` and other methods to read contract data and send transactions.
 
 Example of making a ZTNA contract call on Oasis Sapphire:
 
 ```elixir
-alias Diodeclient.{Base16, Shell}
+alias DiodeClient.{Base16, Shell}
 
 Shell.OasisSapphire.call(
-  Base16.decode("0xb78700e7254F54b418bdF6DE7109128D1Fe8E8DD"), 
-  "getPropertyValue", 
-  ["address", "string"], 
-  [Base16.decode("0x90983fc294577b6f00CBd5D3b26aDf2e85Ca2Cac"), "public"], 
+  Base16.decode("0xb78700e7254F54b418bdF6DE7109128D1Fe8E8DD"),
+  "getPropertyValue",
+  ["address", "string"],
+  [Base16.decode("0x90983fc294577b6f00CBd5D3b26aDf2e85Ca2Cac"), "public"],
   result_types: "string"
 )
-
 ```
 
-### Using the Anvil shell in downstream unit tests
+## Mix tasks
 
-Libraries that depend on `:diode_client` can run tests against a local Anvil chain so they don’t touch real networks. Add the following to your **test helper** and tag tests that need Anvil.
+When using this repo as a dependency, run these from your application root (they start `:diode_client` and use your configured wallet). Run `mix help` for the full list or `mix help <task>` for details.
 
-**Prerequisites**
+| Task | Description |
+| ---- | ----------- |
+| `mix diode.bns` | BNS register, unregister, whoami, version |
+| `mix diode.resolve` | Resolve an address or BNS name (drive, members) |
+| `mix diode.nodes` | List or fetch Diode network nodes |
+| `mix diode.get_object` | Print a Diode ticket object for an address |
+| `mix diode.publish` | Listen on a port and echo traffic |
+| `mix diode.udp` | Publish or consume a Diode UDP port |
+| `mix diode.evm_call` | Trace an `eth_call` via `cast` (Oasis Sapphire) |
+| `mix diode.evm_transaction` | Send a test Oasis Sapphire transaction via `cast` |
 
-- [Foundry](https://getfoundry.sh/) (`anvil` and `forge` on `PATH`). Install with: `curl -L https://foundry.paradigm.xyz | bash` then `foundryup`.
-- Optional: [diode_contract](https://github.com/diodechain/diode_contract) and `ANVIL_CONTRACT_REPO_PATH` if you need `DiodeClient.Contracts.Factory.contracts(DiodeClient.Shell.Anvil)` (e.g. identity/factory tests).
+Examples:
 
-**Starting Anvil for tests**
+```bash
+mix diode.bns whoami
+mix diode.bns register myname.diode 0x...
+mix diode.resolve 0x...
+mix diode.nodes get 0x...
+mix diode.get_object 0x...
+mix diode.publish 5000
+mix diode.udp publish 5000
+mix diode.udp consume 0x... 5000
+mix diode.evm_call request.json
+mix diode.evm_transaction
+```
 
-- **Manual**: In a separate terminal run `anvil` (default: `http://127.0.0.1:8545`). Leave it running while you run `mix test`.
-- **Helper (recommended)**: Call `DiodeClient.Anvil.Helper.start_anvil()` from your `test/test_helper.exs` before `ExUnit.start()`. It spawns Anvil in the background and waits until the RPC is reachable (or times out). If Foundry is not installed or Anvil fails to start, exclude `:anvil` tests so `mix test` still passes. See the test_helper examples below.
-
-**Initialization in `test/test_helper.exs`**
-
-1. **Start Anvil in background + wallet** (recommended; `mix test` works with no manual Anvil):
-
-   ```elixir
-   case DiodeClient.Anvil.Helper.start_anvil() do
-     {:ok, _} -> :ok
-     {:error, _} -> ExUnit.configure(exclude: [anvil: true])
-   end
-   DiodeClient.Anvil.Helper.ensure_test_env(wallet: "test_anvil")
-   ExUnit.start()
-   ```
-
-2. **Anvil only** (you start Anvil manually; no contract deployment):
-
-   ```elixir
-   DiodeClient.Anvil.Helper.ensure_test_env(wallet: "test_anvil")
-   ExUnit.start()
-   ```
-
-3. **Exclude `:anvil` when Anvil is not running** (so `mix test` passes without Foundry):
-
-   ```elixir
-   if not DiodeClient.Anvil.Helper.anvil_reachable?() do
-     ExUnit.configure(exclude: [anvil: true])
-   end
-   DiodeClient.Anvil.Helper.ensure_test_env(wallet: "test_anvil")
-   ExUnit.start()
-   ```
-
-4. **Anvil + deploy diode_contract** (for tests that need `Factory.contracts(DiodeClient.Shell.Anvil)`):
-
-   ```elixir
-   case DiodeClient.Anvil.Helper.ensure_test_env(wallet: "test_anvil", deploy_contracts: true) do
-     :ok -> :ok
-     {:error, :anvil_not_reachable} -> ExUnit.configure(exclude: [anvil: true])
-     {:error, _} -> ExUnit.configure(exclude: [anvil: true])
-   end
-   ExUnit.start()
-   ```
-
-**In your tests**
-
-- Use `DiodeClient.Shell.Anvil` like any other shell: `Anvil.peak()`, `Anvil.get_account(address)`, `Anvil.call(...)`, etc.
-- Tag tests that require Anvil with `@tag :anvil` so you can exclude them when Anvil is not running: `mix test --exclude anvil`.
-- If you use `ensure_test_env(deploy_contracts: true)`, you can call `DiodeClient.Contracts.Factory.contracts(DiodeClient.Shell.Anvil)` and use factory/drive/BNS addresses in tests.
-
-**Helpers**
-
-- `DiodeClient.Anvil.Helper.start_anvil(opts \\ [])` – spawns Anvil in the background and waits until the RPC is reachable. Options: `:rpc_url`, `:timeout` (ms), `:port`, `:args`. Returns `{:ok, port}` or `{:error, :executable_not_found}` / `{:error, :timeout}`. Use in test_helper so `mix test` works without manually starting Anvil.
-- `DiodeClient.Anvil.Helper.anvil_reachable?(rpc_url \\ nil)` – returns whether the Anvil RPC endpoint is reachable (e.g. to conditionally exclude `:anvil` tests).
-- `DiodeClient.Anvil.Helper.ensure_test_env(opts \\ [])` – one-shot setup: optional wallet (`:wallet`), optional deploy of diode_contract (`:deploy_contracts`), optional `:rpc_url`. Returns `:ok` or `{:error, reason}` (e.g. `:anvil_not_reachable`).
-
-**Environment variables**
-
-| Variable | Default | Description |
-| -------- | ------- | ----------- |
-| `ANVIL_RPC_URL` | `http://127.0.0.1:8545` | Anvil JSON-RPC URL. |
-| `ANVIL_CHAIN_ID` | `31337` | Anvil chain ID. |
-| `ANVIL_CONTRACT_REPO_PATH` | (none) | Path to a clone of [diode_contract](https://github.com/diodechain/diode_contract); if unset, deployment clones to a temp dir. |
+For BNS tasks, set `SEED_LIST` to reach the network (e.g. `export SEED_LIST=us1.prenet.diode.io`).
 
 ## Encryption and Authentication
 
