@@ -455,12 +455,15 @@ defmodule DiodeClient.Connection do
     me = self()
     alt = DiodeClient.connections() |> Enum.find(fn pid -> pid != me end)
 
-    local =
+    preferred_server_ids =
       case DiodeClient.Manager.get_connection?() do
-        ^me -> <<1>> <> server_address(alt)
-        nil -> <<1>> <> server_address(alt)
-        pid -> <<0>> <> server_address(pid)
+        ^me -> [Wallet.address!(server_wallet), server_address(alt)]
+        nil -> [Wallet.address!(server_wallet), server_address(alt)]
+        pid -> [server_address(pid), Wallet.address!(server_wallet)]
       end
+
+    timestamp = Block.timestamp(peak)
+    local_address = Ticket.create_local_address(preferred_server_ids, timestamp)
 
     tck =
       if Block.diode?(peak) do
@@ -468,7 +471,7 @@ defmodule DiodeClient.Connection do
           server_id: Wallet.address!(server_wallet),
           total_connections: conns,
           total_bytes: paid_bytes + @ticket_size,
-          local_address: local,
+          local_address: local_address,
           block_number: Block.number(peak),
           block_hash: Block.hash(peak),
           fleet_contract: DiodeClient.fleet_address()
@@ -480,7 +483,7 @@ defmodule DiodeClient.Connection do
           chain_id: ticket_shell.chain_id(),
           total_connections: conns,
           total_bytes: paid_bytes + @ticket_size,
-          local_address: local,
+          local_address: local_address,
           fleet_contract: DiodeClient.fleet_address()
         )
       end

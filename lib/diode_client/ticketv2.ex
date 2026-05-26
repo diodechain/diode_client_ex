@@ -1,6 +1,6 @@
 defmodule DiodeClient.TicketV2 do
   @moduledoc false
-  alias DiodeClient.{Wallet, Secp256k1, Hash, ABI}
+  alias DiodeClient.{Wallet, Secp256k1, Hash, ABI, Ticket}
   require Record
 
   Record.defrecord(:ticketv2,
@@ -120,21 +120,22 @@ defmodule DiodeClient.TicketV2 do
 
   # Block number is used as a hint for age of the object to
   # be able to discard older objects. Using epoch is enough
-  def block_number(t = ticketv2(epoch: epoch)), do: epoch * 0xFFFFFFFFFFFFFFFF + total_bytes(t)
+  def block_number(t = ticketv2(epoch: epoch)) do
+    case Ticket.metadata(t) do
+      %{version: vsn = 2, timestamp: timestamp} ->
+        epoch * 0xFFFFFFFFFFFFFFFF + vsn * 0xFFFFFFFFFFFFFFF + timestamp
+
+      _ ->
+        epoch * 0xFFFFFFFFFFFFFFFF + total_bytes(t)
+    end
+  end
+
   def device_signature(ticketv2(device_signature: signature)), do: signature
   def server_signature(ticketv2(server_signature: signature)), do: signature
   def fleet_contract(ticketv2(fleet_contract: fc)), do: fc
   def total_connections(ticketv2(total_connections: tc)), do: tc
   def total_bytes(ticketv2(total_bytes: tb)), do: tb
   def local_address(ticketv2(local_address: la)), do: la
-
-  def preferred_server_ids(ticketv2(server_id: id, local_address: la)) do
-    case la do
-      <<0, addr::binary-size(20)>> -> [addr, id]
-      <<1, addr::binary-size(20)>> -> [id, addr]
-      _ -> [id]
-    end
-  end
 
   def message(tck = ticketv2()) do
     [

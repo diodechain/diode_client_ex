@@ -86,6 +86,7 @@ defmodule Mix.Tasks.Diode.GetObject do
     puts("total_connections", Ticket.total_connections(tck))
     puts("total_bytes", Ticket.total_bytes(tck))
     puts("local_address", format_local_address(Ticket.local_address(tck)))
+    print_metadata(tck)
     puts("preferred_server_ids", format_addresses(Ticket.preferred_server_ids(tck)))
     puts("device_signature", Base16.encode(Ticket.device_signature(tck)))
 
@@ -95,16 +96,27 @@ defmodule Mix.Tasks.Diode.GetObject do
     end
   end
 
-  defp format_local_address(<<pref, addr::binary-size(20)>>) do
+  defp print_metadata(tck) do
+    %{version: version, timestamp: timestamp} = Ticket.metadata(tck)
+
+    puts("metadata_version", version)
+    puts("metadata_timestamp", format_metadata_timestamp(version, timestamp))
+  end
+
+  defp format_metadata_timestamp(2, timestamp), do: Integer.to_string(timestamp)
+  defp format_metadata_timestamp(_version, _timestamp), do: "n/a"
+
+  defp format_local_address(<<pref, addr::binary-size(20)>>) when pref in [0, 1] do
     preference =
       case pref do
         0 -> "alternate first"
         1 -> "server_id first"
-        _ -> "unknown (#{pref})"
       end
 
     "#{preference}, #{Base16.encode(addr)}"
   end
+
+  defp format_local_address(<<2, _meta::binary>>), do: "metadata v2 (RLP-encoded)"
 
   defp format_local_address(la), do: Base16.encode(la)
 

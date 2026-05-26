@@ -1,5 +1,7 @@
 defmodule DiodeClient.Ticket do
   @moduledoc false
+  alias DiodeClient.{Rlp, Rlpx}
+  require Logger
 
   defp mod(tck) do
     case elem(tck, 0) do
@@ -20,7 +22,6 @@ defmodule DiodeClient.Ticket do
   def key(tck), do: mod(tck).key(tck)
   def local_address(tck), do: mod(tck).local_address(tck)
   def message(tck), do: mod(tck).message(tck)
-  def preferred_server_ids(tck), do: mod(tck).preferred_server_ids(tck)
   def raw(tck), do: mod(tck).raw(tck)
   def server_blob(tck), do: mod(tck).server_blob(tck)
   def server_id(tck), do: mod(tck).server_id(tck)
@@ -31,5 +32,48 @@ defmodule DiodeClient.Ticket do
 
   def too_many_bytes?(tck) do
     total_bytes(tck) > 1024 * 1024 * 1024 * 1024 * 1024
+  end
+
+  defmodule Metadata do
+    @moduledoc false
+    defstruct [:version, :preferred, :timestamp]
+  end
+
+  def create_local_address(preferred_server_ids, timestamp)
+      when is_list(preferred_server_ids) and is_integer(timestamp) do
+    metadata = Rlp.encode!(%{"s" => preferred_server_ids, "t" => timestamp})
+    <<2, metadata::binary>>
+  end
+
+  def metadata(tck) do
+    id = server_id(tck)
+
+    case local_address(tck) do
+      <<0, addr::binary-size(20)>> ->
+        struct(Metadata, %{version: 1, preferred: [addr, id]})
+
+      <<1, addr::binary-size(20)>> ->
+        struct(Metadata, %{version: 1, preferred: [id, addr]})
+
+      <<2, meta::binary>> ->
+        case Rlp.decode(meta) do
+          {decoded_list, ""} when is_list(decoded_list) ->
+            decoded = Rlpx.list2map(decoded_list)
+            preferred = Map.get(decoded, "s", []) |> Enum.filter(&is_binary/1)
+            timestamp = Map.get(decoded, "t", "") |> Rlpx.bin2uint()
+            struct(Metadata, %{version: 2, preferred: preferred, timestamp: timestamp})
+
+          other ->
+            Logger.error("Invalid metadata in ticketv2: #{inspect(other)}")
+            struct(Metadata, %{version: 0, preferred: [id]})
+        end
+
+      _ ->
+        struct(Metadata, %{version: 0, preferred: [id]})
+    end
+  end
+
+  def preferred_server_ids(tck) do
+    metadata(tck).preferred
   end
 end
