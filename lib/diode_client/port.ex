@@ -484,31 +484,31 @@ defmodule DiodeClient.Port do
   end
 
   defp server_candidates(destination, options) do
-    preferred_ids =
-      case Shell.get_object(destination) do
-        nil -> []
-        ticket -> Ticket.preferred_server_ids(ticket)
-      end
+    case Shell.get_object(destination) do
+      nil ->
+        []
 
-    Enum.each(preferred_ids, fn addr -> Manager.add_connection_address(addr) end)
+      ticket ->
+        preferred_ids = Ticket.preferred_server_ids(ticket)
+        Enum.each(preferred_ids, fn addr -> Manager.add_connection_address(addr) end)
 
-    conns =
-      Manager.connected_connections()
-      |> Enum.sort_by(fn {_, %{latency: latency}} -> latency end)
+        conns =
+          Manager.connected_connections()
+          |> Enum.sort_by(fn {_, %{latency: latency}} -> latency end)
 
-    {preferred, rest} =
-      Enum.split_with(conns, fn {_, %{server_address: addr}} ->
-        addr in preferred_ids
-      end)
+        {preferred, rest} =
+          Enum.split_with(conns, fn {_, %{server_address: addr}} ->
+            addr in preferred_ids
+          end)
 
-    {seeds, rest} = Enum.split_with(rest, fn {_, %{type: type}} -> type == :seed end)
+        {seeds, rest} = Enum.split_with(rest, fn {_, %{type: type}} -> type == :seed end)
 
-    canidates_by_priority = preferred ++ seeds ++ rest
-
-    if portopen2?(options) do
-      seeds
-    else
-      canidates_by_priority
+        if portopen2?(options) do
+          seeds
+        else
+          preferred ++ seeds ++ rest
+        end
+        |> Enum.take(Keyword.get(options, :limit, 6))
     end
   end
 
