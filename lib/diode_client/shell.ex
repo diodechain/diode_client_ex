@@ -81,7 +81,7 @@ defmodule DiodeClient.Shell do
   end
 
   def get_object(key) do
-    case cached_rpc(["getobject", key]) do
+    case rpc(["getobject", key]) do
       [
         [
           "ticket",

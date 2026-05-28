@@ -67,6 +67,7 @@ defmodule DiodeClient do
     case object do
       :undefined -> false
       {:error, _reason} -> false
+      [nil] -> false
       _other -> true
     end
   end
