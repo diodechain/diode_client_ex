@@ -49,7 +49,7 @@ defmodule DiodeClient.MixProject do
   defp package do
     [
       maintainers: @maintainers,
-      licenses: ["DIODE"],
+      licenses: ["LicenseRef-DIODE"],
       links: %{github: @url},
       files: ~w(docs lib LICENSE.md mix.exs README.md)
     ]
