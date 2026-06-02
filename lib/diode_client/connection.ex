@@ -1069,15 +1069,21 @@ defmodule DiodeClient.Connection do
 
     key = {__MODULE__, :ssl_options, role, wallet}
 
-    case :persistent_term.get(key, nil) do
-      nil ->
-        options = do_ssl_options(role, wallet)
-        :persistent_term.put(key, options)
-        options
+    options =
+      case :persistent_term.get(key, nil) do
+        nil ->
+          options = do_ssl_options(role, wallet)
+          :persistent_term.put(key, options)
+          options
 
-      options ->
-        options
-    end
+        options ->
+          options
+      end
+
+    options
+    |> Keyword.put_new(:nodelay, true)
+    |> Keyword.put_new(:delay_send, false)
+    |> Keyword.put_new(:buffer, 65_536)
   end
 
   defp do_ssl_options(role, wallet) do
