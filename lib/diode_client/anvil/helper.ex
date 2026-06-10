@@ -229,6 +229,14 @@ defmodule DiodeClient.Anvil.Helper do
         # IO.puts("exit:epipe")
         exit(:normal)
 
+      # Exit if the creator process dies to avoid leaking the watcher and Anvil port.
+      {:EXIT, ^creator, _reason} ->
+        exit(:normal)
+
+      # Ignore EXIT signals from other unrelated linked processes during teardown.
+      {:EXIT, _, _} ->
+        await_exit_status(creator, port, data)
+
       {^port, {:data, new_data}} ->
         # IO.puts(new_data)
         data = data <> new_data
