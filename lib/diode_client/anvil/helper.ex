@@ -241,11 +241,11 @@ defmodule DiodeClient.Anvil.Helper do
         # IO.puts(new_data)
         data = data <> new_data
 
-        if creator != nil and String.contains?(data, "Listening on") do
+        if String.contains?(data, "Listening on") do
           send(creator, {self(), :started, port})
           await_exit_status(creator, port, new_data)
         else
-          await_exit_status(creator, port, data <> new_data)
+          await_exit_status(creator, port, data)
         end
 
       {^port, {:exit_status, 0}} ->

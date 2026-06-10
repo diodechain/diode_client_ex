@@ -77,9 +77,7 @@ defmodule Mix.Tasks.Diode.Resolve do
     owner = Contracts.BNS.resolve_name_owner(name)
     puts(level, "BNS owner", Base16.encode(owner))
 
-    if owner != nil do
-      resolve(Base16.encode(owner), level + 1)
-    end
+    resolve(Base16.encode(owner), level + 1)
 
     {name,
      for {name, index} <- Enum.with_index(names) do
