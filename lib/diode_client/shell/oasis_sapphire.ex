@@ -47,11 +47,13 @@ defmodule DiodeClient.Shell.OasisSapphire do
     if meta_transaction do
       wallet = DiodeClient.ensure_wallet()
       from = Wallet.address!(wallet)
-      nonce = Keyword.get(opts, :nonce) || get_meta_nonce(from, peak(), opts)
 
-      create_meta_transaction(address, function_name, types, values, nonce, opts)
-      # |> MetaTransaction.simulate(__MODULE__)
-      |> send_transaction()
+      with nonce when is_integer(nonce) <-
+             Keyword.get(opts, :nonce) || get_meta_nonce(from, peak(), opts),
+           meta_tx <-
+             create_meta_transaction(address, function_name, types, values, nonce, opts) do
+        send_transaction(meta_tx)
+      end
     else
       create_transaction(address, function_name, types, values, opts)
       |> send_transaction()
@@ -79,13 +81,25 @@ defmodule DiodeClient.Shell.OasisSapphire do
       block: peak,
       result_types: "uint"
     )
-    |> case do
+    |> meta_nonce_from_call(id)
+  end
+
+  @doc false
+  def meta_nonce_from_call(result, identity) do
+    case result do
       nonce when is_integer(nonce) ->
         nonce
 
       :revert ->
-        Logger.warning("Identity contract at #{DiodeClient.Base16.encode(id)} reverted")
+        Logger.warning("Identity contract at #{DiodeClient.Base16.encode(identity)} reverted")
         0
+
+      {:error, _} = error ->
+        Logger.warning(
+          "get_meta_nonce: nonce lookup for #{DiodeClient.Base16.encode(identity)} failed: #{inspect(elem(error, 1))}"
+        )
+
+        error
     end
   end
 
