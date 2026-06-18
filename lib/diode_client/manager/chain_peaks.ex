@@ -76,42 +76,62 @@ defmodule DiodeClient.Manager.ChainPeaks do
         heights = trimmed |> Enum.map(&elem(&1, 1)) |> Enum.uniq() |> Enum.sort(:desc)
 
         {peak, uncle_reported} =
-          Enum.reduce_while(heights, {last_peak, last_reported_uncle_block}, fn height,
-                                                                                {acc, reported} ->
-            blocks_at_height =
-              trimmed
-              |> Enum.filter(fn {_, num} -> num == height end)
-              |> Enum.map(&elem(&1, 0))
-
-            candidates = group_by_hash(blocks_at_height)
-
-            reported =
-              if map_size(candidates) > 1 and Map.get(reported, shell) != height do
-                require Logger
-
-                Logger.debug(
-                  "Multiple uncle blocks with the same block_number=#{height} found for shell #{inspect(shell)}"
-                )
-
-                Map.put(reported, shell, height)
-              else
-                reported
-              end
-
-            case resolve_peak_from_candidates(candidates) do
-              {agreement, block} ->
-                if length(agreement) >= majority and height > last_peak_num do
-                  {:halt, {block, reported}}
-                else
-                  {:cont, {acc, reported}}
-                end
-
-              nil ->
-                {:cont, {acc, reported}}
-            end
+          Enum.reduce_while(heights, {last_peak, last_reported_uncle_block}, fn height, acc ->
+            reduce_height(
+              height,
+              shell,
+              trimmed,
+              majority,
+              last_peak_num,
+              acc
+            )
           end)
 
         {peak, uncle_reported}
+    end
+  end
+
+  defp reduce_height(height, shell, trimmed, majority, last_peak_num, {acc, reported}) do
+    if height <= last_peak_num do
+      {:halt, {acc, reported}}
+    else
+      try_height_consensus(height, shell, trimmed, majority, acc, reported)
+    end
+  end
+
+  defp try_height_consensus(height, shell, trimmed, majority, acc, reported) do
+    blocks_at_height =
+      trimmed
+      |> Enum.filter(fn {_, num} -> num == height end)
+      |> Enum.map(&elem(&1, 0))
+
+    candidates = group_by_hash(blocks_at_height)
+    reported = maybe_log_uncle(shell, height, candidates, reported)
+
+    case resolve_peak_from_candidates(candidates) do
+      {agreement, block} ->
+        if length(agreement) >= majority do
+          {:halt, {block, reported}}
+        else
+          {:cont, {acc, reported}}
+        end
+
+      nil ->
+        {:cont, {acc, reported}}
+    end
+  end
+
+  defp maybe_log_uncle(shell, height, candidates, reported) do
+    if map_size(candidates) > 1 and Map.get(reported, shell) != height do
+      require Logger
+
+      Logger.debug(
+        "Multiple uncle blocks with the same block_number=#{height} found for shell #{inspect(shell)}"
+      )
+
+      Map.put(reported, shell, height)
+    else
+      reported
     end
   end
 

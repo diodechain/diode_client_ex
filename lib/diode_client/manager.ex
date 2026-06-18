@@ -703,14 +703,13 @@ defmodule DiodeClient.Manager do
         is_nil(diode_peak) or block_number(diode_block) >= block_number(diode_peak)
 
       ticket_ok =
-        is_nil(ticket_peak) or ticket_block == nil or
-          ticket_epoch(ticket_block) >= ticket_epoch(ticket_peak)
+        is_nil(ticket_peak) or
+          (ticket_block != nil and
+             ticket_epoch(ticket_block) >= ticket_epoch(ticket_peak))
 
       diode_ok and ticket_ok
     end
   end
-
-  defp ticket_epoch(nil), do: 0
 
   defp ticket_epoch(block) do
     if Block.diode?(block) do
@@ -730,13 +729,8 @@ defmodule DiodeClient.Manager do
     |> Map.new()
   end
 
-  defp chain_connection_pids(%Manager{} = state, shell) do
-    peak_num = block_number(Map.get(state.chain_peaks, shell))
-
+  defp chain_connection_pids(state = %Manager{}, shell) do
     ChainPeaks.connected_for_shell(shell, state.conns, state.chain_peaks, min_connections())
-    |> Enum.filter(fn {_pid, %Info{peaks: peaks}} ->
-      block_number(Map.get(peaks, shell)) >= peak_num
-    end)
     |> Enum.sort_by(fn {_pid, %Info{latency: latency}} -> latency end)
     |> Enum.map(fn {pid, _} -> pid end)
   end
