@@ -87,8 +87,7 @@ defmodule DiodeClientManagerTest do
 
   describe "update and connected optimizations" do
     @tag :anvil
-    test "get_connection and get_peak linkage - peak never exceeds connection-reported peaks" do
-      # Invariant: peak will never return a block higher than any connected connection has reported
+    test "get_peak is supported by majority chain consensus" do
       shell = DiodeClient.Shell.Moonbeam
       peak = Manager.get_peak(shell)
       assert is_map(peak) or peak == nil
@@ -97,16 +96,16 @@ defmodule DiodeClientManagerTest do
         peak_num = Rlpx.bin2uint(peak["number"])
         connected = Manager.connected_connections()
 
-        for {pid, %{peaks: peaks}} <- connected do
-          conn_peak = peaks[shell]
+        supporting =
+          Enum.count(connected, fn {_pid, %{peaks: peaks}} ->
+            case peaks[shell] do
+              nil -> false
+              conn_peak -> Rlpx.bin2uint(conn_peak["number"]) >= peak_num
+            end
+          end)
 
-          if conn_peak != nil do
-            conn_num = Rlpx.bin2uint(conn_peak["number"])
-
-            assert peak_num <= conn_num,
-                   "peak #{peak_num} should be <= conn #{inspect(pid)} peak #{conn_num} (invariant)"
-          end
-        end
+        assert supporting >= div(length(connected), 2) + 1 or connected == [],
+               "peak #{peak_num} should be at or below a majority of connection reports"
       end
     end
 

@@ -24,9 +24,9 @@ defmodule DiodeClient.Shell.Common do
       alias DiodeClient.Shell.Common
 
       if __MODULE__ != DiodeClient.Shell and __MODULE__ != DiodeClient.Shell.Anvil do
-        defdelegate cached_rpc(args), to: DiodeClient.Shell
-        defdelegate uncache_rpc(args), to: DiodeClient.Shell
-        defdelegate rpc(args), to: DiodeClient.Shell
+        def rpc(args), do: DiodeClient.Shell.chain_rpc(__MODULE__, args)
+        def cached_rpc(args), do: DiodeClient.Shell.chain_cached_rpc(__MODULE__, args)
+        def uncache_rpc(args), do: DiodeClient.Shell.chain_uncache_rpc(__MODULE__, args)
       end
 
       if __MODULE__ != DiodeClient.Shell.Anvil do
