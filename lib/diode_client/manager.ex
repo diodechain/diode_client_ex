@@ -1,21 +1,31 @@
 defmodule DiodeClient.Manager do
   @moduledoc false
-  alias DiodeClient.{Connection, Manager, Manager.LocalPeakPoller, NodeScorer, Rlpx}
+  alias DiodeClient.{
+    Block,
+    Connection,
+    Manager,
+    Manager.ChainPeaks,
+    Manager.LocalPeakPoller,
+    NodeScorer,
+    Rlpx
+  }
+
   use GenServer
   require Logger
+
+  @ticket_shell DiodeClient.Shell.Moonbeam
 
   defstruct [
     :conns,
     :server_list,
-    :waiting,
+    :waiting_traffic,
     :waiting_for_peak,
-    :best,
-    :physical_peaks,
-    :peaks,
+    :traffic_best,
+    :chain_peaks,
     :online,
     :shells,
     :sticky,
-    :best_timestamp,
+    :traffic_best_timestamp,
     :debounce_timeout,
     :peak_subscribers,
     :peak_subscriber_refs,
@@ -59,13 +69,12 @@ defmodule DiodeClient.Manager do
     state = %Manager{
       conns: %{},
       online: true,
-      physical_peaks: %{},
-      peaks: %{},
+      chain_peaks: %{},
       server_list: seed_list(),
       shells: MapSet.new(default_shells()),
-      waiting: [],
+      waiting_traffic: [],
       waiting_for_peak: %{},
-      best: [],
+      traffic_best: [],
       debounce_timeout: @initial_debounce_timeout,
       peak_subscribers: %{},
       peak_subscriber_refs: %{},
@@ -183,8 +192,7 @@ defmodule DiodeClient.Manager do
   end
 
   @doc """
-    get_connection and get_peak are linked in that peak will never return a block
-    higher than any of the connections returned by get_connection has reported.
+  Returns a low-latency relay for Diode traffic (ports, objects, default RPC).
   """
   def get_connection() do
     GenServer.call(__MODULE__, :get_connection, :infinity)
@@ -222,8 +230,7 @@ defmodule DiodeClient.Manager do
   end
 
   @doc """
-    get_connection and get_peak are linked in that peak will never return a block
-    higher than any of the connections returned by get_connection has reported.
+  Returns the consensus chain peak for `shell` from per-chain supermajority.
   """
   def get_peak(shell) when is_atom(shell) do
     # sanity check that the shell is valid
@@ -248,6 +255,20 @@ defmodule DiodeClient.Manager do
   def unsubscribe_peak(shell) when is_atom(shell) do
     _chain_id = shell.chain_id()
     GenServer.call(__MODULE__, {:unsubscribe_peak, shell}, :infinity)
+  end
+
+  @doc """
+  Returns a relay at the consensus peak for `shell`, preferring low latency.
+  Falls back to `get_connection/0` when no qualifying relay exists.
+  """
+  def get_chain_connection(shell) when is_atom(shell) do
+    _chain_id = shell.chain_id()
+
+    case GenServer.call(__MODULE__, {:get_chain_connection, shell}, :infinity) do
+      pid when is_pid(pid) -> pid
+      [] -> get_connection()
+      pids when is_list(pids) -> Enum.random(pids)
+    end
   end
 
   def connections() do
@@ -390,12 +411,11 @@ defmodule DiodeClient.Manager do
     {:noreply, do_set_online(state, new_online)}
   end
 
-  def handle_cast({:local_peak, shell, block}, state = %Manager{peaks: peaks}) do
-    old_peaks = peaks
-    reported_peaks = %{shell => block}
-    notify_peak_subscribers(state.peak_subscribers, old_peaks, reported_peaks)
+  def handle_cast({:local_peak, shell, block}, state = %Manager{chain_peaks: chain_peaks}) do
+    old_peaks = chain_peaks
+    new_peaks = %{shell => block}
+    notify_peak_subscribers(state.peak_subscribers, old_peaks, new_peaks)
 
-    # Reply to any get_peak waiters
     waiting_for_peak =
       case Map.pop(state.waiting_for_peak, shell) do
         {nil, rest} ->
@@ -408,8 +428,7 @@ defmodule DiodeClient.Manager do
 
     state =
       state
-      |> Map.put(:peaks, Map.put(peaks, shell, block))
-      |> Map.put(:physical_peaks, Map.put(state.physical_peaks, shell, block))
+      |> Map.put(:chain_peaks, Map.put(chain_peaks, shell, block))
       |> Map.put(:waiting_for_peak, waiting_for_peak)
 
     {:noreply, state}
@@ -417,7 +436,7 @@ defmodule DiodeClient.Manager do
 
   @impl true
   def handle_cast({:set_connection, cpid}, state = %Manager{conns: _conns}) do
-    {:noreply, %{state | best: [cpid]}}
+    {:noreply, %{state | traffic_best: [cpid]}}
   end
 
   def handle_cast({:update_info, cpid, info}, state = %Manager{conns: conns}) do
@@ -462,13 +481,13 @@ defmodule DiodeClient.Manager do
     state
   end
 
-  defp do_restart_conn(info, state = %Manager{peaks: peaks, conns: conns}) do
+  defp do_restart_conn(info, state = %Manager{chain_peaks: chain_peaks, conns: conns}) do
     pid =
       case Connection.start_link(info.server_url, info.ports) do
         {:ok, pid} ->
           Process.monitor(pid)
 
-          for {shell, _} <- peaks do
+          for {shell, _} <- chain_peaks do
             safe_send(pid, {:subscribe, shell})
           end
 
@@ -484,7 +503,7 @@ defmodule DiodeClient.Manager do
 
   @impl true
   def handle_call(:online?, _from, state = %Manager{online: online}) do
-    {:reply, online and map_size(connected(state)) > 0, state}
+    {:reply, online and any_authenticated?(state), state}
   end
 
   def handle_call({:set_online, new_online}, _from, state) do
@@ -498,24 +517,19 @@ defmodule DiodeClient.Manager do
   def handle_call(
         {:get_peak, shell},
         from,
-        state = %Manager{peaks: peaks, conns: conns, shells: shells}
+        state = %Manager{chain_peaks: chain_peaks, conns: conns, shells: shells}
       ) do
-    # Local shells (e.g. Anvil) use HTTP/WS; fetch peak directly when not in state
-    if local_shell?(shell) and Map.get(peaks, shell) == nil do
+    if local_shell?(shell) and Map.get(chain_peaks, shell) == nil do
       peak = shell.peak()
 
-      state = %{
-        state
-        | peaks: Map.put(peaks, shell, peak),
-          physical_peaks: Map.put(state.physical_peaks, shell, peak)
-      }
+      state = %{state | chain_peaks: Map.put(chain_peaks, shell, peak)}
 
       {:reply, peak, state}
     else
       state = %{state | shells: MapSet.put(shells, shell)}
       for c <- Map.keys(conns), do: safe_send(c, {:subscribe, shell})
 
-      if peak = Map.get(peaks, shell) do
+      if peak = Map.get(chain_peaks, shell) do
         {:reply, peak, state}
       else
         waiting_for_peak = Map.get(state.waiting_for_peak, shell, []) ++ [from]
@@ -569,26 +583,38 @@ defmodule DiodeClient.Manager do
     end
   end
 
-  def handle_call(:get_connection?, _from, state = %Manager{online: online, best: best}) do
+  def handle_call(:get_connection?, _from, state = %Manager{online: online, traffic_best: best}) do
     {:reply, if(online, do: best, else: []), state}
   end
 
-  def handle_call(:get_connection, from, state = %Manager{online: false, waiting: waiting}) do
-    {:noreply, %Manager{state | waiting: waiting ++ [from]}}
+  def handle_call(
+        :get_connection,
+        from,
+        state = %Manager{online: false, waiting_traffic: waiting}
+      ) do
+    {:noreply, %Manager{state | waiting_traffic: waiting ++ [from]}}
   end
 
-  def handle_call(:get_connection, from, state = %Manager{best: [], waiting: waiting}) do
-    {:noreply, %Manager{state | waiting: waiting ++ [from]}}
+  def handle_call(
+        :get_connection,
+        from,
+        state = %Manager{traffic_best: [], waiting_traffic: waiting}
+      ) do
+    {:noreply, %Manager{state | waiting_traffic: waiting ++ [from]}}
   end
 
-  def handle_call(:get_connection, _from, state = %Manager{best: best}) do
+  def handle_call(:get_connection, _from, state = %Manager{traffic_best: best}) do
     {:reply, best, state}
+  end
+
+  def handle_call({:get_chain_connection, shell}, _from, state) do
+    {:reply, chain_connection_pids(state, shell), state}
   end
 
   def handle_call(
         :get_sticky_connection?,
         _from,
-        state = %Manager{sticky: sticky, online: online, best: best, conns: conns}
+        state = %Manager{sticky: sticky, online: online, traffic_best: best, conns: conns}
       ) do
     pid = Process.whereis(__MODULE__.Sticky)
 
@@ -604,7 +630,7 @@ defmodule DiodeClient.Manager do
         {:reply, nil, state}
 
       true ->
-        connected(state)
+        traffic_viable_conns(state)
         |> Enum.filter(fn {_, %Info{type: type}} -> type == :seed end)
         |> Enum.sort_by(fn {_, %Info{latency: latency}} -> latency end)
         |> List.first()
@@ -632,9 +658,8 @@ defmodule DiodeClient.Manager do
        state
        | server_list: list,
          sticky: nil,
-         best: [],
-         peaks: %{},
-         physical_peaks: %{}
+         traffic_best: [],
+         chain_peaks: %{}
      })}
   end
 
@@ -655,27 +680,59 @@ defmodule DiodeClient.Manager do
     end
   end
 
-  defp connected(%Manager{conns: conns, shells: shells, peaks: peaks}) do
-    connected =
-      Enum.filter(conns, fn {_, %Info{server_address: addr, peaks: conn_peaks}} ->
-        addr != nil and
-          Enum.all?(shells, fn shell ->
-            block_number(conn_peaks[shell]) >= block_number(peaks[shell])
-          end)
-      end)
-      |> Map.new()
-
-    # Reject single node connections
-    if map_size(connected) < min_connections() do
-      %{}
-    else
-      connected
-    end
+  defp any_authenticated?(%Manager{conns: conns}) do
+    Enum.any?(conns, fn {_pid, %Info{server_address: addr}} -> addr != nil end)
   end
 
   defp min_connections() do
-    # When the node list is force set by the user we ignore the usual minimum requirement.
     min(3, map_size(seed_list()))
+  end
+
+  defp traffic_viable?(%Info{server_address: addr, peaks: conn_peaks}, %Manager{
+         chain_peaks: chain_peaks
+       }) do
+    if addr == nil do
+      false
+    else
+      diode_peak = Map.get(chain_peaks, DiodeClient.Shell)
+      ticket_peak = Map.get(chain_peaks, @ticket_shell)
+      diode_block = Map.get(conn_peaks, DiodeClient.Shell)
+      ticket_block = Map.get(conn_peaks, @ticket_shell)
+
+      diode_ok =
+        is_nil(diode_peak) or block_number(diode_block) >= block_number(diode_peak)
+
+      ticket_ok =
+        is_nil(ticket_peak) or
+          (ticket_block != nil and
+             ticket_epoch(ticket_block) >= ticket_epoch(ticket_peak))
+
+      diode_ok and ticket_ok
+    end
+  end
+
+  defp ticket_epoch(block) do
+    if Block.diode?(block) do
+      Block.epoch(block)
+    else
+      case Map.get(block, "timestamp") do
+        nil -> 0
+        "" -> 0
+        _ -> Block.epoch(block)
+      end
+    end
+  end
+
+  defp traffic_viable_conns(state = %Manager{conns: conns}) do
+    conns
+    |> Enum.filter(fn {_pid, info} -> traffic_viable?(info, state) end)
+    |> Map.new()
+  end
+
+  defp chain_connection_pids(state = %Manager{}, shell) do
+    ChainPeaks.connected_for_shell(shell, state.conns, state.chain_peaks, min_connections())
+    |> Enum.sort_by(fn {_pid, %Info{latency: latency}} -> latency end)
+    |> Enum.map(fn {pid, _} -> pid end)
   end
 
   defp schedule_update(state) do
@@ -691,170 +748,58 @@ defmodule DiodeClient.Manager do
   end
 
   defp update(state) do
-    state = update_peaks(state)
-    connected_list = Map.values(connected(state))
-    viable_best = Enum.filter(state.best, &best_pid_viable?(state, &1))
+    state = update_chain_peaks(state)
+    traffic_candidates = Map.values(traffic_viable_conns(state))
+    viable_best = Enum.filter(state.traffic_best, &traffic_best_pid_viable?(state, &1))
 
     if viable_best == [] or
-         System.os_time(:second) - state.best_timestamp > 30 do
-      update_best(state, connected_list)
+         System.os_time(:second) - state.traffic_best_timestamp > 30 do
+      update_traffic_best(state, traffic_candidates)
     else
-      %{state | best: viable_best}
+      %{state | traffic_best: viable_best}
     end
   end
 
-  # Best PID is still usable: live connection, authenticated, peaks at least reported.
-  defp best_pid_viable?(%Manager{conns: conns, shells: shells, peaks: reported}, pid) do
+  defp traffic_best_pid_viable?(state = %Manager{conns: conns}, pid) do
     case Map.get(conns, pid) do
-      %Info{server_address: addr, peaks: conn_peaks} when addr != nil ->
-        Enum.all?(shells, fn shell ->
-          block_number(Map.get(conn_peaks, shell)) >= block_number(Map.get(reported, shell))
-        end)
-
-      _ ->
-        false
+      %Info{} = info -> traffic_viable?(info, state)
+      _ -> false
     end
   end
 
-  defp physical_peak_for_shell(
-         shell,
-         connected,
-         len,
-         drop,
-         min_agreement,
-         last_peaks,
-         last_reported_uncle_block
-       ) do
-    blocks = Enum.map(connected, fn %Info{peaks: peaks} -> peaks[shell] end)
-    # Precompute block_number once per block to avoid hundreds of Rlpx.bin2uint calls
-    blocks_with_num = Enum.map(blocks, fn b -> {b, block_number(b)} end)
-
-    take_count = max(1, len - drop)
-
-    peak_num =
-      blocks_with_num
-      |> Enum.map(&elem(&1, 1))
-      |> Enum.sort(:desc)
-      |> Enum.at(take_count - 1)
-
-    blocks_at_peak =
-      if peak_num != nil do
-        Enum.filter(blocks_with_num, fn {_, n} -> n == peak_num end)
-        |> Enum.map(&elem(&1, 0))
-      else
-        []
-      end
-
-    # Cache block_hash per unique block to avoid repeated Base16.encode
-    hash_cache = Map.new(Enum.uniq(blocks_at_peak), fn b -> {b, block_hash(b)} end)
-
-    candidates =
-      Enum.group_by(blocks_at_peak, fn block -> Map.fetch!(hash_cache, block) end)
-
-    last_reported_uncle_block =
-      if map_size(candidates) > 1 and Map.get(last_reported_uncle_block, shell) != peak_num do
-        Logger.debug(
-          "Multiple uncle blocks with the same block_number=#{peak_num} found for shell #{shell}"
-        )
-
-        Map.put(last_reported_uncle_block, shell, peak_num)
-      else
-        last_reported_uncle_block
-      end
-
-    result = resolve_peak_from_candidates(candidates)
-    last_peak_num = block_number(last_peaks[shell])
-    peak_num = peak_num || 0
-
-    peak =
-      cond do
-        result == nil ->
-          last_peaks[shell]
-
-        peak_num <= 0 ->
-          last_peaks[shell]
-
-        length(elem(result, 0)) >= min_agreement and peak_num > last_peak_num ->
-          elem(result, 1)
-
-        true ->
-          last_peaks[shell]
-      end
-
-    {{shell, peak}, last_reported_uncle_block}
-  end
-
-  defp resolve_peak_from_candidates(candidates) do
-    case Enum.sort_by(candidates, fn {_hash, blocks} -> length(blocks) end, :desc) do
-      [{_hash, agreement = [block | _]}] ->
-        {agreement, block}
-
-      [{_hash, agreement = [block | _]}, {_challenger_hash, challenger} | _rest] ->
-        if length(agreement) > length(challenger) do
-          {agreement, block}
-        else
-          nil
-        end
-
-      _ ->
-        nil
-    end
-  end
-
-  defp update_peaks(
+  defp update_chain_peaks(
          state = %Manager{
-           physical_peaks: last_peaks,
+           chain_peaks: last_peaks,
            shells: shells,
-           last_reported_uncle_block: last_reported_uncle_block
+           last_reported_uncle_block: last_reported_uncle_block,
+           conns: conns
          }
        ) do
-    connected = Map.values(connected(state))
-    len = length(connected)
-    min_agreement = min(2, min_connections())
+    min_conn = min_connections()
+    opts = [min_connections: min_conn]
 
-    drop =
-      if len > 1 do
-        # We remove the bottom 20% (but at least 1) of the connected nodes to avoid stale peaks
-        max(1, div(len, 5))
-      else
-        # If there is only one connected node, we don't remove any
-        0
-      end
-
-    # Get the highest peak for each shell
-    {physical_peaks, last_reported_uncle_block} =
+    {chain_peaks, last_reported_uncle_block} =
       Enum.reduce(shells, {%{}, last_reported_uncle_block}, fn shell, {peaks, reported} ->
-        {{shell, peak}, reported} =
-          physical_peak_for_shell(
+        connected =
+          ChainPeaks.connected_for_shell(shell, conns, last_peaks, min_conn)
+          |> Map.values()
+
+        {peak, reported} =
+          ChainPeaks.consensus_peak_for_shell(
             shell,
             connected,
-            len,
-            drop,
-            min_agreement,
-            last_peaks,
-            reported
+            Map.get(last_peaks, shell),
+            reported,
+            opts
           )
 
         {Map.put(peaks, shell, peak), reported}
       end)
 
-    best_peaks =
-      state.best
-      |> Enum.filter(&Map.has_key?(state.conns, &1))
-      |> Enum.map(fn pid -> Map.get(state.conns[pid], :peaks) end)
-
-    reported_peaks =
-      for {shell, _peak} <- physical_peaks do
-        best_shell_peaks = Enum.map(best_peaks, fn peaks -> peaks[shell] end)
-        min_peak = Enum.min_by(best_shell_peaks, fn peak -> block_number(peak) end, fn -> nil end)
-        {shell, min_peak}
-      end
-      |> Map.new()
-
     debounce_timeout =
       if state.debounce_timeout == @initial_debounce_timeout and
-           state.best != [] and
-           not Enum.any?(state.peaks, fn {_shell, peak} -> block_number(peak) == 0 end) do
+           state.traffic_best != [] and
+           not Enum.any?(state.chain_peaks, fn {_shell, peak} -> block_number(peak) == 0 end) do
         5_000
       else
         state.debounce_timeout
@@ -862,7 +807,7 @@ defmodule DiodeClient.Manager do
 
     waiting_for_peak =
       Enum.filter(state.waiting_for_peak, fn {shell, pids} ->
-        if peak = reported_peaks[shell] do
+        if peak = chain_peaks[shell] do
           for pid <- pids, do: GenServer.reply(pid, peak)
           false
         else
@@ -871,12 +816,11 @@ defmodule DiodeClient.Manager do
       end)
       |> Map.new()
 
-    notify_peak_subscribers(state.peak_subscribers, state.peaks, reported_peaks)
+    notify_peak_subscribers(state.peak_subscribers, state.chain_peaks, chain_peaks)
 
     %Manager{
       state
-      | physical_peaks: physical_peaks,
-        peaks: reported_peaks,
+      | chain_peaks: chain_peaks,
         waiting_for_peak: waiting_for_peak,
         debounce_timeout: debounce_timeout,
         last_reported_uncle_block: last_reported_uncle_block
@@ -897,19 +841,12 @@ defmodule DiodeClient.Manager do
     :ok
   end
 
-  defp update_best(
-         state = %Manager{waiting: waiting, best: prev_best, peaks: reported_peaks},
-         connected_list
+  defp update_traffic_best(
+         state = %Manager{waiting_traffic: waiting, traffic_best: prev_best},
+         traffic_candidates
        ) do
     new_best =
-      connected_list
-      # Use reported peaks (same threshold as connected/1), not physical_peaks.
-      |> Enum.filter(fn %Info{peaks: conn_peaks} ->
-        Enum.all?(reported_peaks, fn {shell, peak} ->
-          block_number(peak) <= block_number(Map.get(conn_peaks, shell))
-        end)
-      end)
-      # Sort by latency
+      traffic_candidates
       |> Enum.sort_by(fn %Info{latency: latency} -> latency end)
 
     if peak = List.first(new_best) do
@@ -924,29 +861,26 @@ defmodule DiodeClient.Manager do
             "#{url}: #{trunc(latency)}"
           end)
 
-        Logger.debug("Best connection changed to [#{servers}]")
+        Logger.debug("Traffic best connection changed to [#{servers}]")
       end
 
       for from <- waiting, do: GenServer.reply(from, new_best_pids)
 
       %Manager{
         state
-        | best: new_best_pids,
-          waiting: [],
-          best_timestamp: System.os_time(:second)
+        | traffic_best: new_best_pids,
+          waiting_traffic: [],
+          traffic_best_timestamp: System.os_time(:second)
       }
     else
-      # Keep previous best while still viable (e.g. transient < min_connections quorum).
-      best = Enum.filter(prev_best, &best_pid_viable?(state, &1))
+      best = Enum.filter(prev_best, &traffic_best_pid_viable?(state, &1))
 
-      %Manager{state | best: best}
+      %Manager{state | traffic_best: best}
     end
   end
 
   defp block_number(nil), do: 0
   defp block_number(block), do: Rlpx.bin2uint(block["number"])
-  defp block_hash(nil), do: nil
-  defp block_hash(block), do: DiodeClient.Base16.encode(block["block_hash"])
 
   @impl true
   def handle_continue(:init, state) do
@@ -988,7 +922,7 @@ defmodule DiodeClient.Manager do
 
       not new_online ->
         for pid <- pids, do: safe_send(pid, :stop)
-        %{state | server_list: seed_list(), conns: %{}, best: []}
+        %{state | server_list: seed_list(), conns: %{}, traffic_best: []}
     end
   end
 
@@ -1087,34 +1021,41 @@ defmodule DiodeClient.Manager do
   # Test-only helpers for diagnosing "Best connection changed" log behavior.
   @doc false
   def __test_simulate_update__(state) do
-    prev_best = state.best
+    prev_best = state.traffic_best
     prev_urls = __test_best_urls__(state, prev_best)
 
-    state = update_peaks(state)
-    connected_map = connected(state)
-    connected_list = Map.values(connected_map)
-    viable_best = Enum.filter(state.best, &best_pid_viable?(state, &1))
+    state = update_chain_peaks(state)
+    traffic_candidates = Map.values(traffic_viable_conns(state))
+    viable_best = Enum.filter(state.traffic_best, &traffic_best_pid_viable?(state, &1))
 
     recompute_reason =
       cond do
         viable_best == [] -> :best_not_viable
-        System.os_time(:second) - state.best_timestamp > 30 -> :timestamp_expired
+        System.os_time(:second) - state.traffic_best_timestamp > 30 -> :timestamp_expired
         true -> :no_recompute
       end
 
     {state, would_log} =
       case recompute_reason do
         :no_recompute ->
-          {%{state | best: viable_best}, false}
+          {%{state | traffic_best: viable_best}, false}
 
         _ ->
-          prev_for_log = state.best
-          state = update_best(state, connected_list)
-          {state, prev_for_log != state.best}
+          prev_for_log = state.traffic_best
+          state = update_traffic_best(state, traffic_candidates)
+          {state, prev_for_log != state.traffic_best}
       end
 
-    new_best = state.best
+    new_best = state.traffic_best
     new_urls = __test_best_urls__(state, new_best)
+
+    connected_count =
+      state.shells
+      |> Enum.map(fn shell ->
+        ChainPeaks.connected_for_shell(shell, state.conns, state.chain_peaks, min_connections())
+        |> map_size()
+      end)
+      |> Enum.min(fn -> 0 end)
 
     diag = %{
       prev_best: prev_best,
@@ -1125,7 +1066,7 @@ defmodule DiodeClient.Manager do
       pids_changed: prev_best != new_best,
       urls_unchanged_pids_changed: prev_urls == new_urls and prev_best != new_best,
       recompute_reason: recompute_reason,
-      connected_count: map_size(connected_map)
+      connected_count: connected_count
     }
 
     {state, diag}

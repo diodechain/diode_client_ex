@@ -20,7 +20,11 @@ defmodule DiodeClient.ManagerBestChangeTest do
   @as1_url "as1.prenet.diode.io"
 
   defp block(n) do
-    %{"number" => Rlpx.uint2bin(n), "block_hash" => :crypto.hash(:sha256, <<n>>)}
+    %{
+      "number" => Rlpx.uint2bin(n),
+      "block_hash" => :crypto.hash(:sha256, <<n>>),
+      "timestamp" => Rlpx.uint2bin(n * 6)
+    }
   end
 
   defp peaks(n), do: Map.new(@shells, fn shell -> {shell, block(n)} end)
@@ -45,14 +49,13 @@ defmodule DiodeClient.ManagerBestChangeTest do
     %Manager{
       conns: conns,
       shells: MapSet.new(@shells),
-      physical_peaks: peaks(height),
-      peaks: peaks(height),
-      best: Keyword.get(opts, :best, []),
-      best_timestamp: Keyword.get(opts, :best_timestamp, System.os_time(:second)),
+      chain_peaks: peaks(height),
+      traffic_best: Keyword.get(opts, :best, []),
+      traffic_best_timestamp: Keyword.get(opts, :best_timestamp, System.os_time(:second)),
       debounce_timeout: 100,
       online: true,
       server_list: %{},
-      waiting: [],
+      waiting_traffic: [],
       waiting_for_peak: %{},
       sticky: nil,
       peak_subscribers: %{},
@@ -145,30 +148,27 @@ defmodule DiodeClient.ManagerBestChangeTest do
       {_drop_state, drop_diag} = Manager.__test_simulate_update__(drop_state)
 
       assert drop_diag.connected_count == 0,
-             "stale eu1 with reported peak 100 leaves only 2 qualifying nodes (need 3)"
+             "stale eu1 on moonbeam leaves only 2 qualifying nodes for that shell (need 3)"
 
       assert drop_diag.new_best == [us1],
-             "viable us1 should stay best despite connected quorum flicker"
+             "viable us1 should stay traffic best when eu1 is behind on diode shell"
 
       refute drop_diag.would_log
       refute drop_diag.pids_changed
     end
 
-    test "physical peak ahead of best does not clear best when reported peaks match best" do
+    test "chain peak consensus does not reshuffle traffic best when all relays are viable" do
       eu1 = spawn_conn_holder()
       us1 = spawn_conn_holder()
       as1 = spawn_conn_holder()
 
       conns = %{
-        eu1 => info(@eu1_url, eu1, 100, 100),
+        eu1 => info(@eu1_url, eu1, 105, 100),
         us1 => info(@us1_url, us1, 105, 200),
         as1 => info(@as1_url, as1, 105, 300)
       }
 
-      state =
-        base_state(conns, best: [eu1])
-        |> Map.put(:physical_peaks, peaks(105))
-        |> Map.put(:peaks, peaks(100))
+      state = base_state(conns, best: [eu1], height: 105)
 
       {_state, diag} = Manager.__test_simulate_update__(state)
 
