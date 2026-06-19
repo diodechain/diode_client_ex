@@ -25,27 +25,29 @@ defmodule Mix.Tasks.Diode.Registry do
   end
 
   defp block() do
-    shell = Registry.shell()
-    shell.peak_number(shell.peak()) - 3
+    Registry.shell().peak_number() - 3
   end
 
   def run(["version"]) do
     init()
-    print_header()
-    IO.puts("Version: #{Registry.version(block())}")
+    block = block()
+    print_header(block)
+    IO.puts("Version: #{Registry.version(block)}")
   end
 
   def run(["epoch"]) do
     init()
-    print_header()
-    print_epoch()
+    block = block()
+    print_header(block)
+    print_epoch(block)
   end
 
   def run(["fleets"]) do
     init()
-    print_header()
+    block = block()
+    print_header(block)
 
-    Registry.fleet_array(block())
+    Registry.fleet_array(block)
     |> Enum.with_index(1)
     |> Enum.each(fn {fleet, index} ->
       IO.puts("#{index}. #{Hash.printable(fleet)}")
@@ -54,9 +56,10 @@ defmodule Mix.Tasks.Diode.Registry do
 
   def run(["relays"]) do
     init()
-    print_header()
+    block = block()
+    print_header(block)
 
-    Registry.relay_array(block())
+    Registry.relay_array(block)
     |> Enum.with_index(1)
     |> Enum.each(fn {relay, index} ->
       IO.puts("#{index}. #{Hash.printable(relay)}")
@@ -65,14 +68,16 @@ defmodule Mix.Tasks.Diode.Registry do
 
   def run(["fleet", "0x" <> _ = fleet]) do
     init()
-    print_header()
-    print_fleet(Base16.decode(fleet))
+    block = block()
+    print_header(block)
+    print_fleet(Base16.decode(fleet), block)
   end
 
   def run(["node", "0x" <> _ = fleet, "0x" <> _ = node]) do
     init()
-    print_header()
-    print_node(Base16.decode(fleet), Base16.decode(node))
+    block = block()
+    print_header(block)
+    print_node(Base16.decode(fleet), Base16.decode(node), block)
   end
 
   def run(_) do
@@ -87,17 +92,15 @@ defmodule Mix.Tasks.Diode.Registry do
     """)
   end
 
-  defp print_header() do
+  defp print_header(block) do
     shell = Registry.shell()
-    block = block()
 
     IO.puts("Registry: #{Hash.printable(Registry.address())}")
     IO.puts("Shell:    #{inspect(shell)} @ block #{block}")
     IO.puts("")
   end
 
-  defp print_epoch() do
-    block = block()
+  defp print_epoch(block) do
     epoch = Registry.epoch(block)
     current_epoch = Registry.current_epoch(block)
 
@@ -108,7 +111,7 @@ defmodule Mix.Tasks.Diode.Registry do
     IO.puts("Token:             #{Hash.printable(Registry.token(block))}")
   end
 
-  defp print_fleet(fleet) do
+  defp print_fleet(fleet, block) do
     IO.puts("Fleet: #{Hash.printable(fleet)}")
     IO.puts("")
 
@@ -119,7 +122,7 @@ defmodule Mix.Tasks.Diode.Registry do
       withdrawable_balance: withdrawable_balance,
       current_epoch: current_epoch,
       score: score
-    } = Registry.get_fleet(fleet, block())
+    } = Registry.get_fleet(fleet, block)
 
     IO.puts("exists:                 #{exists}")
     IO.puts("current_balance:        #{format_amount(current_balance)}")
@@ -129,12 +132,12 @@ defmodule Mix.Tasks.Diode.Registry do
     IO.puts("score:                  #{score}")
   end
 
-  defp print_node(fleet, node) do
+  defp print_node(fleet, node, block) do
     IO.puts("Fleet: #{Hash.printable(fleet)}")
     IO.puts("Node:  #{Hash.printable(node)}")
     IO.puts("")
 
-    %{node: node_address, score: score} = Registry.get_node(fleet, node, block())
+    %{node: node_address, score: score} = Registry.get_node(fleet, node, block)
 
     IO.puts("node:  #{Hash.printable(node_address)}")
     IO.puts("score: #{score}")
