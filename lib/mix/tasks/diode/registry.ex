@@ -25,7 +25,8 @@ defmodule Mix.Tasks.Diode.Registry do
   end
 
   defp block() do
-    Registry.shell().peak_number() - 3
+    shell = Registry.shell()
+    shell.peak_number(shell.peak()) - 3
   end
 
   def run(["version"]) do
@@ -75,7 +76,7 @@ defmodule Mix.Tasks.Diode.Registry do
   end
 
   def run(_) do
-    Mix.shell().error("""
+    Mix.raise("""
     Usage:
       mix diode.registry version
       mix diode.registry epoch
@@ -84,8 +85,6 @@ defmodule Mix.Tasks.Diode.Registry do
       mix diode.registry fleet <fleet_address>
       mix diode.registry node <fleet_address> <node_address>
     """)
-
-    System.halt(1)
   end
 
   defp print_header() do
@@ -99,11 +98,13 @@ defmodule Mix.Tasks.Diode.Registry do
 
   defp print_epoch() do
     block = block()
+    epoch = Registry.epoch(block)
+    current_epoch = Registry.current_epoch(block)
 
     IO.puts("Seconds per epoch: #{Registry.seconds_per_epoch()}")
-    IO.puts("Computed epoch:    #{Registry.epoch(block)}")
-    IO.puts("Stored epoch:      #{Registry.current_epoch(block)}")
-    IO.puts("Sync needed:       #{Registry.epoch_sync_needed?(block)}")
+    IO.puts("Computed epoch:    #{epoch}")
+    IO.puts("Stored epoch:      #{current_epoch}")
+    IO.puts("Sync needed:       #{epoch != current_epoch}")
     IO.puts("Token:             #{Hash.printable(Registry.token(block))}")
   end
 
