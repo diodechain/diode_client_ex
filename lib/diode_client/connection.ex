@@ -729,10 +729,20 @@ defmodule DiodeClient.Connection do
         :ok
     after
       timeout ->
-        [binnum] = rpc(pid, [shell.prefix() <> "getblockpeak"])
-        [block] = rpc(pid, [shell.prefix() <> "getblockheader", binnum])
-        send(pid, {:peak, shell, block})
-        poll(pid, shell)
+        case rpc(pid, [shell.prefix() <> "getblockpeak"]) do
+          [binnum] ->
+            case rpc(pid, [shell.prefix() <> "getblockheader", binnum]) do
+              [block] ->
+                send(pid, {:peak, shell, block})
+                poll(pid, shell)
+
+              {:error, _} ->
+                poll(pid, shell)
+            end
+
+          {:error, _} ->
+            poll(pid, shell)
+        end
     end
   end
 
