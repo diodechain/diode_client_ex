@@ -111,6 +111,13 @@ mix diode.evm_transaction
 
 For BNS tasks, set `SEED_LIST` to reach the network (e.g. `export SEED_LIST=us1.prenet.diode.io`).
 
+## Architecture
+
+Internal design notes for contributors:
+
+- [Connection process and lifecycle](docs/connection-lifecycle.md) — relay `Connection` states, `remote_closed`, block subscribe/poll fallback, Manager restarts
+- [Anvil test shell](docs/anvil.md) — local chain setup for tests
+
 ## Encryption and Authentication
 
 For encryption standard TLS as builtin into Erlang from OpenSSL is used. For authentication though the Ethereum signature scheme using the elliptic curve `secp256k1` is used. The generated public addresses of the form `0x389eba94b330140579cdce1feb1a6e905ff876e6` actually represent hashes of public keys. When opening a port using `DiodeClient.port_open("0x389eba94b330140579cdce1feb1a6e905ff876e6", 5000)` this first locates the correct peer and then uses cryptographic handshakes to ensure the peer is in fact in possession of the corresponding private key.
