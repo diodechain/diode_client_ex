@@ -8,7 +8,7 @@ defmodule DiodeClient.Shell.OasisSapphireTest do
   @identity <<0xAB::160>>
 
   @rpc_error %{
-    "code" => -32000,
+    "code" => -32_000,
     "message" => "invalid signed simulate call query: base block not found"
   }
 
@@ -35,6 +35,16 @@ defmodule DiodeClient.Shell.OasisSapphireTest do
 
       assert log =~ "get_meta_nonce: nonce lookup"
       assert log =~ "base block not found"
+    end
+
+    test "returns {:error, {:unexpected_result, other}} for unexpected call results" do
+      log =
+        capture_log(fn ->
+          assert OasisSapphire.meta_nonce_from_call(nil, @identity) ==
+                   {:error, {:unexpected_result, nil}}
+        end)
+
+      assert log =~ "get_meta_nonce: unexpected result"
     end
   end
 

@@ -94,12 +94,19 @@ defmodule DiodeClient.Shell.OasisSapphire do
         Logger.warning("Identity contract at #{DiodeClient.Base16.encode(identity)} reverted")
         0
 
-      {:error, _} = error ->
+      {:error, reason} = error ->
         Logger.warning(
-          "get_meta_nonce: nonce lookup for #{DiodeClient.Base16.encode(identity)} failed: #{inspect(elem(error, 1))}"
+          "get_meta_nonce: nonce lookup for #{DiodeClient.Base16.encode(identity)} failed: #{inspect(reason)}"
         )
 
         error
+
+      other ->
+        Logger.warning(
+          "get_meta_nonce: unexpected result for #{DiodeClient.Base16.encode(identity)}: #{inspect(other)}"
+        )
+
+        {:error, {:unexpected_result, other}}
     end
   end
 
