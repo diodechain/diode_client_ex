@@ -94,14 +94,14 @@ defmodule Mix.Tasks.Diode.Bns do
       user_nonce = Transaction.user_nonce(tx)
 
       IO.puts(
-        "Waiting for transaction #{nonce} to be mined, current nonce: #{user_nonce} @ #{Block.number(new_peak)}"
+        "Waiting for transaction #{Integer.to_string(nonce)} to be mined, current nonce: #{Integer.to_string(user_nonce)} @ #{Block.number(new_peak)}"
       )
 
       if nonce >= user_nonce do
         Process.sleep(5000)
         await_transaction(tx, new_peak)
       else
-        IO.puts("Transaction #{nonce} already mined")
+        IO.puts("Transaction #{Integer.to_string(nonce)} already mined")
       end
     end
   end

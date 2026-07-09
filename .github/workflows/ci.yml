@@ -6,13 +6,14 @@ jobs:
     name: "Build mix release"
     runs-on: "ubuntu-latest"
     steps:
-    - name: Setup elixir
-      uses: erlef/setup-elixir@v1
-      with:
-        otp-version: latest
-        elixir-version: latest
+    - uses: actions/checkout@v4
 
-    - uses: actions/checkout@v1
+    - name: Setup Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        version-file: .tool-versions
+        version-type: strict
+
     - run: |
         mix local.hex --force
         mix local.rebar --force

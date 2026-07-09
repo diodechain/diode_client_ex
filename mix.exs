@@ -22,7 +22,7 @@ defmodule DiodeClient.MixProject do
         using Ethereum Addresses (e.g. 0xb794f5ea0ba39494ce839613fffba74279579268) and BNS names
         (e.g. yourname.diode) instead of IPv4 or IPv6
       """,
-      xref: [exclude: [:ranch_transport, Plug.Cowboy]]
+      elixirc_options: [no_warn_undefined: [:ranch_transport, Plug.Cowboy, TestShell]]
     ]
   end
 
