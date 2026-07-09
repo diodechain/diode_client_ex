@@ -6,6 +6,18 @@ defmodule DiodeClient.MetaTransaction do
   alias DiodeClient.{Hash, MetaTransaction, Secp256k1, Shell, Wallet}
   defstruct [:from, :to, :value, :call, :gaslimit, :deadline, :nonce, :signature, :chain_id]
 
+  @type t :: %MetaTransaction{
+          from: binary() | nil,
+          to: binary() | nil,
+          value: integer() | nil,
+          call: binary() | nil,
+          gaslimit: integer() | nil,
+          deadline: integer() | nil,
+          nonce: integer() | nil,
+          signature: {integer(), integer(), integer()} | nil,
+          chain_id: integer() | nil
+        }
+
   @moonbeam [Shell.MoonbaseAlpha.chain_id(), Shell.Moonbeam.chain_id()]
 
   def sign(mtx = %MetaTransaction{}, wallet) do

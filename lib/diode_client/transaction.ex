@@ -20,6 +20,7 @@ defmodule DiodeClient.Transaction do
 
   @type t :: %Transaction{}
 
+  @spec nonce(t() | MetaTransaction.t()) :: integer()
   def nonce(%Transaction{nonce: nonce}), do: nonce
   def nonce(%MetaTransaction{nonce: nonce}), do: nonce
   def data(%Transaction{data: nil}), do: ""
@@ -238,6 +239,7 @@ defmodule DiodeClient.Transaction do
   def shell(%Transaction{chain_id: chain_id}), do: DiodeClient.shell_for_chain_id(chain_id)
   def shell(%MetaTransaction{chain_id: chain_id}), do: DiodeClient.shell_for_chain_id(chain_id)
 
+  @spec user_nonce(t() | MetaTransaction.t()) :: integer()
   def user_nonce(tx = %Transaction{}), do: shell(tx).get_account(from(tx)).nonce
   def user_nonce(tx = %MetaTransaction{}), do: shell(tx).get_meta_nonce(from(tx))
 end

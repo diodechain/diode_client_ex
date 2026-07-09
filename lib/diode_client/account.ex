@@ -3,6 +3,13 @@ defmodule DiodeClient.Account do
   alias DiodeClient.{Account, Hash, Rlp}
   defstruct [:nonce, :balance, :storage_root, :code_hash]
 
+  @type t :: %Account{
+          nonce: integer() | nil,
+          balance: integer() | nil,
+          storage_root: binary() | nil,
+          code_hash: binary() | nil
+        }
+
   def to_rlp(%Account{nonce: nonce, balance: balance, storage_root: root, code_hash: code_hash}) do
     [
       nonce,
