@@ -344,7 +344,7 @@ defmodule DiodeClient.ABI do
     len = byte_size(tuple_def) - 1
 
     case tuple_def do
-      <<tuple_def::binary-size(len), ")">> ->
+      <<tuple_def::binary-size(^len), ")">> ->
         no_brackets_split(tuple_def)
         |> Enum.map(&String.trim/1)
 

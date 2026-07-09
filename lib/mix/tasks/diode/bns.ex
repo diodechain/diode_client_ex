@@ -92,12 +92,15 @@ defmodule Mix.Tasks.Diode.Bns do
     else
       nonce = Transaction.nonce(tx)
       user_nonce = Transaction.user_nonce(tx)
+      # Compare before string interpolation: Elixir 1.20's type checker widens
+      # types via String.Chars.to_string/1 and would warn on nonce >= user_nonce.
+      pending? = nonce >= user_nonce
 
       IO.puts(
         "Waiting for transaction #{nonce} to be mined, current nonce: #{user_nonce} @ #{Block.number(new_peak)}"
       )
 
-      if nonce >= user_nonce do
+      if pending? do
         Process.sleep(5000)
         await_transaction(tx, new_peak)
       else

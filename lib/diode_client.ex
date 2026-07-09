@@ -156,7 +156,6 @@ defmodule DiodeClient do
     do: set_wallet(fn -> w end)
 
   def set_wallet(fun) when is_function(fun, 0), do: do_set_wallet(fun)
-  def set_wallet(fun) when is_function(fun, 0), do: do_set_wallet(fun)
 
   def set_wallet(path) when is_binary(path) do
     if File.exists?(path) do

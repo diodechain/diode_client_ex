@@ -6,8 +6,6 @@ defmodule Mix.Tasks.Diode.Udp do
 
   use Mix.Task
 
-  require Logger
-
   defp init(whom) do
     Logger.configure(level: :debug)
     Application.ensure_all_started(:diode_client)

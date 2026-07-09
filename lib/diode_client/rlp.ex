@@ -158,41 +158,41 @@ defmodule DiodeClient.Rlp do
 
   defp do_decode!(<<head::unsigned-size(8), rest::binary>>) when head <= 0xB7 do
     size = head - @short_string
-    <<item::binary-size(size), rest::binary>> = rest
+    <<item::binary-size(^size), rest::binary>> = rest
     {item, rest}
   end
 
   # Hardening: validate size before allocating to prevent multi-GB allocation from hostile length fields
   defp do_decode!(<<head::unsigned-size(8), rest::binary>>) when head <= 0xBF do
     length_size = (head - @long_string) * 8
-    <<size::unsigned-size(length_size), rest::binary>> = rest
+    <<size::unsigned-size(^length_size), rest::binary>> = rest
     max_rlp_byte_size = min(byte_size(rest), @max_rlp_byte_size)
 
     if size > max_rlp_byte_size do
       {:error, "RLP decode: string length #{size} exceeds maximum #{max_rlp_byte_size}"}
     else
-      <<item::binary-size(size), rest::binary>> = rest
+      <<item::binary-size(^size), rest::binary>> = rest
       {item, rest}
     end
   end
 
   defp do_decode!(<<head::unsigned-size(8), rest::binary>>) when head <= 0xF7 do
     size = head - @short_list
-    <<list::binary-size(size), rest::binary>> = rest
+    <<list::binary-size(^size), rest::binary>> = rest
     {do_decode_list!([], list), rest}
   end
 
   # Hardening: validate size before allocating; reject truncated input instead of zero-padding
   defp do_decode!(<<head::unsigned-size(8), rest::binary>>) when head <= 0xFF do
     length_size = (head - @long_list) * 8
-    <<size::unsigned-size(length_size), rest::binary>> = rest
+    <<size::unsigned-size(^length_size), rest::binary>> = rest
 
     max_rlp_byte_size = min(byte_size(rest), @max_rlp_byte_size)
 
     if size > max_rlp_byte_size do
       {:error, "RLP decode: list length #{size} exceeds maximum #{max_rlp_byte_size}"}
     else
-      <<list::binary-size(size), rest::binary>> = rest
+      <<list::binary-size(^size), rest::binary>> = rest
       {do_decode_list!([], list), rest}
     end
   end

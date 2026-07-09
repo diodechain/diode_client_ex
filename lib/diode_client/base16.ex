@@ -52,7 +52,7 @@ defmodule DiodeClient.Base16 do
 
   def prefix(some, length) do
     case encode(some) do
-      <<"0x", head::binary-size(length), _::binary>> ->
+      <<"0x", head::binary-size(^length), _::binary>> ->
         head
 
       <<"0x", rest::binary>> ->

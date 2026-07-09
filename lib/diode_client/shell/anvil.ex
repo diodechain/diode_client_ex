@@ -13,7 +13,6 @@ defmodule DiodeClient.Shell.Anvil do
     Transaction
   }
 
-  require Logger
   use DiodeClient.Shell.Common
 
   def rpc_url do

@@ -80,6 +80,7 @@ defmodule DiodeClient.Wallet do
   def address(wallet(address: address)), do: {:ok, address}
   def address(address = <<_::160>>), do: {:ok, address}
 
+  @spec printable(t() | nil) :: String.t()
   def printable(nil), do: "nil"
 
   def printable(wallet),
@@ -151,13 +152,5 @@ defmodule DiodeClient.Wallet do
         signer = Secp256k1.recover!(signature, msg, algo)
         address!(from_pubkey(signer)) == address!(wallet)
     end
-  end
-end
-
-defimpl Inspect, for: DiodeClient.Wallet do
-  import Inspect.Algebra
-
-  def inspect(wallet, _opts) do
-    concat(["#Wallet<", DiodeClient.Wallet.printable(wallet), ">"])
   end
 end

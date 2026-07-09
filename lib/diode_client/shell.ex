@@ -193,7 +193,7 @@ defmodule DiodeClient.Shell do
 
         x = bit_size(prefix)
         k = Hash.sha3_256(address)
-        <<key_prefix::bitstring-size(x), _::bitstring>> = k
+        <<key_prefix::bitstring-size(^x), _::bitstring>> = k
         <<last_byte>> = binary_part(k, byte_size(k), -1)
 
         # Checking that the provided range is for the given keys prefix
@@ -294,7 +294,7 @@ defmodule DiodeClient.Shell do
 
           x = bit_size(prefix)
           k = Hash.sha3_256(key)
-          <<key_prefix::bitstring-size(x), _::bitstring>> = k
+          <<key_prefix::bitstring-size(^x), _::bitstring>> = k
           <<last_byte>> = binary_part(k, byte_size(k), -1)
 
           # Checking that the provided range is for the given keys prefix

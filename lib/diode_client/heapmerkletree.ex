@@ -177,10 +177,10 @@ defmodule DiodeClient.HeapMerkleTree do
     x = bit_size(prefix)
 
     case hash do
-      <<^prefix::bitstring-size(x), @left::bitstring, _::bitstring>> ->
+      <<^prefix::bitstring-size(^x), @left::bitstring, _::bitstring>> ->
         true
 
-      <<^prefix::bitstring-size(x), @right::bitstring, _::bitstring>> ->
+      <<^prefix::bitstring-size(^x), @right::bitstring, _::bitstring>> ->
         false
     end
   end

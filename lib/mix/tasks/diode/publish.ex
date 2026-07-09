@@ -6,8 +6,6 @@ defmodule Mix.Tasks.Diode.Publish do
 
   use Mix.Task
 
-  require Logger
-
   defp init() do
     Logger.configure(level: :debug)
     Application.ensure_all_started(:diode_client)
