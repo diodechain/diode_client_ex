@@ -1,17 +1,8 @@
 defmodule DiodeClient.Shell.Moonbeam do
   @moduledoc """
-  DiodeClient.Shell is the interface to the blockchain state. It allows
-  fetching accounts and block header information. Data fetched is by
-  default checked against a merkle proof.
-
-  # Example fetching smart contract state from an address
-
-  ```
-  me = DiodeClient.address()
-  DiodeClient.Shell.get_account(me)
-  ```
-
+  Specialized shell for Moonbeam (chain ID 1284) with CallPermit meta-transactions.
   """
+
   alias DiodeClient.{
     ABI,
     Hash,
@@ -43,9 +34,7 @@ defmodule DiodeClient.Shell.Moonbeam do
 
   def send_transaction(address, function_name, types, values, opts \\ [])
       when is_list(types) and is_list(values) do
-    meta_transaction = Keyword.get(opts, :meta_transaction, false)
-
-    if meta_transaction do
+    if Keyword.get(opts, :meta_transaction, false) do
       wallet = DiodeClient.ensure_wallet()
       from = Wallet.address!(wallet)
       nonce = Keyword.get(opts, :nonce) || get_meta_nonce(from)
@@ -73,22 +62,5 @@ defmodule DiodeClient.Shell.Moonbeam do
     peak_index = Rlpx.bin2uint(peak["number"])
     [num] = cached_rpc([prefix() <> "getmetanonce", peak_index, address])
     Rlpx.bin2uint(num)
-  end
-
-  def get_account(address, peak \\ peak()) do
-    DiodeClient.Shell.Common.get_account(__MODULE__, address, peak)
-  end
-
-  def get_account_root(address, peak \\ peak()) do
-    DiodeClient.Shell.Common.get_account_root(__MODULE__, address, peak)
-  end
-
-  def get_account_values(address, keys, peak \\ peak())
-      when is_list(keys) and (is_binary(address) or is_integer(address)) do
-    DiodeClient.Shell.Common.get_account_values(__MODULE__, address, keys, peak)
-  end
-
-  def call(address, method, types, args, opts \\ []) do
-    DiodeClient.Shell.Common.call(__MODULE__, address, method, types, args, opts)
   end
 end

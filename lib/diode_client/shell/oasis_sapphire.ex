@@ -1,18 +1,15 @@
 defmodule DiodeClient.Shell.OasisSapphire do
   @moduledoc """
-   Specialized shell for Oasis Sapphire.
+  Specialized shell for Oasis Sapphire.
   """
 
   alias DiodeClient.{
-    ABI,
     Base16,
     Block,
-    Transaction,
-    Shell,
-    Wallet
+    Transaction
   }
 
-  use DiodeClient.Shell.Common
+  use DiodeClient.Shell.Common, meta_transactions: :identity
 
   def block_time(), do: :timer.seconds(6)
   def chain_id(), do: 23_294
@@ -33,68 +30,10 @@ defmodule DiodeClient.Shell.OasisSapphire do
     end
   end
 
-  def send_transaction(address, function_name, types, values, opts \\ [])
-      when is_list(types) and is_list(values) do
-    meta_transaction = Keyword.get(opts, :meta_transaction, false)
-
-    if meta_transaction do
-      wallet = DiodeClient.ensure_wallet()
-      from = Wallet.address!(wallet)
-      nonce = Keyword.get(opts, :nonce) || get_meta_nonce(from, peak(), opts)
-
-      create_meta_transaction(address, function_name, types, values, nonce, opts)
-      # |> MetaTransaction.simulate(__MODULE__)
-      |> send_transaction()
-    else
-      create_transaction(address, function_name, types, values, opts)
-      |> send_transaction()
-    end
-  end
-
-  def create_transaction(address, function_name, types, values, opts \\ [])
-      when is_list(types) and is_list(values) do
-    callcode = ABI.encode_call(function_name, types, values)
-    Shell.Common.create_transaction(__MODULE__, address, callcode, Map.new(opts))
-  end
-
-  def create_meta_transaction(address, function_name, types, values, nonce, opts \\ [])
-      when is_list(types) and is_list(values) do
-    # https://solidity.readthedocs.io/en/v0.4.24/abi-spec.html
-    callcode = ABI.encode_call(function_name, types, values)
-    opts = Keyword.put(opts, :from, identity_address(opts))
-    Shell.Common.create_meta_transaction(__MODULE__, address, callcode, nonce, opts)
-  end
-
-  def get_meta_nonce(address, peak \\ peak(), opts \\ []) do
-    DiodeClient.Shell.Common.get_meta_nonce(__MODULE__, address, peak, opts)
-  end
-
-  def get_account(address, peak \\ peak()) do
-    DiodeClient.Shell.Common.get_account(__MODULE__, address, peak)
-  end
-
-  def get_account_root(address, peak \\ peak()) do
-    DiodeClient.Shell.Common.get_account_root(__MODULE__, address, peak)
-  end
-
-  def get_account_values(address, keys, peak \\ peak())
-      when is_list(keys) and (is_binary(address) or is_integer(address)) do
-    DiodeClient.Shell.Common.get_account_values(__MODULE__, address, keys, peak)
-  end
-
   def oasis_call_data_public_key() do
-    # with [json] <- rpc([prefix() <> "rpc", "oasis_callDataPublicKey", "[]"]) do
-    #   case Jason.decode!(json) do
-    #     %{"result" => result} -> result
-    #     %{"error" => error} ->
-    #       Logger.error("Error #{prefix()}.oasis_call_data_public_key: #{inspect(error)}")
-    #       nil
-    #   end
-    # end
     # https://api.docs.oasis.io/sol/sapphire-contracts/contracts/Subcall.sol/library.Subcall.html
     contract = DiodeClient.Base16.decode("0x0100000000000000000000000000000000000103")
 
-    # data = DiodeClient.ABI.encode_args(["string", "bytes"], ["core.CallDataPublicKey", CBOR.encode(nil)])
     data =
       DiodeClient.Base16.decode(
         "0x000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000016636f72652e43616c6c446174615075626c69634b6579000000000000000000000000000000000000000000000000000000000000000000000000000000000001f600000000000000000000000000000000000000000000000000000000000000"
@@ -208,17 +147,5 @@ defmodule DiodeClient.Shell.OasisSapphire do
 
   def raw_call(address, method, types, args, opts \\ []) do
     DiodeClient.Shell.Common.call(__MODULE__, address, method, types, args, opts)
-  end
-
-  defp identity_address(opts) do
-    identity =
-      opts[:identity] ||
-        raise "Missing :identity parameter, define or use the default `DiodeClient.Contracts.Factory.identity_address(DiodeClient.Shell.OasisSapphire)`"
-
-    if !is_binary(identity) or byte_size(identity) != 20 do
-      raise "Invalid :identity parameter, sould be a 20 byte public address"
-    end
-
-    identity
   end
 end
