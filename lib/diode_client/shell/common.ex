@@ -87,7 +87,7 @@ defmodule DiodeClient.Shell.Common do
         def create_meta_transaction(address, function_name, types, values, nonce, opts \\ [])
             when is_list(types) and is_list(values) do
           callcode = ABI.encode_call(function_name, types, values)
-          opts = Keyword.put(opts, :from, Common.identity_address(opts))
+          opts = Keyword.put(opts, :from, Common.identity_address(__MODULE__, opts))
           Common.create_meta_transaction(__MODULE__, address, callcode, nonce, opts)
         end
 
@@ -352,7 +352,7 @@ defmodule DiodeClient.Shell.Common do
   end
 
   def get_meta_nonce(shell, address, peak, opts) do
-    id = identity_address(opts)
+    id = identity_address(shell, opts)
 
     shell.call(id, "Nonce", ["address"], [address],
       block: peak,
@@ -432,10 +432,10 @@ defmodule DiodeClient.Shell.Common do
     end
   end
 
-  def identity_address(opts) do
+  def identity_address(shell, opts) do
     identity =
       opts[:identity] ||
-        raise "Missing :identity parameter, define or use DiodeClient.Contracts.Factory.identity_address/1 for your shell"
+        raise "Missing :identity parameter, define or use DiodeClient.Contracts.Factory.identity_address(#{inspect(shell)})"
 
     if !is_binary(identity) or byte_size(identity) != 20 do
       raise "Invalid :identity parameter, should be a 20 byte public address"
