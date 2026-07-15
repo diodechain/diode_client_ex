@@ -1,5 +1,5 @@
 defmodule DiodeClient.TxFailoverTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias DiodeClient.{Connection, Manager, Shell}
   alias DiodeClient.Manager.Info
@@ -37,7 +37,7 @@ defmodule DiodeClient.TxFailoverTest do
       {:reply, [req, ["error", "remote_closed"]], state}
     end
 
-    def handle_cast(:rpc_timeout, state) do
+    def handle_cast({:rpc_timeout, _req}, state) do
       count = Map.get(state, :reset_count, 0) + 1
       {:noreply, Map.put(state, :reset_count, count)}
     end

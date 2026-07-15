@@ -837,7 +837,12 @@ defmodule DiodeClient.Manager do
 
   defp do_clear_sticky(pid, state = %Manager{}) do
     if Process.whereis(__MODULE__.Sticky) == pid do
-      Process.unregister(__MODULE__.Sticky)
+      try do
+        Process.unregister(__MODULE__.Sticky)
+      rescue
+        ArgumentError -> :ok
+      end
+
       %{state | sticky: nil}
     else
       state

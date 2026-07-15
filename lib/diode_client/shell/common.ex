@@ -156,7 +156,7 @@ defmodule DiodeClient.Shell.Common do
           rpc_with_tx_failover(shell, cmd, rest, started_at, attempts + 1, timeout)
 
         {:error, "remote_closed"} ->
-          DiodeClient.Manager.clear_sticky_connection(pid, :remote_closed)
+          DiodeClient.Manager.connection_rpc_failed(pid, :remote_closed)
           rpc_with_tx_failover(shell, cmd, rest, started_at, attempts + 1, timeout)
 
         result ->

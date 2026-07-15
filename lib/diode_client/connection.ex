@@ -410,9 +410,13 @@ defmodule DiodeClient.Connection do
     {:noreply, insert_cmd(state, req, cmd, rlp)}
   end
 
-  def handle_cast(:rpc_timeout, state) do
-    warning("RPC timeout; resetting wedged connection state")
-    {:noreply, reset(state), {:continue, :init}}
+  def handle_cast({:rpc_timeout, req}, state = %Connection{recv_id: recv_id}) do
+    if Map.has_key?(recv_id, req) do
+      warning("RPC timeout; resetting wedged connection state")
+      {:noreply, reset(state), {:continue, :init}}
+    else
+      {:noreply, state}
+    end
   end
 
   defp to_bin(num) do
@@ -1023,7 +1027,7 @@ defmodule DiodeClient.Connection do
     try do
       case rpc_call(pid, {:rpc, cmd, req, rlp, timestamp(), self()}, timeout) do
         {:error, :timeout} ->
-          GenServer.cast(pid, :rpc_timeout)
+          GenServer.cast(pid, {:rpc_timeout, req})
           Manager.connection_rpc_failed(pid, :timeout)
           {:error, :timeout}
 
