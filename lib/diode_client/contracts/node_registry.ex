@@ -8,6 +8,10 @@ defmodule DiodeClient.Contracts.NodeRegistry do
   @address Base16.decode("0xc4b466f63c0A31302Bc8A688A7c90e1199Bb6f84")
   @shell DiodeClient.Shell.Moonbeam
 
+  # Do post-freeze
+  # @address Base16.decode("0xBC7a66a80E760dD0D84f6e39Df6cfD937C6c94F6")
+  # @shell DiodeClient.Shell.Base
+
   def version(block \\ nil) do
     DiodeClient.Contracts.Utils.call(@shell, @address, "version", [], [], "uint256", block)
   end

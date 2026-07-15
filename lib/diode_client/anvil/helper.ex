@@ -531,7 +531,7 @@ defmodule DiodeClient.Anvil.Helper do
       drive_invites: Map.get(addresses, "DriveInvites") || factory,
       drive_member_version: 123,
       drive_member: Map.get(addresses, "DriveMember") || factory,
-      drive_version: 159,
+      drive_version: 160,
       drive: Map.get(addresses, "Drive") || factory,
       factory: factory,
       fleet_member: Map.get(addresses, "FleetMember") || Hash.to_address(0),
