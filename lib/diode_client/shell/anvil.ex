@@ -162,11 +162,6 @@ defmodule DiodeClient.Shell.Anvil do
     get_account(address, block).storage_root
   end
 
-  def get_account_value(address, key = <<_::256>>, peak \\ peak())
-      when is_binary(address) or is_integer(address) do
-    hd(get_account_values(address, [key], peak))
-  end
-
   def get_account_values(address, keys, peak \\ peak())
       when is_list(keys) and (is_binary(address) or is_integer(address)) do
     address = Hash.to_address(address)

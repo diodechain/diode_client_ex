@@ -237,9 +237,9 @@ defmodule DiodeClient do
   @shells [
     DiodeClient.Shell,
     DiodeClient.Shell.Moonbeam,
-    DiodeClient.Shell.MoonbaseAlpha,
     DiodeClient.Shell.OasisSapphire,
-    DiodeClient.Shell.Anvil
+    DiodeClient.Shell.Anvil,
+    DiodeClient.Shell.Base
   ]
 
   def shells() do

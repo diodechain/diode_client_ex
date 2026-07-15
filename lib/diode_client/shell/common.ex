@@ -37,6 +37,11 @@ defmodule DiodeClient.Shell.Common do
         DiodeClient.Block.number(block)
       end
 
+      def get_account_value(address, key = <<_::256>>, peak \\ peak())
+          when is_binary(address) or is_integer(address) do
+        hd(get_account_values(address, [key], peak))
+      end
+
       def get_transaction_receipt(tx_hash),
         do: Common.get_transaction_receipt(__MODULE__, tx_hash)
 
@@ -49,6 +54,9 @@ defmodule DiodeClient.Shell.Common do
       if __MODULE__ != DiodeClient.Shell.Anvil do
         def get_block_header(block_index), do: Common.get_block_header(__MODULE__, block_index)
       end
+
+      defp maybe_hex(x = "0x" <> _), do: x
+      defp maybe_hex(x), do: DiodeClient.Base16.encode(x, false)
     end
   end
 
@@ -289,5 +297,96 @@ defmodule DiodeClient.Shell.Common do
       [block] when is_map(block) -> block
       [block] -> Rlpx.list2map(block)
     end
+  end
+
+  # Standard common meta transaction based functions for non-diode, non-moonbeam chains
+  # (standard ethereum EVM)
+  def get_meta_nonce(shell, address, peak, opts) do
+    id = identity_address(opts)
+
+    shell.call(id, "Nonce", ["address"], [address],
+      block: peak,
+      result_types: "uint"
+    )
+    |> case do
+      nonce when is_integer(nonce) ->
+        nonce
+
+      :revert ->
+        Logger.warning("Identity contract at #{DiodeClient.Base16.encode(id)} reverted")
+        0
+    end
+  end
+
+  def get_account(shell, address, peak) do
+    peak_index = Rlpx.bin2uint(peak["number"])
+    address = Hash.to_address(address)
+    [acc] = shell.cached_rpc([shell.prefix() <> "getaccount", peak_index, address])
+    acc = Rlpx.list2map(acc)
+
+    %DiodeClient.Account{
+      nonce: Rlpx.bin2uint(acc["nonce"]),
+      balance: Rlpx.bin2uint(acc["balance"]),
+      storage_root: Rlpx.bin2addr(acc["storage_root"]),
+      code_hash: acc["code"]
+    }
+  end
+
+  def get_account_root(shell, address, peak) do
+    peak_index = Rlpx.bin2uint(peak["number"])
+    address = Hash.to_address(address)
+
+    case shell.cached_rpc([shell.prefix() <> "getaccountroot", peak_index, address]) do
+      nil -> nil
+      [""] -> nil
+      [root] -> root
+    end
+  end
+
+  def get_account_values(shell, address, keys, peak)
+      when is_list(keys) and (is_binary(address) or is_integer(address)) do
+    Enum.chunk_every(keys, 100)
+    |> Enum.flat_map(fn chunk -> do_get_account_values(shell, address, chunk, peak) end)
+  end
+
+  defp do_get_account_values(shell, address, keys, peak)
+       when is_list(keys) and (is_binary(address) or is_integer(address)) do
+    peak_index = shell.peak_number(peak)
+    address = Hash.to_address(address)
+    values = shell.cached_rpc([shell.prefix() <> "getaccountvalues", peak_index, address | keys])
+
+    case values do
+      {:error, message} ->
+        Logger.debug(
+          "getaccountvalues #{inspect({peak_index, address, keys})} produced error #{inspect(message)}"
+        )
+
+        raise "getaccountvalues #{inspect({peak_index, address, keys})} produced error #{inspect(message)}"
+
+      [values] ->
+        # Diode L1 can differentiate between unset (empty) values and all zero
+        # values -- this is not the case for moonbeam. So to make signup name checks
+        # succeed here we're checking that the value is not all zero.
+
+        Enum.map(values, fn value ->
+          if value == <<0::unsigned-size(256)>> do
+            :undefined
+          else
+            value
+          end
+        end)
+    end
+  end
+
+  def identity_address(opts) do
+    identity =
+      opts[:identity] ||
+        raise "Missing :identity parameter, define or use the default `DiodeClient.Contracts.Factory.identity_address(DiodeClient.Shell.OasisSapphire)`"
+
+    if !is_binary(identity) or byte_size(identity) != 20 do
+      raise "Invalid :identity parameter, sould be a 20 byte public address"
+    end
+
+    identity
   end
 end

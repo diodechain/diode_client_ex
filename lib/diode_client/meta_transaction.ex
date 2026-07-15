@@ -18,7 +18,7 @@ defmodule DiodeClient.MetaTransaction do
           chain_id: integer() | nil
         }
 
-  @moonbeam [Shell.MoonbaseAlpha.chain_id(), Shell.Moonbeam.chain_id()]
+  @moonbeam [Shell.Moonbeam.chain_id()]
 
   def sign(mtx = %MetaTransaction{}, wallet) do
     [v, r, s] =
