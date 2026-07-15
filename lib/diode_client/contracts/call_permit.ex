@@ -5,11 +5,7 @@ defmodule DiodeClient.Contracts.CallPermit do
   """
   alias DiodeClient.{ABI, Base16, EIP712}
 
-  # Moonbase Alpha (0x507)
-  # @chain_id 1287
   @domain_separator %{
-    DiodeClient.Shell.MoonbaseAlpha.chain_id() =>
-      Base16.decode("0x2d44830364594de15bf34f87ca86da8d1967e5bc7d64b301864028acb9120412"),
     DiodeClient.Shell.Moonbeam.chain_id() =>
       Base16.decode("0x4f83a3a1d1a8f42700b988f3d8f4b0a56bd0768a19d045db65158b079b2a0bae")
   }

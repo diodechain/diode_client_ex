@@ -1,27 +1,16 @@
 defmodule DiodeClient.Shell.Moonbeam do
   @moduledoc """
-  DiodeClient.Shell is the interface to the blockchain state. It allows
-  fetching accounts and block header information. Data fetched is by
-  default checked against a merkle proof.
-
-  # Example fetching smart contract state from an address
-
-  ```
-  me = DiodeClient.address()
-  DiodeClient.Shell.get_account(me)
-  ```
-
+  Specialized shell for Moonbeam (chain ID 1284) with CallPermit meta-transactions.
   """
+
   alias DiodeClient.{
     ABI,
-    Account,
     Hash,
     Rlpx,
     Shell,
     Wallet
   }
 
-  require Logger
   use DiodeClient.Shell.Common
 
   def block_time(), do: :timer.seconds(6)
@@ -43,14 +32,9 @@ defmodule DiodeClient.Shell.Moonbeam do
     end
   end
 
-  defp maybe_hex(x = "0x" <> _), do: x
-  defp maybe_hex(x), do: DiodeClient.Base16.encode(x, false)
-
   def send_transaction(address, function_name, types, values, opts \\ [])
       when is_list(types) and is_list(values) do
-    meta_transaction = Keyword.get(opts, :meta_transaction, false)
-
-    if meta_transaction do
+    if Keyword.get(opts, :meta_transaction, false) do
       wallet = DiodeClient.ensure_wallet()
       from = Wallet.address!(wallet)
       nonce = Keyword.get(opts, :nonce) || get_meta_nonce(from)
@@ -78,74 +62,5 @@ defmodule DiodeClient.Shell.Moonbeam do
     peak_index = Rlpx.bin2uint(peak["number"])
     [num] = cached_rpc([prefix() <> "getmetanonce", peak_index, address])
     Rlpx.bin2uint(num)
-  end
-
-  def get_account(address, peak \\ peak()) do
-    peak_index = Rlpx.bin2uint(peak["number"])
-    address = Hash.to_address(address)
-    [acc] = cached_rpc([prefix() <> "getaccount", peak_index, address])
-    acc = Rlpx.list2map(acc)
-
-    %Account{
-      nonce: Rlpx.bin2uint(acc["nonce"]),
-      balance: Rlpx.bin2uint(acc["balance"]),
-      storage_root: Rlpx.bin2addr(acc["storage_root"]),
-      code_hash: acc["code"]
-    }
-  end
-
-  def get_account_root(address, peak \\ peak()) do
-    peak_index = Rlpx.bin2uint(peak["number"])
-    address = Hash.to_address(address)
-
-    case cached_rpc([prefix() <> "getaccountroot", peak_index, address]) do
-      nil -> nil
-      [""] -> nil
-      [root] -> root
-    end
-  end
-
-  def get_account_value(address, key = <<_::256>>, peak \\ peak())
-      when is_binary(address) or is_integer(address) do
-    hd(get_account_values(address, [key], peak))
-  end
-
-  def get_account_values(address, keys, peak \\ peak())
-      when is_list(keys) and (is_binary(address) or is_integer(address)) do
-    Enum.chunk_every(keys, 100)
-    |> Enum.flat_map(fn chunk -> do_get_account_values(address, chunk, peak) end)
-  end
-
-  defp do_get_account_values(address, keys, peak)
-       when is_list(keys) and (is_binary(address) or is_integer(address)) do
-    peak_index = peak_number(peak)
-    address = Hash.to_address(address)
-    values = cached_rpc([prefix() <> "getaccountvalues", peak_index, address | keys])
-
-    case values do
-      {:error, message} ->
-        Logger.debug(
-          "getaccountvalues #{inspect({peak_index, address, keys})} produced error #{inspect(message)}"
-        )
-
-        raise "getaccountvalues #{inspect({peak_index, address, keys})} produced error #{inspect(message)}"
-
-      [values] ->
-        # Diode L1 can differentiate between unset (empty) values and all zero
-        # values -- this is not the case for moonbeam. So to make signup name checks
-        # succeed here we're checking that the value is not all zero.
-
-        Enum.map(values, fn value ->
-          if value == <<0::unsigned-size(256)>> do
-            :undefined
-          else
-            value
-          end
-        end)
-    end
-  end
-
-  def call(address, method, types, args, opts \\ []) do
-    DiodeClient.Shell.Common.call(__MODULE__, address, method, types, args, opts)
   end
 end

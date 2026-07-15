@@ -48,9 +48,6 @@ defmodule DiodeClient.Shell do
     end
   end
 
-  defp maybe_hex(x = "0x" <> _), do: x
-  defp maybe_hex(x), do: DiodeClient.Base16.encode(x, false)
-
   defmacrop assert_equal(a, b, flush_keys) do
     stra = Macro.to_string(a)
     strb = Macro.to_string(b)
@@ -248,11 +245,6 @@ defmodule DiodeClient.Shell do
 
     assert_equal(root || @null_root, signature(roots), flush_keys)
     roots
-  end
-
-  def get_account_value(address, key = <<_::256>>, peak \\ peak())
-      when is_binary(address) or is_integer(address) do
-    hd(get_account_values(address, [key], peak))
   end
 
   def get_account_values(address, keys, peak \\ peak())
