@@ -410,6 +410,11 @@ defmodule DiodeClient.Connection do
     {:noreply, insert_cmd(state, req, cmd, rlp)}
   end
 
+  def handle_cast(:rpc_timeout, state) do
+    warning("RPC timeout; resetting wedged connection state")
+    {:noreply, reset(state), {:continue, :init}}
+  end
+
   defp to_bin(num) do
     Rlpx.uint2bin(num)
   end
@@ -1016,7 +1021,28 @@ defmodule DiodeClient.Connection do
     rlp = encode!([req | [data]])
 
     try do
-      call(pid, {:rpc, cmd, req, rlp, timestamp(), self()}, timeout)
+      case rpc_call(pid, {:rpc, cmd, req, rlp, timestamp(), self()}, timeout) do
+        {:error, :timeout} ->
+          GenServer.cast(pid, :rpc_timeout)
+          Manager.connection_rpc_failed(pid, :timeout)
+          {:error, :timeout}
+
+        [^req, ["error", "remote_closed"]] ->
+          Logger.warning(
+            "DiodeClient remote_closed during RPC(#{inspect(cmd)}) from #{server_url(pid)}"
+          )
+
+          {:error, "remote_closed"}
+
+        [^req, ["error", reason]] ->
+          {:error, reason}
+
+        [^req, ["error" | rest]] ->
+          {:error, rest}
+
+        [^req, ["response" | rest]] ->
+          rest
+      end
     catch
       :exit, :connection_shutdown ->
         Logger.warning(
@@ -1024,23 +1050,26 @@ defmodule DiodeClient.Connection do
         )
 
         {:error, "remote_closed"}
-    else
-      [^req, ["error", "remote_closed"]] ->
-        Logger.warning(
-          "DiodeClient remote_closed during RPC(#{inspect(cmd)}) from #{server_url(pid)}"
-        )
-
-        {:error, "remote_closed"}
-
-      [^req, ["error", reason]] ->
-        {:error, reason}
-
-      [^req, ["error" | rest]] ->
-        {:error, rest}
-
-      [^req, ["response" | rest]] ->
-        rest
     end
+  end
+
+  defp rpc_call(pid, args, timeout) do
+    GenServer.call(pid, args, timeout)
+  catch
+    :exit, {:noproc, _reason} ->
+      Process.exit(pid, :normal)
+      exit(:connection_shutdown)
+
+    :exit, {reason, _} when reason in [:normal, :killed, :shutdown] ->
+      Process.exit(pid, :normal)
+      exit(:connection_shutdown)
+
+    :exit, {:timeout, _} ->
+      {:error, :timeout}
+
+    :exit, reason ->
+      Process.exit(pid, reason)
+      raise "DiodeClient exception: #{inspect(reason)}"
   end
 
   def rpc_async(pid, data = [cmd | _rest], id \\ self()) do

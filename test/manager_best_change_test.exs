@@ -60,7 +60,8 @@ defmodule DiodeClient.ManagerBestChangeTest do
       sticky: nil,
       peak_subscribers: %{},
       peak_subscriber_refs: %{},
-      local_peak_pollers: %{}
+      local_peak_pollers: %{},
+      rpc_failed_at: %{}
     }
   end
 

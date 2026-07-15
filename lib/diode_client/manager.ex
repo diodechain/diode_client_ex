@@ -30,7 +30,8 @@ defmodule DiodeClient.Manager do
     :peak_subscribers,
     :peak_subscriber_refs,
     :local_peak_pollers,
-    :last_reported_uncle_block
+    :last_reported_uncle_block,
+    :rpc_failed_at
   ]
 
   defmodule Info do
@@ -79,7 +80,8 @@ defmodule DiodeClient.Manager do
       peak_subscribers: %{},
       peak_subscriber_refs: %{},
       local_peak_pollers: %{},
-      last_reported_uncle_block: %{}
+      last_reported_uncle_block: %{},
+      rpc_failed_at: %{}
     }
 
     {:ok, state, {:continue, :init}}
@@ -271,6 +273,24 @@ defmodule DiodeClient.Manager do
     end
   end
 
+  @rpc_failure_cooldown_ms 60_000
+
+  @doc false
+  def clear_sticky_connection(pid, reason \\ :rpc_failure) do
+    GenServer.cast(__MODULE__, {:clear_sticky, pid, reason})
+  end
+
+  @doc false
+  def connection_rpc_failed(pid, reason) do
+    GenServer.cast(__MODULE__, {:connection_rpc_failed, pid, reason})
+  end
+
+  @doc false
+  def tx_relay_candidates(shell) when is_atom(shell) do
+    _chain_id = shell.chain_id()
+    GenServer.call(__MODULE__, {:tx_relay_candidates, shell}, :infinity)
+  end
+
   def connections() do
     connection_map()
     |> Map.keys()
@@ -437,6 +457,33 @@ defmodule DiodeClient.Manager do
   @impl true
   def handle_cast({:set_connection, cpid}, state = %Manager{conns: _conns}) do
     {:noreply, %{state | traffic_best: [cpid]}}
+  end
+
+  def handle_cast({:clear_sticky, pid, _reason}, state) do
+    {:noreply, do_clear_sticky(pid, state)}
+  end
+
+  def handle_cast({:connection_rpc_failed, pid, reason}, state) do
+    state = do_clear_sticky(pid, state)
+
+    state =
+      case Map.get(state.conns, pid) do
+        %Info{server_url: server_url} ->
+          if reason in [:timeout, :remote_closed] do
+            NodeScorer.report_failure(server_url)
+          end
+
+          %{
+            state
+            | rpc_failed_at:
+                Map.put(state.rpc_failed_at, pid, System.monotonic_time(:millisecond))
+          }
+
+        _ ->
+          state
+      end
+
+    {:noreply, state}
   end
 
   def handle_cast({:update_info, cpid, info}, state = %Manager{conns: conns}) do
@@ -611,6 +658,10 @@ defmodule DiodeClient.Manager do
     {:reply, chain_connection_pids(state, shell), state}
   end
 
+  def handle_call({:tx_relay_candidates, shell}, _from, state) do
+    {:reply, tx_relay_candidates(state, shell), state}
+  end
+
   def handle_call(
         :get_sticky_connection?,
         _from,
@@ -733,6 +784,64 @@ defmodule DiodeClient.Manager do
     ChainPeaks.connected_for_shell(shell, state.conns, state.chain_peaks, min_connections())
     |> Enum.sort_by(fn {_pid, %Info{latency: latency}} -> latency end)
     |> Enum.map(fn {pid, _} -> pid end)
+  end
+
+  defp tx_relay_candidates(state = %Manager{}, shell) do
+    now = System.monotonic_time(:millisecond)
+
+    viable? = fn pid ->
+      case Map.get(state.conns, pid) do
+        %Info{} = info ->
+          traffic_viable?(info, state) and not rpc_failed_recently?(state, pid, now)
+
+        _ ->
+          false
+      end
+    end
+
+    sticky = Process.whereis(__MODULE__.Sticky)
+    traffic_seeds = traffic_viable_seed_pids(state, now)
+    chain_pids = chain_connection_pids(state, shell)
+
+    [sticky | traffic_seeds ++ chain_pids]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Enum.filter(viable?)
+  end
+
+  defp traffic_viable_seed_pids(state = %Manager{traffic_best: best}, now) do
+    best
+    |> Enum.filter(fn pid ->
+      case Map.get(state.conns, pid) do
+        %Info{type: :seed} = info ->
+          traffic_viable?(info, state) and not rpc_failed_recently?(state, pid, now)
+
+        _ ->
+          false
+      end
+    end)
+    |> Enum.sort_by(fn pid ->
+      case Map.get(state.conns, pid) do
+        %Info{latency: latency} -> latency
+        _ -> 100_000_000_000_000
+      end
+    end)
+  end
+
+  defp rpc_failed_recently?(%Manager{rpc_failed_at: failed_at}, pid, now) do
+    case Map.get(failed_at, pid) do
+      nil -> false
+      failed_ms -> now - failed_ms < @rpc_failure_cooldown_ms
+    end
+  end
+
+  defp do_clear_sticky(pid, state = %Manager{}) do
+    if Process.whereis(__MODULE__.Sticky) == pid do
+      Process.unregister(__MODULE__.Sticky)
+      %{state | sticky: nil}
+    else
+      state
+    end
   end
 
   defp schedule_update(state) do
@@ -1016,6 +1125,16 @@ defmodule DiodeClient.Manager do
         new_state = stop_local_peak_poller_if_unsubscribed(shell, new_state)
         {:ok, new_state}
     end
+  end
+
+  @doc false
+  def __test_tx_relay_candidates__(state, shell) do
+    tx_relay_candidates(state, shell)
+  end
+
+  @doc false
+  def __test_clear_sticky__(state, pid) do
+    do_clear_sticky(pid, state)
   end
 
   # Test-only helpers for diagnosing "Best connection changed" log behavior.
