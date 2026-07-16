@@ -309,12 +309,13 @@ defmodule DiodeClient.Shell do
 
   def chain_cached_rpc(shell, args) do
     ETSLru.fetch(ShellCache, {shell, args}, fn ->
-      conn = chain_conn(shell)
+      get_conn = fn -> chain_conn(shell) end
+      conn = get_conn.()
       name = Connection.server_url(conn)
 
-      case Connection.rpc(conn, args) do
-        {:error, "remote_closed"} ->
-          Connection.rpc(chain_conn(shell), args)
+      case rpc_retriable(args, get_conn, conn) do
+        {:error, "remote_closed"} = err ->
+          err
 
         {:error, other} ->
           {:error, "#{name}: #{inspect(other)}"}
@@ -345,7 +346,19 @@ defmodule DiodeClient.Shell do
   end
 
   def chain_rpc(shell, args) do
-    Connection.rpc(chain_conn(shell), args)
+    rpc_retriable(args, fn -> chain_conn(shell) end)
+  end
+
+  @doc false
+  # Transient relay disconnects (socket reset or Connection process death) are
+  # surfaced as {:error, "remote_closed"}; try once more on another connection.
+  def rpc_retriable(args, get_conn, first_conn \\ nil) when is_function(get_conn, 0) do
+    conn = first_conn || get_conn.()
+
+    case Connection.rpc(conn, args) do
+      {:error, "remote_closed"} -> Connection.rpc(get_conn.(), args)
+      other -> other
+    end
   end
 
   def ether(x), do: trunc(1000 * finney(1) * x)
