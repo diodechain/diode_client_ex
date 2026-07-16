@@ -31,7 +31,8 @@ defmodule DiodeClient.Manager do
     :peak_subscriber_refs,
     :local_peak_pollers,
     :last_reported_uncle_block,
-    :rpc_failed_at
+    :rpc_failed_at,
+    :sticky_unhealthy_since
   ]
 
   defmodule Info do
@@ -81,7 +82,8 @@ defmodule DiodeClient.Manager do
       peak_subscriber_refs: %{},
       local_peak_pollers: %{},
       last_reported_uncle_block: %{},
-      rpc_failed_at: %{}
+      rpc_failed_at: %{},
+      sticky_unhealthy_since: nil
     }
 
     {:ok, state, {:continue, :init}}
@@ -274,6 +276,7 @@ defmodule DiodeClient.Manager do
   end
 
   @rpc_failure_cooldown_ms 60_000
+  @sticky_hold_ms 120_000
 
   @doc false
   def clear_sticky_connection(pid, reason \\ :rpc_failure) do
@@ -283,6 +286,11 @@ defmodule DiodeClient.Manager do
   @doc false
   def connection_rpc_failed(pid, reason) do
     GenServer.cast(__MODULE__, {:connection_rpc_failed, pid, reason})
+  end
+
+  @doc false
+  def connection_rpc_ok(pid) do
+    GenServer.cast(__MODULE__, {:connection_rpc_ok, pid})
   end
 
   @doc false
@@ -464,26 +472,11 @@ defmodule DiodeClient.Manager do
   end
 
   def handle_cast({:connection_rpc_failed, pid, reason}, state) do
-    state = do_clear_sticky(pid, state)
+    {:noreply, apply_connection_rpc_failed(state, pid, reason)}
+  end
 
-    state =
-      case Map.get(state.conns, pid) do
-        %Info{server_url: server_url} ->
-          if reason in [:timeout, :remote_closed] do
-            NodeScorer.report_failure(server_url)
-          end
-
-          %{
-            state
-            | rpc_failed_at:
-                Map.put(state.rpc_failed_at, pid, System.monotonic_time(:millisecond))
-          }
-
-        _ ->
-          state
-      end
-
-    {:noreply, state}
+  def handle_cast({:connection_rpc_ok, pid}, state) do
+    {:noreply, heal_sticky_if_ok(pid, state)}
   end
 
   def handle_cast({:update_info, cpid, info}, state = %Manager{conns: conns}) do
@@ -828,10 +821,66 @@ defmodule DiodeClient.Manager do
     end)
   end
 
-  defp rpc_failed_recently?(%Manager{rpc_failed_at: failed_at}, pid, now) do
-    case Map.get(failed_at, pid) do
-      nil -> false
-      failed_ms -> now - failed_ms < @rpc_failure_cooldown_ms
+  defp apply_connection_rpc_failed(state, pid, reason) do
+    now = System.monotonic_time(:millisecond)
+
+    state =
+      case Map.get(state.conns, pid) do
+        %Info{server_url: server_url} ->
+          if reason in [:timeout, :remote_closed] do
+            NodeScorer.report_failure(server_url)
+          end
+
+          %{state | rpc_failed_at: Map.put(state.rpc_failed_at, pid, now)}
+
+        _ ->
+          %{state | rpc_failed_at: Map.put(state.rpc_failed_at, pid, now)}
+      end
+
+    maybe_release_sticky_after_hold(pid, now, state)
+  end
+
+  defp rpc_failed_recently?(
+         %Manager{rpc_failed_at: failed_at, sticky_unhealthy_since: unhealthy_since},
+         pid,
+         now
+       ) do
+    sticky_held_unhealthy? =
+      unhealthy_since != nil and Process.whereis(__MODULE__.Sticky) == pid
+
+    recent_failure? =
+      case Map.get(failed_at, pid) do
+        nil -> false
+        failed_ms -> now - failed_ms < @rpc_failure_cooldown_ms
+      end
+
+    sticky_held_unhealthy? or recent_failure?
+  end
+
+  defp maybe_release_sticky_after_hold(pid, now, state = %Manager{}) do
+    if Process.whereis(__MODULE__.Sticky) == pid do
+      since = state.sticky_unhealthy_since || now
+      state = %{state | sticky_unhealthy_since: since}
+
+      if now - since >= @sticky_hold_ms do
+        do_clear_sticky(pid, state)
+      else
+        state
+      end
+    else
+      state
+    end
+  end
+
+  defp heal_sticky_if_ok(pid, state = %Manager{}) do
+    if Process.whereis(__MODULE__.Sticky) == pid do
+      %{
+        state
+        | sticky_unhealthy_since: nil,
+          rpc_failed_at: Map.delete(state.rpc_failed_at, pid)
+      }
+    else
+      state
     end
   end
 
@@ -843,7 +892,7 @@ defmodule DiodeClient.Manager do
         ArgumentError -> :ok
       end
 
-      %{state | sticky: nil}
+      %{state | sticky: nil, sticky_unhealthy_since: nil}
     else
       state
     end
@@ -1007,6 +1056,8 @@ defmodule DiodeClient.Manager do
 
   def get_connection_info(cpid) do
     GenServer.call(__MODULE__, {:get_info, cpid})
+  catch
+    :exit, {:noproc, _} -> %{}
   end
 
   def update_info(cpid, info) do
@@ -1140,6 +1191,16 @@ defmodule DiodeClient.Manager do
   @doc false
   def __test_clear_sticky__(state, pid) do
     do_clear_sticky(pid, state)
+  end
+
+  @doc false
+  def __test_connection_rpc_failed__(state, pid, reason \\ :timeout) do
+    apply_connection_rpc_failed(state, pid, reason)
+  end
+
+  @doc false
+  def __test_connection_rpc_ok__(state, pid) do
+    heal_sticky_if_ok(pid, state)
   end
 
   # Test-only helpers for diagnosing "Best connection changed" log behavior.

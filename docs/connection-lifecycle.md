@@ -99,6 +99,7 @@ Expected poll behaviour on errors:
 | `Connection.call/3` | On GenServer gone (`:noproc`, `:normal`, `:killed`, `:shutdown`) exits `:connection_shutdown` |
 | `Connection.rpc/3` | Maps `remote_closed` replies **and** `:connection_shutdown` exits to `{:error, "remote_closed"}` and logs a warning |
 | `Connection.rpc/3` (timeout) | Maps to `{:error, :timeout}`; casts `:rpc_timeout` to reset wedged `recv_id`; notifies `Manager.connection_rpc_failed/2` |
+| `Connection.rpc/3` (success) | Notifies `Manager.connection_rpc_ok/1` (heals sticky hold timer when sticky recovers) |
 | `Shell.chain_rpc/2` / `Shell.chain_cached_rpc/2` | Retries once on another chain connection |
 | `Shell.Common` (`eth_getTransactionReceipt`) | Retries once on `remote_closed` |
 | `Shell.Common` (`send_transaction`) | Retries across `Manager.tx_relay_candidates/1` on `remote_closed` or `:timeout` (30s per attempt, 3 attempts / 45s total) |
@@ -106,7 +107,7 @@ Expected poll behaviour on errors:
 
 Callers of `Shell.rpc/1` or `Connection.rpc/3` should treat `{:error, "remote_closed"}` and `{:error, :timeout}` as transient unless they persist across reconnect. Do not let `:connection_shutdown` propagate through `Shell.await_all/1` — `rpc/3` converts it first.
 
-Transaction submission may use any `traffic_viable?` relay; sticky remains preferred, with ordered pool fallback (sticky → traffic-best seeds → chain-qualified relays).
+Transaction submission may use any `traffic_viable?` relay; sticky remains preferred, with ordered pool fallback (sticky → traffic-best seeds → chain-qualified relays). Sticky URL preference is held for **2 minutes** of continuous unhealthiness before rebinding to a different seed; per-tx failover to other relays still happens immediately during that hold.
 
 ## SSL close and failure paths
 

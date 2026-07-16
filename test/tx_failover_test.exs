@@ -81,11 +81,12 @@ defmodule DiodeClient.TxFailoverTest do
       server_list: %{},
       waiting_traffic: [],
       waiting_for_peak: %{},
-      sticky: nil,
+      sticky: Keyword.get(opts, :sticky, nil),
       peak_subscribers: %{},
       peak_subscriber_refs: %{},
       local_peak_pollers: %{},
-      rpc_failed_at: %{}
+      rpc_failed_at: %{},
+      sticky_unhealthy_since: nil
     }
   end
 
@@ -160,6 +161,122 @@ defmodule DiodeClient.TxFailoverTest do
 
       assert Process.whereis(Manager.Sticky) == nil
       assert state.sticky == nil
+      assert state.sticky_unhealthy_since == nil
+    end
+  end
+
+  describe "Manager sticky 2-minute hold" do
+    test "rpc failure on sticky sets unhealthy_since but keeps sticky within hold" do
+      eu1 = spawn_conn_holder()
+      us1 = spawn_conn_holder()
+      Process.register(eu1, Manager.Sticky)
+
+      conns = %{
+        eu1 => info(@eu1_url, eu1, 100, 100),
+        us1 => info(@us1_url, us1, 100, 200)
+      }
+
+      state =
+        base_manager_state(conns, best: [eu1, us1], sticky: @eu1_url)
+        |> Manager.__test_connection_rpc_failed__(eu1, :timeout)
+
+      assert Process.whereis(Manager.Sticky) == eu1
+      assert state.sticky == @eu1_url
+      assert is_integer(state.sticky_unhealthy_since)
+      assert Map.has_key?(state.rpc_failed_at, eu1)
+
+      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Moonbeam)
+      assert candidates == [us1]
+      refute eu1 in candidates
+    end
+
+    test "sticky remains excluded while unhealthy_since is set even after cooldown window" do
+      eu1 = spawn_conn_holder()
+      us1 = spawn_conn_holder()
+      Process.register(eu1, Manager.Sticky)
+
+      conns = %{
+        eu1 => info(@eu1_url, eu1, 100, 100),
+        us1 => info(@us1_url, us1, 100, 200)
+      }
+
+      old_failure = System.monotonic_time(:millisecond) - 90_000
+
+      state =
+        base_manager_state(conns, best: [eu1, us1], sticky: @eu1_url)
+        |> Map.put(:sticky_unhealthy_since, old_failure)
+        |> Map.put(:rpc_failed_at, %{eu1 => old_failure})
+
+      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Moonbeam)
+      assert candidates == [us1]
+      refute eu1 in candidates
+    end
+
+    test "rpc failure clears sticky after 2-minute hold expires" do
+      eu1 = spawn_conn_holder()
+      us1 = spawn_conn_holder()
+      Process.register(eu1, Manager.Sticky)
+
+      conns = %{
+        eu1 => info(@eu1_url, eu1, 100, 100),
+        us1 => info(@us1_url, us1, 100, 200)
+      }
+
+      past = System.monotonic_time(:millisecond) - 120_000
+
+      state =
+        base_manager_state(conns, best: [eu1, us1], sticky: @eu1_url)
+        |> Map.put(:sticky_unhealthy_since, past)
+        |> Manager.__test_connection_rpc_failed__(eu1, :timeout)
+
+      assert Process.whereis(Manager.Sticky) == nil
+      assert state.sticky == nil
+      assert state.sticky_unhealthy_since == nil
+    end
+
+    test "connection_rpc_ok on sticky clears hold and restores candidate eligibility" do
+      eu1 = spawn_conn_holder()
+      us1 = spawn_conn_holder()
+      Process.register(eu1, Manager.Sticky)
+
+      conns = %{
+        eu1 => info(@eu1_url, eu1, 100, 100),
+        us1 => info(@us1_url, us1, 100, 200)
+      }
+
+      state =
+        base_manager_state(conns, best: [eu1, us1], sticky: @eu1_url)
+        |> Map.put(:sticky_unhealthy_since, System.monotonic_time(:millisecond))
+        |> Map.put(:rpc_failed_at, %{eu1 => System.monotonic_time(:millisecond)})
+        |> Manager.__test_connection_rpc_ok__(eu1)
+
+      assert state.sticky_unhealthy_since == nil
+      refute Map.has_key?(state.rpc_failed_at, eu1)
+      assert state.sticky == @eu1_url
+      assert Process.whereis(Manager.Sticky) == eu1
+
+      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Moonbeam)
+      assert candidates == [eu1, us1]
+    end
+
+    test "non-sticky failure does not clear sticky or set sticky_unhealthy_since" do
+      eu1 = spawn_conn_holder()
+      us1 = spawn_conn_holder()
+      Process.register(eu1, Manager.Sticky)
+
+      conns = %{
+        eu1 => info(@eu1_url, eu1, 100, 100),
+        us1 => info(@us1_url, us1, 100, 200)
+      }
+
+      state =
+        base_manager_state(conns, best: [eu1, us1], sticky: @eu1_url)
+        |> Manager.__test_connection_rpc_failed__(us1, :remote_closed)
+
+      assert Process.whereis(Manager.Sticky) == eu1
+      assert state.sticky == @eu1_url
+      assert state.sticky_unhealthy_since == nil
+      assert Map.has_key?(state.rpc_failed_at, us1)
     end
   end
 

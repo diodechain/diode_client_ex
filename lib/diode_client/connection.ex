@@ -1045,6 +1045,7 @@ defmodule DiodeClient.Connection do
           {:error, rest}
 
         [^req, ["response" | rest]] ->
+          Manager.connection_rpc_ok(pid)
           rest
       end
     catch
