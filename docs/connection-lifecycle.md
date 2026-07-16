@@ -91,17 +91,18 @@ Expected poll behaviour on errors:
 
 ## `remote_closed` propagation
 
-`remote_closed` is the uniform signal that the relay link is gone or resetting.
+`remote_closed` is the uniform signal that the relay link is gone or resetting. It covers both an in-process socket reset and a dead `Connection` GenServer.
 
 | Layer | Behaviour |
 | ----- | --------- |
 | `reset/1` | Replies blocked `peak/1` waiters indirectly (peaks cleared); sync RPC gets `[req, ["error", "remote_closed"]]`; async RPC gets `{:error, :remote_closed}` |
-| `Connection.rpc/3` | Maps to `{:error, "remote_closed"}` and logs a warning |
-| `Shell.chain_cached_rpc/2` | Retries once on another chain connection |
+| `Connection.call/3` | On GenServer gone (`:noproc`, `:normal`, `:killed`, `:shutdown`) exits `:connection_shutdown` |
+| `Connection.rpc/3` | Maps `remote_closed` replies **and** `:connection_shutdown` exits to `{:error, "remote_closed"}` and logs a warning |
+| `Shell.chain_rpc/2` / `Shell.chain_cached_rpc/2` | Retries once on another chain connection |
 | `Shell.Common` (`eth_getTransactionReceipt`) | Retries once on `remote_closed` |
 | Poll fallback | Retries on next interval (no crash) |
 
-Callers of `Shell.rpc/1` or `Connection.rpc/3` should treat `{:error, "remote_closed"}` as transient unless it persists across reconnect.
+Callers of `Shell.rpc/1` or `Connection.rpc/3` should treat `{:error, "remote_closed"}` as transient unless it persists across reconnect. Do not let `:connection_shutdown` propagate through `Shell.await_all/1` — `rpc/3` converts it first.
 
 ## SSL close and failure paths
 

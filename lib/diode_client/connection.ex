@@ -137,6 +137,8 @@ defmodule DiodeClient.Connection do
 
   def server_url(pid) do
     Manager.get_connection_info(pid, :server_url) || ""
+  catch
+    :exit, _ -> ""
   end
 
   def peak(pid, shell) do
@@ -1013,8 +1015,16 @@ defmodule DiodeClient.Connection do
     req = req_id()
     rlp = encode!([req | [data]])
 
-    call(pid, {:rpc, cmd, req, rlp, timestamp(), self()}, timeout)
-    |> case do
+    try do
+      call(pid, {:rpc, cmd, req, rlp, timestamp(), self()}, timeout)
+    catch
+      :exit, :connection_shutdown ->
+        Logger.warning(
+          "DiodeClient connection_shutdown during RPC(#{inspect(cmd)}) from #{server_url(pid)}"
+        )
+
+        {:error, "remote_closed"}
+    else
       [^req, ["error", "remote_closed"]] ->
         Logger.warning(
           "DiodeClient remote_closed during RPC(#{inspect(cmd)}) from #{server_url(pid)}"
@@ -1043,15 +1053,12 @@ defmodule DiodeClient.Connection do
     GenServer.call(pid, args, timeout)
   catch
     :exit, {:noproc, _reason} ->
-      Process.exit(pid, :normal)
       exit(:connection_shutdown)
 
-    :exit, {:normal, _reason} ->
-      Process.exit(pid, :normal)
+    :exit, {reason, _} when reason in [:normal, :killed, :shutdown] ->
       exit(:connection_shutdown)
 
     :exit, reason ->
-      Process.exit(pid, reason)
       raise "DiodeClient exception: #{inspect(reason)}"
   end
 
