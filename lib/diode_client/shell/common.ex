@@ -113,19 +113,63 @@ defmodule DiodeClient.Shell.Common do
     end
   end
 
+  @tx_rpc_timeout 30_000
+  @tx_failover_attempts 3
+  @tx_failover_total_timeout 45_000
+
   def send_transaction(shell, tx = %IdentityRequest{}) do
     rlp = IdentityRequest.to_rlp(tx) |> Rlp.encode!()
-    {Connection.rpc(Shell.sticky_conn(), [shell.prefix() <> "sendmetatransaction", rlp]), tx}
+    {rpc_with_tx_failover(shell, [shell.prefix() <> "sendmetatransaction", rlp]), tx}
   end
 
   def send_transaction(shell, tx = %Transaction{}) do
     rlp = Transaction.to_rlp(tx) |> Rlp.encode!()
-    {Connection.rpc(Shell.sticky_conn(), [shell.prefix() <> "sendtransaction", rlp]), tx}
+    {rpc_with_tx_failover(shell, [shell.prefix() <> "sendtransaction", rlp]), tx}
   end
 
   def send_transaction(shell, tx = %MetaTransaction{}) do
     rlp = MetaTransaction.to_rlp(tx) |> Rlp.encode!()
-    {Connection.rpc(Shell.sticky_conn(), [shell.prefix() <> "sendmetatransaction", rlp]), tx}
+    {rpc_with_tx_failover(shell, [shell.prefix() <> "sendmetatransaction", rlp]), tx}
+  end
+
+  defp rpc_with_tx_failover(shell, cmd) do
+    candidates = DiodeClient.Manager.tx_relay_candidates(shell)
+    started_at = System.monotonic_time(:millisecond)
+    rpc_with_tx_failover(shell, cmd, candidates, started_at, 0, @tx_rpc_timeout)
+  end
+
+  defp rpc_with_tx_failover(_shell, _cmd, _candidates, _started_at, attempts, _timeout)
+       when attempts >= @tx_failover_attempts do
+    {:error, :relay_exhausted}
+  end
+
+  defp rpc_with_tx_failover(_shell, _cmd, [], _started_at, _attempts, _timeout) do
+    {:error, :relay_exhausted}
+  end
+
+  defp rpc_with_tx_failover(shell, cmd, [pid | rest], started_at, attempts, timeout) do
+    if System.monotonic_time(:millisecond) - started_at > @tx_failover_total_timeout do
+      {:error, :relay_exhausted}
+    else
+      case Connection.rpc(pid, cmd, timeout: timeout) do
+        {:error, :timeout} ->
+          rpc_with_tx_failover(shell, cmd, rest, started_at, attempts + 1, timeout)
+
+        {:error, "remote_closed"} ->
+          DiodeClient.Manager.connection_rpc_failed(pid, :remote_closed)
+          rpc_with_tx_failover(shell, cmd, rest, started_at, attempts + 1, timeout)
+
+        result ->
+          result
+      end
+    end
+  end
+
+  @doc false
+  def __test_rpc_with_tx_failover__(shell, cmd, candidates, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, @tx_rpc_timeout)
+    started_at = System.monotonic_time(:millisecond)
+    rpc_with_tx_failover(shell, cmd, candidates, started_at, 0, timeout)
   end
 
   def create_transaction(shell, address, data, opts) do

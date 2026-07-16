@@ -172,6 +172,7 @@ For each subscribed `shell`:
 
 ### Phase 4 — Optional extensions (v2)
 
+- [x] Failover on transport errors (`remote_closed`, `:timeout`) for `send_transaction` across relay pool (issue #17)
 - [ ] Failover on known Moonbeam RPC errors across `get_chain_connection` pool
 - [ ] Configurable `ticket_shell` per fleet / connection
 
