@@ -841,9 +841,9 @@ defmodule DiodeClient.Manager do
     ordered
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()
-    |> Enum.filter(viable?)
     |> Enum.filter(fn pid ->
-      not chain_prefixed_shell?(shell) or chain_capable_pid?(state, shell, pid)
+      viable?.(pid) and
+        (not chain_prefixed_shell?(shell) or chain_capable_pid?(state, shell, pid))
     end)
   end
 
