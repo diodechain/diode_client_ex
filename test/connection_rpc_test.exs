@@ -141,5 +141,55 @@ defmodule DiodeClient.ConnectionRpcTest do
 
       assert Shell.await_all([fn -> Shell.rpc_retriable(["ping"], get_conn) end]) == [["ok"]]
     end
+
+    test "retries on another connection after bad input from an unsupported-chain relay" do
+      {:ok, bad} = StubConn.start(error: [<<1, 145>>, "bad input"])
+      {:ok, good} = StubConn.start(reply: ["root"])
+
+      attempts = :atomics.new(1, signed: false)
+
+      get_conn = fn ->
+        case :atomics.add_get(attempts, 1, 1) do
+          1 -> bad
+          _ -> good
+        end
+      end
+
+      assert Shell.rpc_retriable(["base:getaccountroot", 1, <<0::160>>], get_conn) == ["root"]
+      assert :atomics.get(attempts, 1) == 2
+    end
+
+    test "retries on another connection after block not found" do
+      {:ok, bad} = StubConn.start(error: "block not found")
+      {:ok, good} = StubConn.start(reply: ["header"])
+
+      attempts = :atomics.new(1, signed: false)
+
+      get_conn = fn ->
+        case :atomics.add_get(attempts, 1, 1) do
+          1 -> bad
+          _ -> good
+        end
+      end
+
+      assert Shell.rpc_retriable(["base:getblockheader", 1], get_conn) == ["header"]
+      assert :atomics.get(attempts, 1) == 2
+    end
+
+    test "does not retry on unrelated RPC errors" do
+      {:ok, bad} = StubConn.start(error: "transaction_rejected")
+
+      attempts = :atomics.new(1, signed: false)
+
+      get_conn = fn ->
+        :atomics.add_get(attempts, 1, 1)
+        bad
+      end
+
+      assert Shell.rpc_retriable(["base:sendtransaction", <<>>], get_conn) ==
+               {:error, "transaction_rejected"}
+
+      assert :atomics.get(attempts, 1) == 1
+    end
   end
 end

@@ -6,6 +6,7 @@ defmodule DiodeClient.Manager.ChainPeaksTest do
   alias DiodeClient.Rlpx
 
   @shell DiodeClient.Shell.Moonbeam
+  @base DiodeClient.Shell.Base
   @opts [min_connections: 3]
 
   defp block(n) do
@@ -73,6 +74,103 @@ defmodule DiodeClient.Manager.ChainPeaksTest do
 
       assert map_size(connected) == 2
       refute Map.has_key?(connected, :stale)
+    end
+
+    test "connected_for_shell excludes relays with no peak for the shell" do
+      conns = %{
+        :no_base => %Info{
+          server_address: <<1::160>>,
+          peaks: %{DiodeClient.Shell => block(100)}
+        },
+        :a => %Info{
+          server_address: <<2::160>>,
+          peaks: %{@base => block(100)}
+        },
+        :b => %Info{
+          server_address: <<3::160>>,
+          peaks: %{@base => block(100)}
+        }
+      }
+
+      # reported=0 must not treat missing Base peak as height 0
+      connected = ChainPeaks.connected_for_shell(@base, conns, %{}, 2)
+
+      assert map_size(connected) == 2
+      refute Map.has_key?(connected, :no_base)
+    end
+  end
+
+  describe "routeable_for_shell/3" do
+    test "excludes relays that never reported a peak for the shell" do
+      conns = %{
+        :traffic_only => %Info{
+          server_address: <<1::160>>,
+          latency: 50,
+          peaks: %{DiodeClient.Shell => block(100)}
+        },
+        :base_ok => %Info{
+          server_address: <<2::160>>,
+          latency: 200,
+          peaks: %{@base => block(100)}
+        }
+      }
+
+      routeable = ChainPeaks.routeable_for_shell(@base, conns, %{@base => block(100)})
+
+      assert Map.keys(routeable) == [:base_ok]
+    end
+
+    test "returns a single chain-capable relay without min_connections wipe" do
+      conns = %{
+        :only => %Info{
+          server_address: <<1::160>>,
+          peaks: %{@base => block(50)}
+        },
+        :no_base => %Info{
+          server_address: <<2::160>>,
+          peaks: %{DiodeClient.Shell => block(100)}
+        }
+      }
+
+      # Consensus would wipe (< 3), routing must still return the capable relay
+      assert ChainPeaks.connected_for_shell(@base, conns, %{@base => block(50)}, 3) == %{}
+
+      routeable = ChainPeaks.routeable_for_shell(@base, conns, %{@base => block(50)})
+      assert Map.keys(routeable) == [:only]
+    end
+
+    test "falls back to stale chain-capable relays when none are at consensus" do
+      conns = %{
+        :stale => %Info{
+          server_address: <<1::160>>,
+          peaks: %{@base => block(90)}
+        },
+        :no_base => %Info{
+          server_address: <<2::160>>,
+          peaks: %{DiodeClient.Shell => block(100)}
+        }
+      }
+
+      routeable = ChainPeaks.routeable_for_shell(@base, conns, %{@base => block(100)})
+
+      assert Map.keys(routeable) == [:stale]
+    end
+
+    test "prefers relays at consensus over stale when both exist" do
+      conns = %{
+        :stale => %Info{
+          server_address: <<1::160>>,
+          peaks: %{@base => block(90)}
+        },
+        :fresh => %Info{
+          server_address: <<2::160>>,
+          peaks: %{@base => block(100)}
+        }
+      }
+
+      routeable = ChainPeaks.routeable_for_shell(@base, conns, %{@base => block(100)})
+
+      assert Map.keys(routeable) == [:fresh]
     end
   end
 end

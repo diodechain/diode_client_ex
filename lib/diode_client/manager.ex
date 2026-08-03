@@ -20,6 +20,7 @@ defmodule DiodeClient.Manager do
     :server_list,
     :waiting_traffic,
     :waiting_for_peak,
+    :waiting_chain,
     :traffic_best,
     :chain_peaks,
     :online,
@@ -76,6 +77,7 @@ defmodule DiodeClient.Manager do
       shells: MapSet.new(default_shells()),
       waiting_traffic: [],
       waiting_for_peak: %{},
+      waiting_chain: %{},
       traffic_best: [],
       debounce_timeout: @initial_debounce_timeout,
       peak_subscribers: %{},
@@ -262,8 +264,14 @@ defmodule DiodeClient.Manager do
   end
 
   @doc """
-  Returns a relay at the consensus peak for `shell`, preferring low latency.
-  Falls back to `get_connection/0` when no qualifying relay exists.
+  Returns a relay that can serve RPCs for `shell`, preferring low latency.
+
+  Prefixed shells (`base:`, `glmr:`, …) only use relays that have reported a
+  peak for that chain. Waits until such a relay exists rather than falling
+  back to traffic-best (which may not support the chain).
+
+  Diode (empty prefix) may fall back to `get_connection/0` when the chain
+  pool is empty.
   """
   def get_chain_connection(shell) when is_atom(shell) do
     _chain_id = shell.chain_id()
@@ -647,8 +655,21 @@ defmodule DiodeClient.Manager do
     {:reply, best, state}
   end
 
-  def handle_call({:get_chain_connection, shell}, _from, state) do
-    {:reply, chain_connection_pids(state, shell), state}
+  def handle_call({:get_chain_connection, shell}, from, state) do
+    case chain_connection_pids(state, shell) do
+      [] ->
+        if chain_prefixed_shell?(shell) do
+          waiting_chain =
+            Map.update(state.waiting_chain || %{}, shell, [from], fn froms -> froms ++ [from] end)
+
+          {:noreply, %{state | waiting_chain: waiting_chain}}
+        else
+          {:reply, [], state}
+        end
+
+      pids ->
+        {:reply, pids, state}
+    end
   end
 
   def handle_call({:tx_relay_candidates, shell}, _from, state) do
@@ -774,9 +795,21 @@ defmodule DiodeClient.Manager do
   end
 
   defp chain_connection_pids(state = %Manager{}, shell) do
-    ChainPeaks.connected_for_shell(shell, state.conns, state.chain_peaks, min_connections())
+    ChainPeaks.routeable_for_shell(shell, state.conns, state.chain_peaks)
     |> Enum.sort_by(fn {_pid, %Info{latency: latency}} -> latency end)
     |> Enum.map(fn {pid, _} -> pid end)
+  end
+
+  defp chain_prefixed_shell?(shell) do
+    Code.ensure_loaded(shell)
+    function_exported?(shell, :prefix, 0) and shell.prefix() != ""
+  end
+
+  defp chain_capable_pid?(state, shell, pid) do
+    case Map.get(state.conns, pid) do
+      %Info{peaks: peaks} -> match?(%{"number" => _}, Map.get(peaks, shell))
+      _ -> false
+    end
   end
 
   defp tx_relay_candidates(state = %Manager{}, shell) do
@@ -796,10 +829,22 @@ defmodule DiodeClient.Manager do
     traffic_seeds = traffic_viable_seed_pids(state, now)
     chain_pids = chain_connection_pids(state, shell)
 
-    [sticky | traffic_seeds ++ chain_pids]
+    # Prefixed chains must not lead with traffic-best seeds that may lack the
+    # chain; Diode keeps sticky → traffic seeds → chain pool ordering.
+    ordered =
+      if chain_prefixed_shell?(shell) do
+        [sticky | chain_pids ++ traffic_seeds]
+      else
+        [sticky | traffic_seeds ++ chain_pids]
+      end
+
+    ordered
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()
-    |> Enum.filter(viable?)
+    |> Enum.filter(fn pid ->
+      viable?.(pid) and
+        (not chain_prefixed_shell?(shell) or chain_capable_pid?(state, shell, pid))
+    end)
   end
 
   defp traffic_viable_seed_pids(state = %Manager{traffic_best: best}, now) do
@@ -912,6 +957,7 @@ defmodule DiodeClient.Manager do
 
   defp update(state) do
     state = update_chain_peaks(state)
+    state = reply_waiting_chain(state)
     traffic_candidates = Map.values(traffic_viable_conns(state))
     viable_best = Enum.filter(state.traffic_best, &traffic_best_pid_viable?(state, &1))
 
@@ -921,6 +967,26 @@ defmodule DiodeClient.Manager do
     else
       %{state | traffic_best: viable_best}
     end
+  end
+
+  defp reply_waiting_chain(state = %Manager{waiting_chain: waiting}) when waiting in [nil, %{}] do
+    state
+  end
+
+  defp reply_waiting_chain(state = %Manager{waiting_chain: waiting}) do
+    waiting_chain =
+      Enum.reduce(waiting, %{}, fn {shell, froms}, acc ->
+        case chain_connection_pids(state, shell) do
+          [] ->
+            Map.put(acc, shell, froms)
+
+          pids ->
+            for from <- froms, do: GenServer.reply(from, pids)
+            acc
+        end
+      end)
+
+    %{state | waiting_chain: waiting_chain}
   end
 
   defp traffic_best_pid_viable?(state = %Manager{conns: conns}, pid) do
@@ -1186,6 +1252,11 @@ defmodule DiodeClient.Manager do
   @doc false
   def __test_tx_relay_candidates__(state, shell) do
     tx_relay_candidates(state, shell)
+  end
+
+  @doc false
+  def __test_chain_connection_pids__(state, shell) do
+    chain_connection_pids(state, shell)
   end
 
   @doc false
