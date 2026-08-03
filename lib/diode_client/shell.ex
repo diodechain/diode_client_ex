@@ -351,15 +351,31 @@ defmodule DiodeClient.Shell do
 
   @doc false
   # Transient relay disconnects (socket reset or Connection process death) are
-  # surfaced as {:error, "remote_closed"}; try once more on another connection.
+  # surfaced as {:error, "remote_closed"}. Prefixed-chain relays that do not
+  # support the chain return "bad input" / "block not found". Retry once on
+  # another connection for all of these.
   def rpc_retriable(args, get_conn, first_conn \\ nil) when is_function(get_conn, 0) do
     conn = first_conn || get_conn.()
 
     case Connection.rpc(conn, args) do
-      {:error, "remote_closed"} -> Connection.rpc(get_conn.(), args)
-      other -> other
+      {:error, reason} = err ->
+        if retryable_rpc_error?(reason) do
+          Connection.rpc(get_conn.(), args)
+        else
+          err
+        end
+
+      other ->
+        other
     end
   end
+
+  defp retryable_rpc_error?("remote_closed"), do: true
+  defp retryable_rpc_error?("block not found"), do: true
+  defp retryable_rpc_error?("bad input"), do: true
+  defp retryable_rpc_error?([_code, "bad input"]), do: true
+  defp retryable_rpc_error?(reason) when is_list(reason), do: "bad input" in reason
+  defp retryable_rpc_error?(_), do: false
 
   def ether(x), do: trunc(1000 * finney(1) * x)
   def finney(x), do: trunc(1000 * szabo(1) * x)

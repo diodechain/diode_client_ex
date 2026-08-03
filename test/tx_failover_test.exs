@@ -11,6 +11,14 @@ defmodule DiodeClient.TxFailoverTest do
   @us1_url "us1.prenet.diode.io"
   @as1_url "as1.prenet.diode.io"
 
+  setup do
+    if Process.whereis(Manager.Sticky) do
+      Process.unregister(Manager.Sticky)
+    end
+
+    :ok
+  end
+
   defmodule MockRelay do
     @moduledoc false
     use GenServer

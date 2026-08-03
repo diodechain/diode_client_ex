@@ -100,7 +100,7 @@ Expected poll behaviour on errors:
 | `Connection.rpc/3` | Maps `remote_closed` replies **and** `:connection_shutdown` exits to `{:error, "remote_closed"}` and logs a warning |
 | `Connection.rpc/3` (timeout) | Maps to `{:error, :timeout}`; casts `:rpc_timeout` to reset wedged `recv_id`; notifies `Manager.connection_rpc_failed/2` |
 | `Connection.rpc/3` (success) | Notifies `Manager.connection_rpc_ok/1` (heals sticky hold timer when sticky recovers) |
-| `Shell.chain_rpc/2` / `Shell.chain_cached_rpc/2` | Retries once on another chain connection |
+| `Shell.chain_rpc/2` / `Shell.chain_cached_rpc/2` | Retries once on another chain connection for `remote_closed`, `bad input`, and `block not found` |
 | `Shell.Common` (`eth_getTransactionReceipt`) | Retries once on `remote_closed` |
 | `Shell.Common` (`send_transaction`) | Retries across `Manager.tx_relay_candidates/1` on `remote_closed` or `:timeout` (30s per attempt, 3 attempts / 45s total) |
 | Poll fallback | Retries on next interval (no crash) |

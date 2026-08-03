@@ -8,6 +8,9 @@ defmodule DiodeClient.Manager.ChainPeaks do
 
   @doc """
   Returns authenticated connections at or above the reported peak for `shell` only.
+
+  Used for peak consensus quorum. Requires a real peak for `shell` (nil is not
+  height 0). Returns `%{}` when fewer than `min_connections` qualify.
   """
   def connected_for_shell(shell, conns, chain_peaks, min_connections) do
     reported = block_number(Map.get(chain_peaks, shell))
@@ -15,11 +18,41 @@ defmodule DiodeClient.Manager.ChainPeaks do
     connected =
       conns
       |> Enum.filter(fn {_pid, %Info{server_address: addr, peaks: conn_peaks}} ->
-        addr != nil and block_number(Map.get(conn_peaks, shell)) >= reported
+        addr != nil and peak_at_least?(Map.get(conn_peaks, shell), reported)
       end)
       |> Map.new()
 
     if map_size(connected) < min_connections, do: %{}, else: connected
+  end
+
+  @doc """
+  Returns relays that can serve RPCs for `shell`.
+
+  Unlike `connected_for_shell/4`, this never empties the set for quorum size:
+  any authenticated relay with a real peak for `shell` is routeable. Prefers
+  relays at or above the reported consensus peak; if none, falls back to any
+  relay that has reported a peak for `shell` (stale but chain-capable).
+
+  Relays that never reported a peak for `shell` (unsupported chain) are excluded.
+  """
+  def routeable_for_shell(shell, conns, chain_peaks) do
+    reported = block_number(Map.get(chain_peaks, shell))
+
+    with_peak =
+      conns
+      |> Enum.filter(fn {_pid, %Info{server_address: addr, peaks: conn_peaks}} ->
+        addr != nil and match?(%{"number" => _}, Map.get(conn_peaks, shell))
+      end)
+      |> Map.new()
+
+    at_peak =
+      with_peak
+      |> Enum.filter(fn {_pid, %Info{peaks: peaks}} ->
+        peak_at_least?(Map.get(peaks, shell), reported)
+      end)
+      |> Map.new()
+
+    if map_size(at_peak) > 0, do: at_peak, else: with_peak
   end
 
   @doc """
@@ -161,6 +194,9 @@ defmodule DiodeClient.Manager.ChainPeaks do
   def stale_threshold(DiodeClient.Shell.Moonbeam), do: @moonbeam_stale_threshold
   def stale_threshold(DiodeClient.Shell), do: @diode_stale_threshold
   def stale_threshold(_shell), do: @default_stale_threshold
+
+  defp peak_at_least?(nil, _reported), do: false
+  defp peak_at_least?(block, reported), do: block_number(block) >= reported
 
   defp block_number(nil), do: 0
   defp block_number(block), do: Rlpx.bin2uint(block["number"])
