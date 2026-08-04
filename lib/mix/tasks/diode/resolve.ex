@@ -102,16 +102,9 @@ defmodule Mix.Tasks.Diode.Resolve do
   defp resolve_contract(_shell, _address, hex, _type, _level), do: hex
 
   defp shell_for(address) do
-    cond do
-      DiodeClient.Shell.get_account_root(address) != nil ->
-        DiodeClient.Shell
-
-      DiodeClient.Shell.Moonbeam.get_account_root(address) != nil ->
-        DiodeClient.Shell.Moonbeam
-
-      true ->
-        nil
-    end
+    Enum.find(Factory.shells(), fn shell ->
+      shell.get_account_root(address) != nil
+    end)
   end
 
   # Runtime may return :revert / {:error, _} from eth_call; keep resolve robust.

@@ -149,12 +149,9 @@ defmodule DiodeClient.Contracts.BNS do
     base = Hash.to_bytes32(@slot_reverse_names)
     slot = Hash.keccak_256(Hash.to_bytes32(address) <> base)
 
-    # either(:string, [slot, block])
-    Enum.find_value(["diode", "glmr"], fn postfix ->
-      impl = Enum.find(impls(), fn impl -> impl.postfix == postfix end)
-
+    Enum.find_value(impls(), fn impl ->
       if impl.shell.get_account_root(impl.address) != nil do
-        maybe_extend(string(impl.shell, impl.address, slot, block), "." <> postfix)
+        maybe_extend(string(impl.shell, impl.address, slot, block), "." <> impl.postfix)
       end
     end)
   end
