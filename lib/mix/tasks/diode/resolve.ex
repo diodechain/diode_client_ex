@@ -83,8 +83,8 @@ defmodule Mix.Tasks.Diode.Resolve do
 
   defp resolve_contract(shell, address, hex, :drive_member, level) do
     owner = DriveMember.owner?(shell, address, nil)
-    members = members_or_empty(DriveMember.members(shell, address, nil))
-    addtl = list_or_empty(DriveMember.addtl_drive_addresses(shell, address, nil))
+    members = as_list(DriveMember.members(shell, address, nil))
+    addtl = as_list(DriveMember.addtl_drive_addresses(shell, address, nil))
 
     puts(level, "owner", encode_addr(owner))
 
@@ -114,13 +114,9 @@ defmodule Mix.Tasks.Diode.Resolve do
     end
   end
 
-  defp members_or_empty(list) when is_list(list), do: list
-  defp members_or_empty(:revert), do: []
-  defp members_or_empty({:error, _}), do: []
-  defp members_or_empty(_), do: []
-
-  defp list_or_empty(list) when is_list(list), do: list
-  defp list_or_empty(_), do: []
+  # Runtime may return :revert / {:error, _} from eth_call; keep resolve robust.
+  defp as_list(list) when is_list(list), do: list
+  defp as_list(_), do: []
 
   defp encode_addr(addr) when is_binary(addr), do: Base16.encode(addr)
   defp encode_addr(false), do: "nil"
