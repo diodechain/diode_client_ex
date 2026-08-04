@@ -7,6 +7,7 @@ defmodule Mix.Tasks.Diode.Resolve do
   use Mix.Task
 
   alias DiodeClient.{Base16, Contracts}
+  alias DiodeClient.Contracts.{Drive, DriveMember, Factory}
 
   def run([address]) do
     Logger.configure(level: :info)
@@ -24,44 +25,20 @@ defmodule Mix.Tasks.Diode.Resolve do
   def resolve(name, level \\ 0)
 
   def resolve(hex = "0x" <> _, level) do
-    with name when name != nil <- Contracts.BNS.resolve_address(Base16.decode(hex)) do
+    address = Base16.decode(hex)
+
+    with name when name != nil <- Contracts.BNS.resolve_address(address) do
       puts(level, "reverse-name", name)
     end
 
-    shell =
-      cond do
-        DiodeClient.Shell.get_account_root(Base16.decode(hex)) != nil ->
-          DiodeClient.Shell
+    case shell_for(address) do
+      nil ->
+        hex
 
-        DiodeClient.Shell.Moonbeam.get_account_root(Base16.decode(hex)) != nil ->
-          DiodeClient.Shell.Moonbeam
-
-        true ->
-          nil
-      end
-
-    if shell do
-      owner = Contracts.DriveMember.owner?(shell, Base16.decode(hex), nil)
-      members = Contracts.DriveMember.members(shell, Base16.decode(hex), nil)
-
-      addtl_drive_addresses =
-        Contracts.DriveMember.addtl_drive_addresses(shell, Base16.decode(hex), nil)
-
-      puts(level, "owner", if(owner, do: Base16.encode(owner), else: "nil"))
-
-      for {addtl_drive_address, idx} <- Enum.with_index(addtl_drive_addresses) do
-        puts(level, "addtl_drive_address[#{idx}]", Base16.encode(addtl_drive_address))
-      end
-
-      {hex,
-       for name <- members do
-         role = Contracts.Zone.role(shell, Base16.decode(hex), name, nil)
-
-         puts(level, "member", Base16.encode(name) <> " #{inspect(role)}")
-         resolve(Base16.encode(name), level + 1)
-       end}
-    else
-      hex
+      shell ->
+        type = Factory.contract_type(shell, address)
+        puts(level, "type", type_label(type))
+        resolve_contract(shell, address, hex, type, level)
     end
   end
 
@@ -85,6 +62,75 @@ defmodule Mix.Tasks.Diode.Resolve do
        resolve(Base16.encode(name), level + 1)
      end}
   end
+
+  defp resolve_contract(shell, address, hex, :drive, level) do
+    owner = Drive.owner(shell, address)
+    puts(level, "owner", encode_addr(owner))
+
+    case Drive.member_roles(shell, address) do
+      roles when is_map(roles) ->
+        {hex,
+         for {member, role} <- roles do
+           puts(level, "member", "#{Base16.encode(member)} #{inspect(role)}")
+           resolve(Base16.encode(member), level + 1)
+         end}
+
+      other ->
+        puts(level, "members", inspect(other))
+        hex
+    end
+  end
+
+  defp resolve_contract(shell, address, hex, :drive_member, level) do
+    owner = DriveMember.owner?(shell, address, nil)
+    members = members_or_empty(DriveMember.members(shell, address, nil))
+    addtl = list_or_empty(DriveMember.addtl_drive_addresses(shell, address, nil))
+
+    puts(level, "owner", encode_addr(owner))
+
+    for {drive_address, idx} <- Enum.with_index(addtl) do
+      puts(level, "addtl_drive_address[#{idx}]", Base16.encode(drive_address))
+    end
+
+    {hex,
+     for member <- members do
+       puts(level, "member", Base16.encode(member))
+       resolve(Base16.encode(member), level + 1)
+     end}
+  end
+
+  defp resolve_contract(_shell, _address, hex, _type, _level), do: hex
+
+  defp shell_for(address) do
+    cond do
+      DiodeClient.Shell.get_account_root(address) != nil ->
+        DiodeClient.Shell
+
+      DiodeClient.Shell.Moonbeam.get_account_root(address) != nil ->
+        DiodeClient.Shell.Moonbeam
+
+      true ->
+        nil
+    end
+  end
+
+  defp members_or_empty(list) when is_list(list), do: list
+  defp members_or_empty(:revert), do: []
+  defp members_or_empty({:error, _}), do: []
+  defp members_or_empty(_), do: []
+
+  defp list_or_empty(list) when is_list(list), do: list
+  defp list_or_empty(_), do: []
+
+  defp encode_addr(addr) when is_binary(addr), do: Base16.encode(addr)
+  defp encode_addr(false), do: "nil"
+  defp encode_addr(nil), do: "nil"
+  defp encode_addr(other), do: inspect(other)
+
+  defp type_label(:drive), do: "Drive"
+  defp type_label(:drive_member), do: "DriveMember"
+  defp type_label(:unknown), do: "unknown"
+  defp type_label({:other, name}), do: name
 
   defp puts(level, key, value) do
     key = String.pad_leading("", level * 2) <> "┗━" <> key
