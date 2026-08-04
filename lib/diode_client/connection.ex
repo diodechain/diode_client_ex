@@ -1021,6 +1021,8 @@ defmodule DiodeClient.Connection do
 
   def rpc(pid, data = [cmd | _rest], opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 120_000)
+    # Capture before the call: on connection_shutdown Manager already dropped this pid
+    server = server_url(pid)
     req = req_id()
     rlp = encode!([req | [data]])
 
@@ -1032,9 +1034,7 @@ defmodule DiodeClient.Connection do
           {:error, :timeout}
 
         [^req, ["error", "remote_closed"]] ->
-          Logger.warning(
-            "DiodeClient remote_closed during RPC(#{inspect(cmd)}) from #{server_url(pid)}"
-          )
+          Logger.warning("DiodeClient remote_closed during RPC(#{inspect(cmd)}) from #{server}")
 
           {:error, "remote_closed"}
 
@@ -1051,7 +1051,7 @@ defmodule DiodeClient.Connection do
     catch
       :exit, :connection_shutdown ->
         Logger.warning(
-          "DiodeClient connection_shutdown during RPC(#{inspect(cmd)}) from #{server_url(pid)}"
+          "DiodeClient connection_shutdown during RPC(#{inspect(cmd)}) from #{server}"
         )
 
         {:error, "remote_closed"}

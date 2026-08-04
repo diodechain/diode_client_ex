@@ -185,6 +185,56 @@ defmodule DiodeClient.Contracts.Factory do
     contracts(shell).drive_member
   end
 
+  @doc """
+  Detects the contract family behind `address`.
+
+  Order:
+  1. Match EIP-1967 implementation (or the address itself) against known factory
+     Drive / DriveMember targets — works for Moonbeam DriveMember v114 which has
+     no `Type()` yet, and avoids a reverting `Type()` eth_call.
+  2. On-chain `Type()` (`"Drive"`, `"DriveMember"`, …).
+  3. Version heuristic: Drive ≥ 150, DriveMember otherwise when `Version()` works.
+  """
+  def contract_type(shell, address, block \\ nil) do
+    block = block || shell.peak()
+    known = contracts(shell)
+    target = proxy_implementation(shell, address, block) || address
+
+    cond do
+      target == known.drive or address == known.drive ->
+        :drive
+
+      target == known.drive_member or address == known.drive_member ->
+        :drive_member
+
+      true ->
+        case Utils.call(shell, address, "Type", [], [], "string", block) do
+          type when is_binary(type) and type != "" ->
+            normalize_contract_type(type)
+
+          _ ->
+            contract_type_from_version(Utils.version(shell, address, block))
+        end
+    end
+  end
+
+  # EIP-1967 implementation slot
+  @slot_proxy_target 0x360894A13BA1A3210667C828492DB98DCA3E2076CC3735A920A3CA505D382BBC
+
+  defp proxy_implementation(shell, address, block) do
+    Utils.address(shell, address, @slot_proxy_target, block)
+  end
+
+  defp contract_type_from_version(v) when is_integer(v) and v >= 150, do: :drive
+  defp contract_type_from_version(v) when is_integer(v) and v > 0, do: :drive_member
+  defp contract_type_from_version(_), do: :unknown
+
+  defp normalize_contract_type("Drive"), do: :drive
+  defp normalize_contract_type("DriveMember"), do: :drive_member
+
+  defp normalize_contract_type(other) when is_binary(other),
+    do: {:other, other}
+
   def address(shell) do
     contracts(shell).factory
   end
