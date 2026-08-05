@@ -22,7 +22,7 @@ defmodule DiodeClient.Transport do
     |> maybe_reset_options()
   end
 
-  # Ranch 1 (keyword) and Ranch 2 (transport opts map with :socket_opts) both call this.
+  # Ranch 1 passes a keyword list; Ranch 2 passes a transport opts map with :socket_opts.
   @doc false
   def listen(opts) when is_list(opts) or is_map(opts) do
     port = listen_port(opts)
@@ -34,15 +34,7 @@ defmodule DiodeClient.Transport do
   def listen_port(opts) when is_list(opts), do: Keyword.fetch!(opts, :port)
 
   def listen_port(opts) when is_map(opts) do
-    case Map.fetch(opts, :port) do
-      {:ok, port} ->
-        port
-
-      :error ->
-        opts
-        |> Map.get(:socket_opts, [])
-        |> Keyword.fetch!(:port)
-    end
+    Keyword.fetch!(Map.get(opts, :socket_opts, []), :port)
   end
 
   @spec accept(DiodeClient.Acceptor.Listener.t(), any) :: {:error, any()} | {:ok, pid()}

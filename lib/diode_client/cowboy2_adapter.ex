@@ -46,9 +46,7 @@ defmodule DiodeClient.Cowboy2Adapter do
 
     spec =
       update_in(spec.start, fn mfa ->
-        mfa
-        |> patch_transport()
-        |> then(&{__MODULE__, :start_link, [scheme, endpoint, &1]})
+        {__MODULE__, :start_link, [scheme, endpoint, patch_transport(mfa)]}
       end)
 
     {ref, spec}
@@ -70,18 +68,22 @@ defmodule DiodeClient.Cowboy2Adapter do
         Logger.debug(fn -> info(scheme, endpoint, ref) end)
         {:ok, pid}
 
-      {:error, {:shutdown, {_, _, {:listen_error, _, :eaddrinuse}}}} = error ->
-        Logger.debug("#{info(scheme, endpoint, ref)} failed, port already in use")
-        error
+      {:error, {:shutdown, reason}} = error ->
+        if eaddrinuse?(reason) do
+          Logger.debug(fn -> "#{info(scheme, endpoint, ref)} failed, port already in use" end)
+        end
 
-      {:error, {:shutdown, {_, _, {{_, {:error, :eaddrinuse}}, _}}}} = error ->
-        Logger.debug("#{info(scheme, endpoint, ref)} failed, port already in use")
         error
 
       {:error, _} = error ->
         error
     end
   end
+
+  # Ranch 1 vs Ranch 2 wrap :eaddrinuse differently under :shutdown.
+  defp eaddrinuse?({_, _, {:listen_error, _, :eaddrinuse}}), do: true
+  defp eaddrinuse?({_, _, {{_, {:error, :eaddrinuse}}, _}}), do: true
+  defp eaddrinuse?(_), do: false
 
   defp info(scheme, endpoint, ref) do
     server = "cowboy #{Application.spec(:cowboy)[:vsn]}"

@@ -19,10 +19,6 @@ defmodule DiodeClient.TransportTest do
       assert Transport.listen_port(opts) == 80
     end
 
-    test "prefers top-level :port on map when present" do
-      assert Transport.listen_port(%{port: 443, socket_opts: [port: 80]}) == 443
-    end
-
     test "raises when port is missing from keyword list" do
       assert_raise KeyError, fn -> Transport.listen_port([]) end
     end
