@@ -175,8 +175,12 @@ defmodule DiodeClient.Acceptor do
         do_close(portnum, state)
         %Acceptor{state | ports: Map.put(ports, portnum, new_value)}
       else
+        # ports[portnum] = {waiting_acceptors, listener_options}. Keep any
+        # already-registered accept waiters; only update options. Never append
+        # a fake waiter tuple (old_list ++ [{[], opts}]) — GenServer.reply/2
+        # would silently drop that first inject (To is not a pid).
         {old_list, _old_options} = Map.get(ports, portnum, {[], nil})
-        new_value = {old_list ++ [new_value], listener_options}
+        new_value = {old_list, listener_options}
         local = open_local(local, portnum, listener_options)
         %Acceptor{state | ports: Map.put(ports, portnum, new_value), local_ports: local}
       end

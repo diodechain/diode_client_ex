@@ -29,4 +29,25 @@ defmodule DiodeClient.TransportTest do
       end
     end
   end
+
+  describe "handshake arities (ranch_transport callbacks)" do
+    # Ranch.handshake_transport/5 with undefined opts:
+    #   Transport:handshake(Socket, Timeout)
+    # with opts:
+    #   Transport:handshake(Socket, Opts, Timeout)
+    # Production bug: cowboy_clear → :ranch.handshake/1 → handshake/2 was undef.
+
+    test "handshake/2 returns the socket (Ranch default path)" do
+      socket = make_ref()
+      assert {:ok, ^socket} = Transport.handshake(socket, 5000)
+      # Exact dynamic call ranch.erl uses when cowboy_clear dials :ranch.handshake(Ref)
+      assert {:ok, ^socket} = apply(Transport, :handshake, [socket, 5000])
+    end
+
+    test "handshake/3 returns the socket (Ranch with opts)" do
+      socket = make_ref()
+      assert {:ok, ^socket} = Transport.handshake(socket, [], 5000)
+      assert {:ok, ^socket} = apply(Transport, :handshake, [socket, [ciphers: []], 5000])
+    end
+  end
 end
