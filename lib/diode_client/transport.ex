@@ -52,8 +52,25 @@ defmodule DiodeClient.Transport do
 
   def sockname(port), do: DiodeClient.Port.sockname(port)
 
-  def handshake(pid, _opts, _timeout) do
-    {:ok, pid}
+  # Ranch 2: :ranch.handshake/1 (no opts) calls Transport.handshake/2.
+  # With opts it calls handshake/3. Diode ports already completed TLS in accept.
+  # Mirror ranch_tcp.erl so cowboy_clear does not crash with {:undef, handshake/2}.
+  def handshake(socket, timeout), do: handshake(socket, [], timeout)
+
+  def handshake(socket, _opts, _timeout) do
+    {:ok, socket}
+  end
+
+  # Ranch transport callbacks used when a stepped TLS hello returns :continue.
+  # Diode never steps; keep the same contract as ranch_tcp (not supported).
+  def handshake_continue(socket, timeout), do: handshake_continue(socket, [], timeout)
+
+  def handshake_continue(_socket, _opts, _timeout) do
+    :erlang.error(:not_supported)
+  end
+
+  def handshake_cancel(_socket) do
+    :erlang.error(:not_supported)
   end
 
   defdelegate controlling_process(pid, dst), to: :ssl
