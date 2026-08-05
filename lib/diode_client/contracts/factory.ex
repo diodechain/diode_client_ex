@@ -102,8 +102,8 @@ defmodule DiodeClient.Contracts.Factory do
       drive_invites: Hash.to_address(0xDA92764BB12E91010D132BCDD8E4A0270EE25FC9),
       drive_member_version: 123,
       drive_member: Hash.to_address(0x3D565EC28595C1A0710ABCBD8C0F979D31E38704),
-      drive_version: 160,
-      drive: Hash.to_address(0xB61AA7DBCE9DBF4D5F1EE693AD91819823F72F1B),
+      drive_version: 161,
+      drive: Hash.to_address(0x23233d9ED033A6eBbBb1a0E003d3fe6a394b527e),
       factory: factory,
       fleet_member: Hash.to_address(0x0),
       proxy_code_hash:
