@@ -101,9 +101,9 @@ defmodule DiodeClient.Contracts.Factory do
       bns_postfix: "base",
       drive_invites: Hash.to_address(0xDA92764BB12E91010D132BCDD8E4A0270EE25FC9),
       drive_member_version: 124,
-      drive_member: Hash.to_address(0x99553C9bD7E0DcB93E8Ec93CE14D19A5B2c4894A),
+      drive_member: Hash.to_address(0x99553C9BD7E0DCB93E8EC93CE14D19A5B2C4894A),
       drive_version: 161,
-      drive: Hash.to_address(0x23233d9ED033A6eBbBb1a0E003d3fe6a394b527e),
+      drive: Hash.to_address(0x23233D9ED033A6EBBBB1A0E003D3FE6A394B527E),
       factory: factory,
       fleet_member: Hash.to_address(0x0),
       proxy_code_hash:
