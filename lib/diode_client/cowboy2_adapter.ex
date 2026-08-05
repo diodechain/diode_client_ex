@@ -2,7 +2,10 @@ defmodule DiodeClient.Cowboy2Adapter do
   @moduledoc false
   alias DiodeClient.Transport
   require Logger
-  require Logger
+
+  # Ranch 1.x used :ranch_listener_sup; Ranch 2.x / modern Plug.Cowboy use
+  # :ranch_embedded_sup. Both have the same MFA arity and argument layout.
+  @ranch_sups [:ranch_listener_sup, :ranch_embedded_sup]
 
   @doc false
   def child_specs(endpoint, config) do
@@ -42,14 +45,20 @@ defmodule DiodeClient.Cowboy2Adapter do
     spec = Plug.Cowboy.child_spec(ref: ref, scheme: scheme, plug: {endpoint, []}, options: config)
 
     spec =
-      update_in(spec.start, fn {:ranch_listener_sup, :start_link,
-                                [ref, _transport, trans_opts, protocol, proto_opts]} ->
-        {:ranch_listener_sup, :start_link,
-         [ref, Transport, Map.put(trans_opts, :sendfile, true), protocol, proto_opts]}
+      update_in(spec.start, fn mfa ->
+        mfa
+        |> patch_transport()
+        |> then(&{__MODULE__, :start_link, [scheme, endpoint, &1]})
       end)
 
-    spec = update_in(spec.start, &{__MODULE__, :start_link, [scheme, endpoint, &1]})
     {ref, spec}
+  end
+
+  @doc false
+  def patch_transport({sup, :start_link, [ref, _transport, trans_opts, protocol, proto_opts]})
+      when sup in @ranch_sups do
+    {sup, :start_link,
+     [ref, Transport, Map.put(trans_opts, :sendfile, true), protocol, proto_opts]}
   end
 
   @doc false
@@ -60,6 +69,10 @@ defmodule DiodeClient.Cowboy2Adapter do
       {:ok, pid} ->
         Logger.debug(fn -> info(scheme, endpoint, ref) end)
         {:ok, pid}
+
+      {:error, {:shutdown, {_, _, {:listen_error, _, :eaddrinuse}}}} = error ->
+        Logger.debug("#{info(scheme, endpoint, ref)} failed, port already in use")
+        error
 
       {:error, {:shutdown, {_, _, {{_, {:error, :eaddrinuse}}, _}}}} = error ->
         Logger.debug("#{info(scheme, endpoint, ref)} failed, port already in use")

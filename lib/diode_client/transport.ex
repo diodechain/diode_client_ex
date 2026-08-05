@@ -22,11 +22,27 @@ defmodule DiodeClient.Transport do
     |> maybe_reset_options()
   end
 
-  @spec listen(keyword) :: DiodeClient.Acceptor.Listener.t()
-  def listen(opts) do
-    port = Keyword.fetch!(opts, :port)
+  # Ranch 1 (keyword) and Ranch 2 (transport opts map with :socket_opts) both call this.
+  @doc false
+  def listen(opts) when is_list(opts) or is_map(opts) do
+    port = listen_port(opts)
     portnum = Rlpx.bin2uint("tls:#{port}")
     DiodeClient.Port.listen(portnum)
+  end
+
+  @doc false
+  def listen_port(opts) when is_list(opts), do: Keyword.fetch!(opts, :port)
+
+  def listen_port(opts) when is_map(opts) do
+    case Map.fetch(opts, :port) do
+      {:ok, port} ->
+        port
+
+      :error ->
+        opts
+        |> Map.get(:socket_opts, [])
+        |> Keyword.fetch!(:port)
+    end
   end
 
   @spec accept(DiodeClient.Acceptor.Listener.t(), any) :: {:error, any()} | {:ok, pid()}
@@ -36,6 +52,12 @@ defmodule DiodeClient.Transport do
   end
 
   def sockname(ssl) when is_tuple(ssl), do: :ssl.sockname(ssl)
+
+  def sockname(%DiodeClient.Acceptor.Listener{}) do
+    # Ranch only needs a sockname after listen; diode ports are virtual.
+    {:ok, {{0, 0, 0, 0}, 0}}
+  end
+
   def sockname(port), do: DiodeClient.Port.sockname(port)
 
   def handshake(pid, _opts, _timeout) do
