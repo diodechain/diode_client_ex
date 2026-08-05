@@ -61,18 +61,6 @@ defmodule DiodeClient.Transport do
     {:ok, socket}
   end
 
-  # Ranch transport callbacks used when a stepped TLS hello returns :continue.
-  # Diode never steps; keep the same contract as ranch_tcp (not supported).
-  def handshake_continue(socket, timeout), do: handshake_continue(socket, [], timeout)
-
-  def handshake_continue(_socket, _opts, _timeout) do
-    :erlang.error(:not_supported)
-  end
-
-  def handshake_cancel(_socket) do
-    :erlang.error(:not_supported)
-  end
-
   defdelegate controlling_process(pid, dst), to: :ssl
   defdelegate peername(pid), to: :ssl
   defdelegate setopts(pid, opts), to: :ssl
