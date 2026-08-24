@@ -40,13 +40,20 @@ defmodule DiodeClient.Control do
     end
   end
 
-  def resolve_local(peer, portnum) do
+  def resolve_local(peer, portnum, timeout \\ 5_000) do
     pid = ensure_peer(peer)
 
     if pid == nil do
       nil
     else
-      case GenServer.call(pid, {:resolve_local, portnum}, :infinity) do
+      result =
+        try do
+          GenServer.call(pid, {:resolve_local, portnum, timeout}, timeout)
+        catch
+          :exit, {:timeout, _} -> nil
+        end
+
+      case result do
         nil ->
           nil
 
@@ -54,10 +61,9 @@ defmodule DiodeClient.Control do
           nil
 
         {address, port} = _addr ->
-          # Logger.info("resolve_local: #{inspect(addr)}")
           address = String.to_charlist(address)
 
-          case Port.direct_connect(address, port, :client) do
+          case Port.direct_connect(address, port, :client, timeout) do
             {:ok, ssl} ->
               {:ok, ssl}
 
@@ -109,11 +115,15 @@ defmodule DiodeClient.Control do
     end
   end
 
-  def handle_call({:resolve_local, portnum}, _from, state) do
+  def handle_call({:resolve_local, portnum}, from, state) do
+    handle_call({:resolve_local, portnum, 5_000}, from, state)
+  end
+
+  def handle_call({:resolve_local, portnum, timeout}, _from, state) do
     %Control{resolved_address: addr, resolved_ports: ports} =
       state =
-      try_connection(state)
-      |> request_port(portnum)
+      try_connection(state, timeout)
+      |> request_port(portnum, timeout)
 
     port = Map.get(ports, portnum)
 
@@ -124,37 +134,36 @@ defmodule DiodeClient.Control do
     end
   end
 
-  defp try_connection(state = %Control{socket: nil, peer: peer, tried: 0}) do
+  defp try_connection(state = %Control{socket: nil, peer: peer, tried: 0}, timeout) do
     state = %{state | tried: 1}
 
-    case Port.connect(peer, @control_port, local: false) do
+    case Port.connect(peer, @control_port, [local: false], timeout) do
       {:ok, pid} ->
         :ssl.setopts(pid, active: true, packet: 2)
         %{state | socket: pid}
 
       {:error, _reason} ->
-        # Logger.debug("control plane failed for #{inspect(reason)}")
         state
     end
   end
 
-  defp try_connection(state = %Control{}) do
+  defp try_connection(state = %Control{}, _timeout) do
     state
   end
 
-  defp request_port(state = %Control{socket: nil}, _portnum) do
+  defp request_port(state = %Control{socket: nil}, _portnum, _timeout) do
     state
   end
 
-  defp request_port(state = %Control{resolved_ports: ports}, portnum) do
+  defp request_port(state = %Control{resolved_ports: ports}, portnum, timeout) do
     if Map.has_key?(ports, portnum) do
       state
     else
-      do_request_port(state, portnum)
+      do_request_port(state, portnum, timeout)
     end
   end
 
-  defp do_request_port(state = %Control{socket: socket, resolved_ports: ports}, portnum) do
+  defp do_request_port(state = %Control{socket: socket, resolved_ports: ports}, portnum, timeout) do
     :ssl.send(socket, Rlp.encode!(["RESOLVE", portnum]))
 
     receive do
@@ -178,7 +187,7 @@ defmodule DiodeClient.Control do
             handle_request(state, other)
         end
     after
-      5_000 ->
+      max(timeout, 1) ->
         :ssl.close(socket)
         Logger.debug("failed control plane on timeout")
         %{state | socket: nil}

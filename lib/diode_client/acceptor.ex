@@ -172,8 +172,9 @@ defmodule DiodeClient.Acceptor do
 
     state =
       if is_function(opt_callback(listener_options)) do
-        do_close(portnum, state)
-        %Acceptor{state | ports: Map.put(ports, portnum, new_value)}
+        state = do_close(portnum, state)
+        local = open_local(state.local_ports, portnum, listener_options)
+        %Acceptor{state | ports: Map.put(state.ports, portnum, new_value), local_ports: local}
       else
         # ports[portnum] = {waiting_acceptors, listener_options}. Keep any
         # already-registered accept waiters; only update options. Never append
@@ -235,6 +236,11 @@ defmodule DiodeClient.Acceptor do
     {:reply, reply, state}
   end
 
+  @impl true
+  def handle_cast({:close, portnum}, state = %Acceptor{}) do
+    {:noreply, do_close(portnum, state)}
+  end
+
   def handle_inject({[client | rest], listener_options}, portnum, request, state) do
     ports = Map.put(state.ports, portnum, {rest, listener_options})
     GenServer.reply(client, {request, listener_options})
@@ -279,6 +285,7 @@ defmodule DiodeClient.Acceptor do
 
         nil ->
           {:ok, pid} = DiodeClient.LocalAcceptor.start_link(portnum)
+          Process.unlink(pid)
           Map.put(local_ports, portnum, pid)
       end
     else
