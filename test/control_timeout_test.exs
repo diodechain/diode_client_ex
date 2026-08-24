@@ -42,4 +42,33 @@ defmodule DiodeClientControlTimeoutTest do
     assert result == {:error, "not found"} or result == {:error, :timeout}
     assert usec < 1_000_000
   end
+
+  test "Port.connect uses half the budget for resolve_local then tries relay" do
+    peer = :crypto.strong_rand_bytes(20)
+    {:ok, pid} = Hang.start_link(nil)
+    :yes = :global.register_name({Control, peer}, pid)
+
+    {usec, result} =
+      :timer.tc(fn ->
+        Port.connect(peer, 3000, timeout: 400)
+      end)
+
+    # Half of 400ms is spent on resolve_local, then relay sees no ticket.
+    assert result == {:error, "not found"}
+    assert usec < 2_000_000
+  end
+
+  test "Port.connect with only_local: true does not fall back to relay" do
+    peer = :crypto.strong_rand_bytes(20)
+    {:ok, pid} = Hang.start_link(nil)
+    :yes = :global.register_name({Control, peer}, pid)
+
+    {usec, result} =
+      :timer.tc(fn ->
+        Port.connect(peer, 3000, only_local: true, timeout: 100)
+      end)
+
+    assert result == {:error, "local connection not found"}
+    assert usec < 1_000_000
+  end
 end

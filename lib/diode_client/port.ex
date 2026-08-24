@@ -407,7 +407,7 @@ defmodule DiodeClient.Port do
     end
   end
 
-  def connect(destination, port, options \\ [], timeout \\ 5_000)
+  def connect(destination, port, options \\ [], timeout \\ 120_000)
       when is_integer(port) and is_list(options) do
     destination =
       if is_list(destination) do
@@ -428,7 +428,7 @@ defmodule DiodeClient.Port do
     connect_address(addr, port, options, timeout)
   end
 
-  def connect_address(destination, port, options \\ [], timeout \\ 5_000)
+  def connect_address(destination, port, options \\ [], timeout \\ 120_000)
       when is_list(options) and is_integer(port) do
     timeout = Keyword.get(options, :timeout, timeout)
 
@@ -438,17 +438,10 @@ defmodule DiodeClient.Port do
       deadline = System.monotonic_time(:millisecond) + timeout
       access = access(options)
       local = Keyword.get(options, :local, true)
+      only_local? = Keyword.get(options, :only_local, false) or local == :always
 
-      case local do
-        true ->
-          if access == "rw" do
-            Control.resolve_local(destination, port, remaining(deadline)) ||
-              do_connect(destination, port, options, deadline)
-          else
-            do_connect(destination, port, options, deadline)
-          end
-
-        :always ->
+      cond do
+        only_local? ->
           if access == "rw" do
             Control.resolve_local(destination, port, remaining(deadline)) ||
               {:error, "local connection not found"}
@@ -456,7 +449,13 @@ defmodule DiodeClient.Port do
             {:error, "only 'rw' access is supported for direct connections"}
           end
 
-        false ->
+        local == true and access == "rw" ->
+          local_ms = min(div(timeout, 2), remaining(deadline))
+
+          Control.resolve_local(destination, port, local_ms) ||
+            do_connect(destination, port, options, deadline)
+
+        true ->
           do_connect(destination, port, options, deadline)
       end
     end

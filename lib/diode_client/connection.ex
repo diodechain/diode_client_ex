@@ -419,6 +419,13 @@ defmodule DiodeClient.Connection do
     end
   end
 
+  def handle_cast({:rpc_forget, req}, state = %Connection{recv_id: recv_id}) do
+    {:noreply, %{state | recv_id: Map.delete(recv_id, req)}}
+  end
+
+  defp portopen_cmd?(cmd) when cmd in ["portopen", "portopen2"], do: true
+  defp portopen_cmd?(_cmd), do: false
+
   defp to_bin(num) do
     Rlpx.uint2bin(num)
   end
@@ -1029,8 +1036,13 @@ defmodule DiodeClient.Connection do
     try do
       case rpc_call(pid, {:rpc, cmd, req, rlp, timestamp(), self()}, timeout) do
         {:error, :timeout} ->
-          GenServer.cast(pid, {:rpc_timeout, req})
-          Manager.connection_rpc_failed(pid, :timeout)
+          if portopen_cmd?(cmd) do
+            GenServer.cast(pid, {:rpc_forget, req})
+          else
+            GenServer.cast(pid, {:rpc_timeout, req})
+            Manager.connection_rpc_failed(pid, :timeout)
+          end
+
           {:error, :timeout}
 
         [^req, ["error", "remote_closed"]] ->
