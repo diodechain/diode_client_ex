@@ -335,12 +335,9 @@ defmodule DiodeClient.Port do
   @tls_timeout 60_000
   # @dialyzer {:nowarn_function, tls_connect: 1}
   @spec tls_connect(any()) :: {:ok, any()} | {:error, any()}
-  def tls_connect(pid) do
+  def tls_connect(pid, timeout \\ @tls_timeout) do
     opts = transport_option(pid, role: :client)
-
-    # This in a bridged virtual SSL conn not running via a
-    # raw socket, so no NetworkManager monitoring here
-    apply(:ssl, :connect, [pid, opts, @tls_timeout])
+    apply(:ssl, :connect, [pid, opts, max(timeout, 1)])
   end
 
   def tls_handshake(pid) do
@@ -431,28 +428,37 @@ defmodule DiodeClient.Port do
     connect_address(addr, port, options, timeout)
   end
 
-  def connect_address(destination, port, options \\ [], _timeout \\ 5_000)
+  def connect_address(destination, port, options \\ [], timeout \\ 5_000)
       when is_list(options) and is_integer(port) do
-    access = access(options)
-    local = Keyword.get(options, :local, true)
+    timeout = Keyword.get(options, :timeout, timeout)
 
-    case local do
-      true ->
-        if access == "rw" do
-          Control.resolve_local(destination, port) || do_connect(destination, port, options)
-        else
-          do_connect(destination, port, options)
-        end
+    if timeout <= 0 do
+      {:error, :timeout}
+    else
+      deadline = System.monotonic_time(:millisecond) + timeout
+      access = access(options)
+      local = Keyword.get(options, :local, true)
 
-      :always ->
-        if access == "rw" do
-          Control.resolve_local(destination, port) || {:error, "local connection not found"}
-        else
-          {:error, "only 'rw' access is supported for direct connections"}
-        end
+      case local do
+        true ->
+          if access == "rw" do
+            Control.resolve_local(destination, port, remaining(deadline)) ||
+              do_connect(destination, port, options, deadline)
+          else
+            do_connect(destination, port, options, deadline)
+          end
 
-      false ->
-        do_connect(destination, port, options)
+        :always ->
+          if access == "rw" do
+            Control.resolve_local(destination, port, remaining(deadline)) ||
+              {:error, "local connection not found"}
+          else
+            {:error, "only 'rw' access is supported for direct connections"}
+          end
+
+        false ->
+          do_connect(destination, port, options, deadline)
+      end
     end
   end
 
@@ -478,9 +484,9 @@ defmodule DiodeClient.Port do
     end
   end
 
-  defp do_connect(destination, port, options) do
+  defp do_connect(destination, port, options, deadline) do
     conns = server_candidates(destination, options)
-    do_connect(conns, destination, port, options)
+    do_connect(conns, destination, port, options, deadline)
   end
 
   defp server_candidates(destination, options) do
@@ -520,52 +526,65 @@ defmodule DiodeClient.Port do
     Keyword.get(options, :access, "rw")
   end
 
-  defp do_connect([{pid, _info} | conns], destination, port, options) do
-    cmd =
-      if portopen2?(options) do
-        "portopen2"
-      else
-        "portopen"
+  defp do_connect([{pid, _info} | conns], destination, port, options, deadline) do
+    left = remaining(deadline)
+
+    if left <= 0 do
+      {:error, :timeout}
+    else
+      cmd =
+        if portopen2?(options) do
+          "portopen2"
+        else
+          "portopen"
+        end
+
+      try do
+        Connection.rpc(pid, [cmd, destination, port, access(options)], timeout: left)
+      rescue
+        e in RuntimeError ->
+          {:error, e.message}
+      catch
+        :exit, reason ->
+          {:error, reason}
       end
+      |> case do
+        ["ok", port_num] when is_integer(port_num) ->
+          address = Connection.server_url(pid)
+          print? = Keyword.get(options, :print?, false)
 
-    try do
-      Connection.rpc(pid, [cmd, destination, port, access(options)])
-    rescue
-      e in RuntimeError ->
-        {:error, e.message}
-    catch
-      :exit, reason ->
-        {:error, reason}
-    end
-    |> case do
-      ["ok", port_num] when is_integer(port_num) ->
-        address = Connection.server_url(pid)
-        print? = Keyword.get(options, :print?, false)
+          if print? do
+            {:ok, %Port.Relay{url: address, port: port_num, source_addr: destination}}
+          else
+            direct_connect(address, port_num, :client, remaining(deadline))
+          end
 
-        if print? do
-          {:ok, %Port.Relay{url: address, port: port_num, source_addr: destination}}
-        else
-          direct_connect(address, port_num, :client)
-        end
+        ["ok", pid] ->
+          update_peer_port(pid, destination, port)
+          tls_connect(pid, remaining(deadline))
 
-      ["ok", pid] ->
-        update_peer_port(pid, destination, port)
-        tls_connect(pid)
+        {:error, :timeout} ->
+          {:error, :timeout}
 
-      {:error, reason} ->
-        "failed to connect to #{inspect(DiodeClient.Base16.encode(destination))}:#{port} (#{inspect(reason)})"
-        |> Logger.debug()
+        {:error, reason} ->
+          "failed to connect to #{inspect(DiodeClient.Base16.encode(destination))}:#{port} (#{inspect(reason)})"
+          |> Logger.debug()
 
-        if is_binary(reason) and String.contains?(reason, "access_denied") do
-          {:error, "access_denied"}
-        else
-          do_connect(conns, destination, port, options)
-        end
+          if is_binary(reason) and String.contains?(reason, "access_denied") do
+            {:error, "access_denied"}
+          else
+            do_connect(conns, destination, port, options, deadline)
+          end
+      end
     end
   end
 
-  defp do_connect([], _destination, _port, _access) do
+  defp do_connect([], _destination, _port, _options, _deadline) do
     {:error, "not found"}
+  end
+
+  defp remaining(deadline) do
+    max(0, deadline - System.monotonic_time(:millisecond))
   end
 
   defdelegate listen(portnum, opts \\ []), to: DiodeClient.Acceptor
