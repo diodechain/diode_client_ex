@@ -70,20 +70,48 @@ defmodule DiodeClient.Shell.OasisSapphire do
     oasis_call(tx, opts)
   end
 
+  # Must match `DiodeClient.OasisSapphire` leash `block_range` (signed query validity window).
+  @signed_call_leash_range 15
+
+  @doc """
+  Block index used to anchor Oasis signed simulate calls.
+
+  `opts[:block]` is ignored when it is older than `@signed_call_leash_range` behind the
+  live head. Stale `PeakBlock` headers (throttled every 10 blocks) otherwise produce
+  `invalid signed simulate call query: unexpected base block` from the runtime.
+  """
+  def signed_call_block_index(opts, head_block_number) when is_integer(head_block_number) do
+    max_block = head_block_number - 2
+
+    case Keyword.get(opts, :block) do
+      nil ->
+        max_block
+
+      "latest" ->
+        max_block
+
+      block when is_integer(block) ->
+        if block >= max_block - @signed_call_leash_range,
+          do: min(block, max_block),
+          else: max_block
+
+      block when is_map(block) ->
+        requested = Block.number(block)
+
+        if requested >= max_block - @signed_call_leash_range do
+          min(requested, max_block)
+        else
+          max_block
+        end
+    end
+  end
+
   defp prepare_signed_call(transaction, opts) do
     # For some reason calls to blocks with higher numbers are getting this error:
     #  roothash: block not found: client: failed to fetch annotated block from history: roothash: block not found
     # So we stay back by two blocks to avoid this issue.
-    max_block = peak_number() - 2
-
-    block =
-      case Keyword.get(opts, :block) do
-        nil -> max_block
-        "latest" -> max_block
-        block when is_integer(block) -> min(block, max_block)
-        block when is_map(block) -> min(Block.number(block), max_block)
-      end
-      |> get_block_header()
+    head_block = peak_number()
+    block = get_block_header(signed_call_block_index(opts, head_block))
 
     block_number = Block.number(block) + 1
     block_hash = block["block_hash"]
@@ -109,8 +137,7 @@ defmodule DiodeClient.Shell.OasisSapphire do
   end
 
   def oasis_call(transaction, opts \\ []) do
-    %{call: call, block_number: block_number} =
-      prepare_signed_call(transaction, opts)
+    %{call: call} = prepare_signed_call(transaction, opts)
 
     params =
       [
@@ -122,7 +149,7 @@ defmodule DiodeClient.Shell.OasisSapphire do
           gas: Base16.encode(call.msg["gasLimit"], short: true),
           gasPrice: Base16.encode(call.msg["gasPrice"], short: true)
         },
-        Base16.encode(block_number + 1)
+        "latest"
       ]
       |> Jason.encode!()
 
