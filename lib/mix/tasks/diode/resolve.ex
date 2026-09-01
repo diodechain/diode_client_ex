@@ -52,14 +52,13 @@ defmodule Mix.Tasks.Diode.Resolve do
 
     names = Contracts.BNS.resolve_name_all(name)
     owner = Contracts.BNS.resolve_name_owner(name)
-    puts(level, "BNS owner", Base16.encode(owner))
-
-    resolve(Base16.encode(owner), level + 1)
+    puts(level, "BNS owner", encode_addr(owner))
+    resolve_encoded_address(owner, level + 1)
 
     {name,
-     for {name, index} <- Enum.with_index(names) do
-       puts(level, "BNS name[#{index}]", Base16.encode(name))
-       resolve(Base16.encode(name), level + 1)
+     for {addr, index} <- Enum.with_index(names) do
+       puts(level, "BNS name[#{index}]", encode_addr(addr))
+       resolve_encoded_address(addr, level + 1)
      end}
   end
 
@@ -72,7 +71,7 @@ defmodule Mix.Tasks.Diode.Resolve do
         {hex,
          for {member, role} <- roles do
            puts(level, "member", "#{Base16.encode(member)} #{inspect(role)}")
-           resolve(Base16.encode(member), level + 1)
+           resolve_encoded_address(member, level + 1)
          end}
 
       other ->
@@ -94,12 +93,19 @@ defmodule Mix.Tasks.Diode.Resolve do
 
     {hex,
      for member <- members do
-       puts(level, "member", Base16.encode(member))
-       resolve(Base16.encode(member), level + 1)
+       puts(level, "member", encode_addr(member))
+       resolve_encoded_address(member, level + 1)
      end}
   end
 
   defp resolve_contract(_shell, _address, hex, _type, _level), do: hex
+
+  defp resolve_encoded_address(address, level)
+       when is_binary(address) and byte_size(address) == 20 do
+    resolve(Base16.encode(address), level)
+  end
+
+  defp resolve_encoded_address(_address, _level), do: nil
 
   defp shell_for(address) do
     Enum.find(Factory.shells(), fn shell ->
