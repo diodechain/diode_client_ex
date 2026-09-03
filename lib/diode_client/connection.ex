@@ -542,21 +542,23 @@ defmodule DiodeClient.Connection do
            server: server
          }
        ) do
-    msg =
-      receive do
-        {:ssl, ^socket, msg} -> msg
-      after
-        15_000 -> raise "DiodeClient missing ticket reply"
-      end
+    receive do
+      :stop ->
+        {:stop, :normal, state}
 
-    case decode!(msg) do
-      [^req, reply] ->
-        tck = Map.get(pending_tickets, req)
-        DiodeClient.Stats.submit(:relay, server, :self, byte_size(msg) + @packet_header)
-        handle_ticket(state, tck, [req, reply])
+      {:ssl, ^socket, msg} ->
+        case decode!(msg) do
+          [^req, reply] ->
+            tck = Map.get(pending_tickets, req)
+            DiodeClient.Stats.submit(:relay, server, :self, byte_size(msg) + @packet_header)
+            handle_ticket(state, tck, [req, reply])
 
-      _other ->
-        wait_for_ticket(req, %{state | events: :queue.in(msg, events)})
+          _other ->
+            wait_for_ticket(req, %{state | events: :queue.in(msg, events)})
+        end
+    after
+      15_000 ->
+        raise "DiodeClient missing ticket reply"
     end
   end
 
@@ -576,6 +578,9 @@ defmodule DiodeClient.Connection do
         new_conns = to_num(rlp_conns)
         %{state | paid_bytes: new_bytes, conns: new_conns}
         create_update_ticket(state)
+
+      ["error", reason] ->
+        ticket_rejected(state, reason)
     end
   end
 
@@ -594,7 +599,15 @@ defmodule DiodeClient.Connection do
         new_conns = to_num(rlp_conns)
         state = %{state | conns: new_conns, paid_bytes: new_bytes}
         create_update_ticket(state)
+
+      ["error", reason] ->
+        ticket_rejected(state, reason)
     end
+  end
+
+  defp ticket_rejected(state, reason) do
+    warning("ticket rejected: #{inspect(reason)}")
+    {:stop, :normal, state}
   end
 
   defp create_update_ticket(state = %Connection{}) do
@@ -679,7 +692,10 @@ defmodule DiodeClient.Connection do
 
   defp clientloop({:ssl, socket, rlp}, state = %Connection{}) do
     if socket == state.socket do
-      {:noreply, handle_msg(rlp, state)}
+      case handle_msg(rlp, state) do
+        %Connection{} = new_state -> {:noreply, new_state}
+        other -> other
+      end
     else
       debug("flushing ssl #{inspect(socket)} != #{inspect(state.socket)}")
       {:noreply, state}

@@ -137,4 +137,26 @@ defmodule DiodeClientManagerTest do
       assert length(ranked) == map_size(conn_map)
     end
   end
+
+  test "set_online false sends stop to tracked connection pids" do
+    parent = self()
+
+    pid =
+      spawn(fn ->
+        receive do
+          :stop -> send(parent, :connection_stopped)
+        end
+      end)
+
+    state = %Manager{
+      online: true,
+      conns: %{pid => %Manager.Info{}}
+    }
+
+    result = Manager.__test_set_online__(state, false)
+
+    assert_receive :connection_stopped
+    assert result.online == false
+    assert result.conns == %{}
+  end
 end

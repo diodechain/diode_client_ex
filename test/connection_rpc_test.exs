@@ -9,6 +9,7 @@ defmodule DiodeClient.ConnectionRpcTest do
   @moduletag timeout: 5_000
 
   alias DiodeClient.{Connection, Shell}
+  import DiodeClient.TicketV2
 
   defmodule StubConn do
     @moduledoc false
@@ -78,6 +79,22 @@ defmodule DiodeClient.ConnectionRpcTest do
     test "returns successful response from live stub" do
       {:ok, pid} = StubConn.start(reply: ["ok"])
       assert Connection.rpc(pid, ["getblockpeak"]) == ["ok"]
+    end
+
+    test "stops cleanly when a relay rejects a ticket" do
+      req = <<1>>
+      ticket = ticketv2()
+
+      state = %Connection{
+        events: :queue.new(),
+        fleet: <<0::160>>,
+        server: "relay",
+        server_ports: [],
+        pending_tickets: %{req => ticket}
+      }
+
+      assert {:stop, :normal, %Connection{pending_tickets: %{}}} =
+               Connection.handle_ticket(state, ticket, [req, ["error", "signature mismatch"]])
     end
   end
 
