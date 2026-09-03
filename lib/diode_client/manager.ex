@@ -1140,9 +1140,9 @@ defmodule DiodeClient.Manager do
     {:reply, pid, %{state | sticky: info.server_url}}
   end
 
-  defp do_set_online(state = %Manager{online: online, server_list: servers}, new_online) do
+  defp do_set_online(state = %Manager{online: online, conns: conns}, new_online) do
     state = %{state | online: new_online}
-    pids = Map.keys(servers)
+    pids = Map.keys(conns)
 
     cond do
       new_online == online ->
@@ -1272,6 +1272,11 @@ defmodule DiodeClient.Manager do
   @doc false
   def __test_connection_rpc_ok__(state, pid) do
     heal_sticky_if_ok(pid, state)
+  end
+
+  @doc false
+  def __test_set_online__(state, online) do
+    do_set_online(state, online)
   end
 
   # Test-only helpers for diagnosing "Best connection changed" log behavior.
