@@ -30,13 +30,16 @@ defmodule DiodeClient.Manager.ChainPeaks do
 
   Unlike `connected_for_shell/4`, this never empties the set for quorum size:
   any authenticated relay with a real peak for `shell` is routeable. Prefers
-  relays at or above the reported consensus peak; if none, falls back to any
-  relay that has reported a peak for `shell` (stale but chain-capable).
+  relays at or above the reported consensus peak; same-height relays must
+  report the consensus hash. If none are at consensus, it falls back to any
+  relay that has reported a peak for `shell` (stale but chain-capable), except
+  for same-height relays reporting a different hash.
 
   Relays that never reported a peak for `shell` (unsupported chain) are excluded.
   """
   def routeable_for_shell(shell, conns, chain_peaks) do
-    reported = block_number(Map.get(chain_peaks, shell))
+    consensus = Map.get(chain_peaks, shell)
+    reported = block_number(consensus)
 
     with_peak =
       conns
@@ -48,11 +51,18 @@ defmodule DiodeClient.Manager.ChainPeaks do
     at_peak =
       with_peak
       |> Enum.filter(fn {_pid, %Info{peaks: peaks}} ->
-        peak_at_least?(Map.get(peaks, shell), reported)
+        routeable_peak?(Map.get(peaks, shell), consensus, reported)
       end)
       |> Map.new()
 
-    if map_size(at_peak) > 0, do: at_peak, else: with_peak
+    fallback =
+      with_peak
+      |> Enum.filter(fn {_pid, %Info{peaks: peaks}} ->
+        peak_hash_compatible?(Map.get(peaks, shell), consensus, reported)
+      end)
+      |> Map.new()
+
+    if map_size(at_peak) > 0, do: at_peak, else: fallback
   end
 
   @doc """
@@ -197,6 +207,16 @@ defmodule DiodeClient.Manager.ChainPeaks do
 
   defp peak_at_least?(nil, _reported), do: false
   defp peak_at_least?(block, reported), do: block_number(block) >= reported
+
+  defp routeable_peak?(block, consensus, reported) do
+    peak_at_least?(block, reported) and peak_hash_compatible?(block, consensus, reported)
+  end
+
+  defp peak_hash_compatible?(_block, nil, _reported), do: true
+
+  defp peak_hash_compatible?(block, consensus, reported) do
+    block_number(block) != reported or block_hash(block) == block_hash(consensus)
+  end
 
   defp block_number(nil), do: 0
   defp block_number(block), do: Rlpx.bin2uint(block["number"])
