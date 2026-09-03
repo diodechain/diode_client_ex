@@ -172,5 +172,35 @@ defmodule DiodeClient.Manager.ChainPeaksTest do
 
       assert Map.keys(routeable) == [:fresh]
     end
+
+    test "excludes same-height uncle relays from preferred and fallback routing" do
+      consensus = block(100)
+      uncle = Map.put(consensus, "block_hash", :crypto.hash(:sha256, "uncle"))
+
+      conns = %{
+        :canonical => %Info{
+          server_address: <<1::160>>,
+          peaks: %{@base => consensus}
+        },
+        :stale => %Info{
+          server_address: <<2::160>>,
+          peaks: %{@base => block(90)}
+        },
+        :uncle => %Info{
+          server_address: <<3::160>>,
+          peaks: %{@base => uncle}
+        }
+      }
+
+      routeable = ChainPeaks.routeable_for_shell(@base, conns, %{@base => consensus})
+
+      assert Map.keys(routeable) == [:canonical]
+
+      assert Map.keys(
+               ChainPeaks.routeable_for_shell(@base, Map.delete(conns, :canonical), %{
+                 @base => consensus
+               })
+             ) == [:stale]
+    end
   end
 end
