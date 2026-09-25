@@ -14,14 +14,12 @@ defmodule DiodeClient.MuxTest do
   defp sent_ids({_channels, _usage, sent}), do: Enum.map(sent, fn {id, _req, _payload} -> id end)
 
   describe "shortest backlog" do
-    test "equal chunk sizes do not alternate; the later channel id is drained first" do
-      # Enum.min keeps the challenger when sizes are equal, so the later map
-      # key wins the tie. That send makes its backlog strictly smaller, and
-      # shortest-queue priority then drains it before the other port runs.
+    test "equal chunk sizes do not alternate; one channel is drained first" do
+      # Equal backlogs tie. Enum.min keeps one channel, that send makes it
+      # strictly smaller, and shortest-queue priority drains it before the
+      # other port runs. Which key wins the tie depends on the OTP map order.
       channels = channels(a: repeated(4, 1000), b: repeated(4, 1000))
-
-      assert sent_ids(Mux.drain(channels, 0, 10_000_000)) ==
-               [:b, :b, :b, :b, :a, :a, :a, :a]
+      assert one_then_the_other?(sent_ids(Mux.drain(channels, 0, 10_000_000)), 4, 4)
     end
 
     test "a trickle channel is fully drained before a 15MB-style backlog moves" do
@@ -68,15 +66,18 @@ defmodule DiodeClient.MuxTest do
       channels = channels(a: repeated(4, 40_000), b: repeated(4, 40_000))
       {rest, usage, sent} = Mux.drain(channels, 0)
 
-      assert sent_ids({rest, usage, sent}) == [:b, :b, :b, :b]
+      ids = sent_ids({rest, usage, sent})
       assert usage == 160_000
-      assert rest.b == []
-      assert length(rest.a) == 4
+      assert one_then_the_other?(ids, 4, 0)
+      winner = hd(ids)
+      loser = if(winner == :a, do: :b, else: :a)
+      assert rest[winner] == []
+      assert length(rest[loser]) == 4
 
       {_, _usage, more} = Mux.drain(rest, usage)
       assert more == []
 
-      assert sent_ids(Mux.drain(rest, 0)) == [:a, :a, :a, :a]
+      assert sent_ids(Mux.drain(rest, 0)) == List.duplicate(loser, 4)
     end
 
     test "a frame that lands exactly on the limit does not stop the next frame" do
@@ -118,11 +119,23 @@ defmodule DiodeClient.MuxTest do
                2 * (1 + 1000)
     end
 
-    test "acking the window still serves the later channel id before the other" do
+    test "acking the window still finishes one channel before the other" do
       channels = channels(a: repeated(6, 30_000), b: repeated(6, 30_000))
       {sent, _} = slide(channels, 0, [])
-      ids = sent_ids({nil, 0, sent})
-      assert ids == List.duplicate(:b, 6) ++ List.duplicate(:a, 6)
+      assert one_then_the_other?(sent_ids({nil, 0, sent}), 6, 6)
+    end
+  end
+
+  defp one_then_the_other?(ids, first_n, second_n) do
+    case Enum.uniq(ids) do
+      [first, second] ->
+        ids == List.duplicate(first, first_n) ++ List.duplicate(second, second_n)
+
+      [only] when second_n == 0 ->
+        ids == List.duplicate(only, first_n)
+
+      _ ->
+        false
     end
   end
 

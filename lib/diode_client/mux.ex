@@ -15,9 +15,10 @@ defmodule DiodeClient.Mux do
       ignores refc binary payloads larger than 64 bytes.
     * Client backpressure is a global 128KB in-flight cap. The relay
       queue is unbounded and the socket writer coalesces up to 64KB.
-    * Both break ties toward the later map key and both append with
-      `++` (quadratic in queue depth). The tie winner is then drained
-      to completion, so two equal transfers do not share the socket.
+    * Both break equal-weight ties by map iteration order, which is not
+      stable across OTP versions, and both append with `++` (quadratic
+      in queue depth). The tie winner is then drained to completion, so
+      two equal transfers do not share the socket.
 
   Merge options, cheapest first:
 
