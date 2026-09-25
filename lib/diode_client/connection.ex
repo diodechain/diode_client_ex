@@ -7,6 +7,7 @@ defmodule DiodeClient.Connection do
     Certs,
     Connection,
     Manager,
+    Mux,
     NodeScorer,
     Port,
     Random,
@@ -50,11 +51,11 @@ defmodule DiodeClient.Connection do
     end
 
     def empty?(%Channel{times: tq, backlog: bq}) do
-      :queue.is_empty(tq) and bq == []
+      :queue.is_empty(tq) and Mux.empty?(bq)
     end
 
     def size(%Channel{backlog: bq}) do
-      :erlang.iolist_size(bq)
+      Mux.backlog_bytes(bq)
     end
   end
 
@@ -84,7 +85,8 @@ defmodule DiodeClient.Connection do
             reset_count: 0,
             max_uptime: nil,
             reported_stable: false,
-            subscribed: %{}
+            subscribed: %{},
+            mux_cursor: nil
 
   def start_link(server, ports) when is_list(ports) do
     GenServer.start_link(__MODULE__, [server, ports],
@@ -286,7 +288,7 @@ defmodule DiodeClient.Connection do
        ) do
     default = fn -> %Channel{times: :queue.new(), backlog: []} end
     ch = Map.get_lazy(channels, id, default)
-    ch = %{ch | times: :queue.in(time, ch.times), backlog: ch.backlog ++ [[req, rlp]]}
+    ch = %{ch | times: :queue.in(time, ch.times), backlog: Mux.append(ch.backlog, [req, rlp])}
     channels = Map.put(channels, id, ch)
 
     sched_cmd(%Connection{
@@ -338,32 +340,36 @@ defmodule DiodeClient.Connection do
     |> update_info()
   end
 
-  @usage_limit 128_000
-  defp sched_cmd(state = %Connection{channel_usage: usage}) when usage > @usage_limit do
-    state
+  defp sched_cmd(state = %Connection{channels: channels, channel_usage: usage, recv_id: recv_id}) do
+    backlogs = Map.new(channels, fn {id, %Channel{backlog: backlog}} -> {id, backlog} end)
+
+    {backlogs, usage, sent, cursor} =
+      Mux.drain(backlogs, usage, Mux.usage_limit(), state.mux_cursor)
+
+    state = %{state | mux_cursor: cursor}
+
+    channels =
+      Map.new(channels, fn {id, ch} ->
+        {id, %{ch | backlog: Map.fetch!(backlogs, id)}}
+      end)
+
+    Enum.reduce(sent, %{state | channels: channels, channel_usage: usage}, fn {id, req, rlp},
+                                                                              state ->
+      send_frame(state, recv_id, id, req, rlp)
+    end)
   end
 
-  defp sched_cmd(state = %Connection{channels: channels, channel_usage: usage, recv_id: recv_id}) do
-    Enum.reject(channels, fn {_, %Channel{backlog: backlog}} -> backlog == [] end)
-    |> Enum.min(fn {_, a}, {_, b} -> Channel.size(a) < Channel.size(b) end, fn -> nil end)
-    |> case do
-      {id, ch = %Channel{backlog: [[req, rlp] | backlog]}} ->
-        %Cmd{cmd: cmd, send_reply: reply} = Map.fetch!(recv_id, req)
+  defp send_frame(state, recv_id, id, req, rlp) do
+    %Cmd{cmd: cmd, send_reply: reply} = Map.fetch!(recv_id, req)
 
-        if cmd in ["portopen", "portopen2"] do
-          "sending #{cmd} for #{if is_binary(id), do: Base16.encode(id), else: inspect(id)}"
-          |> debug()
-        end
-
-        state = ssl_send!(state, rlp)
-
-        if reply != nil, do: GenServer.reply(reply, :ok)
-        channels = Map.put(channels, id, %{ch | backlog: backlog})
-        sched_cmd(%{state | channels: channels, channel_usage: usage + byte_size(rlp)})
-
-      nil ->
-        state
+    if cmd in ["portopen", "portopen2"] do
+      "sending #{cmd} for #{if is_binary(id), do: Base16.encode(id), else: inspect(id)}"
+      |> debug()
     end
+
+    state = ssl_send!(state, rlp)
+    if reply != nil, do: GenServer.reply(reply, :ok)
+    state
   end
 
   @impl true
@@ -791,7 +797,7 @@ defmodule DiodeClient.Connection do
     end)
 
     Enum.each(chs, fn {_, %Channel{backlog: backlog}} ->
-      Enum.each(backlog, fn [req, _rlp] ->
+      Enum.each(Mux.to_list(backlog), fn [req, _rlp] ->
         %Cmd{send_reply: reply} = Map.fetch!(recv_id, req)
         if reply != nil, do: GenServer.reply(reply, {:error, :remote_closed})
       end)
@@ -815,7 +821,8 @@ defmodule DiodeClient.Connection do
         reset_count: state.reset_count + 1,
         max_uptime: max(state.max_uptime || 0, System.os_time(:second) - state.started_at),
         reported_stable: false,
-        subscribed: %{}
+        subscribed: %{},
+        mux_cursor: nil
     }
     |> update_info()
   end
