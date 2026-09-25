@@ -51,7 +51,7 @@ defmodule DiodeClient.Connection do
     end
 
     def empty?(%Channel{times: tq, backlog: bq}) do
-      :queue.is_empty(tq) and bq == []
+      :queue.is_empty(tq) and Mux.empty?(bq)
     end
 
     def size(%Channel{backlog: bq}) do
@@ -85,7 +85,8 @@ defmodule DiodeClient.Connection do
             reset_count: 0,
             max_uptime: nil,
             reported_stable: false,
-            subscribed: %{}
+            subscribed: %{},
+            mux_cursor: nil
 
   def start_link(server, ports) when is_list(ports) do
     GenServer.start_link(__MODULE__, [server, ports],
@@ -341,7 +342,11 @@ defmodule DiodeClient.Connection do
 
   defp sched_cmd(state = %Connection{channels: channels, channel_usage: usage, recv_id: recv_id}) do
     backlogs = Map.new(channels, fn {id, %Channel{backlog: backlog}} -> {id, backlog} end)
-    {backlogs, usage, sent} = Mux.drain(backlogs, usage)
+
+    {backlogs, usage, sent, cursor} =
+      Mux.drain(backlogs, usage, Mux.usage_limit(), state.mux_cursor)
+
+    state = %{state | mux_cursor: cursor}
 
     channels =
       Map.new(channels, fn {id, ch} ->
@@ -792,7 +797,7 @@ defmodule DiodeClient.Connection do
     end)
 
     Enum.each(chs, fn {_, %Channel{backlog: backlog}} ->
-      Enum.each(backlog, fn [req, _rlp] ->
+      Enum.each(Mux.to_list(backlog), fn [req, _rlp] ->
         %Cmd{send_reply: reply} = Map.fetch!(recv_id, req)
         if reply != nil, do: GenServer.reply(reply, {:error, :remote_closed})
       end)
@@ -816,7 +821,8 @@ defmodule DiodeClient.Connection do
         reset_count: state.reset_count + 1,
         max_uptime: max(state.max_uptime || 0, System.os_time(:second) - state.started_at),
         reported_stable: false,
-        subscribed: %{}
+        subscribed: %{},
+        mux_cursor: nil
     }
     |> update_info()
   end

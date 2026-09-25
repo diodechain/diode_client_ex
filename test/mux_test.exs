@@ -11,88 +11,99 @@ defmodule DiodeClient.MuxTest do
     end)
   end
 
-  defp sent_ids({_channels, _usage, sent}), do: Enum.map(sent, fn {id, _req, _payload} -> id end)
+  defp sent_ids({_channels, _usage, sent, _cursor}), do: Enum.map(sent, &elem(&1, 0))
 
-  describe "shortest backlog" do
-    test "equal chunk sizes do not alternate; one channel is drained first" do
-      # Equal backlogs tie. Enum.min keeps one channel, that send makes it
-      # strictly smaller, and shortest-queue priority drains it before the
-      # other port runs. Which key wins the tie depends on the OTP map order.
-      channels = channels(a: repeated(4, 1000), b: repeated(4, 1000))
-      assert one_then_the_other?(sent_ids(Mux.drain(channels, 0, 10_000_000)), 4, 4)
+  defp drain(channels, usage, limit \\ Mux.usage_limit(), cursor \\ nil) do
+    Mux.drain(channels, usage, limit, cursor)
+  end
+
+  describe "round robin" do
+    test "equal quantum-sized chunks alternate, lower id first" do
+      q = Mux.quantum()
+      channels = channels(a: repeated(3, q), b: repeated(3, q))
+      assert sent_ids(drain(channels, 0, 10_000_000)) == [:a, :b, :a, :b, :a, :b]
     end
 
-    test "a trickle channel is fully drained before a 15MB-style backlog moves" do
-      # Two transfers at once. One port has a few small frames queued; the
-      # other already holds a deep backlog (the steady state of a 15MB
-      # download/upload). Strict shortest-queue priority serves only the
-      # trickle until it is empty.
-      trickle = repeated(5, 200)
-      bulk = repeated(30, 20_000)
-      channels = channels(trickle: trickle, bulk: bulk)
-
-      assert sent_ids(Mux.drain(channels, 0, 10_000_000)) ==
-               List.duplicate(:trickle, 5) ++ List.duplicate(:bulk, 30)
+    test "a trickle does not run to completion ahead of a deep backlog" do
+      q = Mux.quantum()
+      channels = channels(trickle: repeated(5, 200), bulk: repeated(3, q))
+      ids = sent_ids(drain(channels, 0, 10_000_000))
+      assert hd(ids) == :bulk or Enum.at(ids, 1) == :bulk
+      assert :trickle in ids
+      refute ids == List.duplicate(:trickle, 5) ++ List.duplicate(:bulk, 3)
     end
 
-    test "eight ports: the smallest backlog runs to completion before the next" do
+    test "eight ports each get a turn before any port repeats" do
+      q = Mux.quantum()
+
       channels =
-        channels(
-          p1: repeated(1, 10),
-          p2: repeated(2, 10),
-          p3: repeated(3, 10),
-          p4: repeated(4, 10),
-          p5: repeated(5, 10),
-          p6: repeated(6, 10),
-          p7: repeated(7, 10),
-          p8: repeated(8, 10)
-        )
+        Map.new(1..8, fn n ->
+          {:"p#{n}", [frame(<<n::size(q * 8)>>)]}
+        end)
 
-      ids = sent_ids(Mux.drain(channels, 0, 10_000_000))
-      assert Enum.take(ids, 1) == [:p1]
-      assert Enum.at(ids, 1) == :p2
-      assert List.last(ids) == :p8
-      assert length(ids) == 36
+      assert sent_ids(drain(channels, 0, 10_000_000)) ==
+               Enum.map(1..8, &:"p#{&1}")
     end
 
-    test "a single control frame jumps ahead of every bulk port" do
-      channels = channels(bulk_a: repeated(10, 5_000), bulk_b: repeated(10, 5_000), ctrl: [<<1>>])
-      assert hd(sent_ids(Mux.drain(channels, 0))) == :ctrl
+    test "a control frame waits its turn instead of preempting bulk ports" do
+      q = Mux.quantum()
+
+      channels =
+        channels(bulk_a: [<<0::size(q * 8)>>], bulk_b: [<<0::size(q * 8)>>], ctrl: [<<1>>])
+
+      ids = sent_ids(drain(channels, 0, 10_000_000))
+      assert ids == [:bulk_a, :bulk_b, :ctrl]
+    end
+
+    test "small frames yield after one quantum so the other channel runs" do
+      channels = channels(a: repeated(200, 1_000), b: repeated(200, 1_000))
+      ids = sent_ids(drain(channels, 0, 10_000_000))
+      assert burst_bytes(ids, 1_000) <= Mux.quantum()
+      assert Enum.count(ids, &(&1 == :a)) == 200
+      assert Enum.count(ids, &(&1 == :b)) == 200
     end
   end
 
   describe "in-flight window" do
-    test "one stream fills the shared 128KB window before the other is admitted" do
+    test "both streams share the 128KB window" do
       channels = channels(a: repeated(4, 40_000), b: repeated(4, 40_000))
-      {rest, usage, sent} = Mux.drain(channels, 0)
+      {rest, usage, sent, _cursor} = drain(channels, 0)
+      ids = sent_ids({rest, usage, sent, nil})
 
-      ids = sent_ids({rest, usage, sent})
-      assert usage == 160_000
-      assert one_then_the_other?(ids, 4, 0)
-      winner = hd(ids)
-      loser = if(winner == :a, do: :b, else: :a)
-      assert rest[winner] == []
-      assert length(rest[loser]) == 4
+      assert usage >= Mux.usage_limit()
+      assert :a in ids and :b in ids
+      assert Mux.to_list(rest.a) != [] and Mux.to_list(rest.b) != []
 
-      {_, _usage, more} = Mux.drain(rest, usage)
+      {_rest, _usage, more, _} = drain(rest, usage)
       assert more == []
-
-      assert sent_ids(Mux.drain(rest, 0)) == List.duplicate(loser, 4)
     end
 
-    test "a frame that lands exactly on the limit does not stop the next frame" do
+    test "a frame that lands on the limit holds the next frame" do
       channels = channels(a: [<<0::size(128_000 * 8)>>, <<1>>])
-      {_rest, usage, sent} = Mux.drain(channels, 0)
-      assert length(sent) == 2
-      assert usage == 128_001
+      {rest, usage, sent, _} = drain(channels, 0)
+      assert length(sent) == 1
+      assert usage == 128_000
+      assert length(Mux.to_list(rest.a)) == 1
+
+      {_rest, _usage, held, _} = drain(rest, usage)
+      assert held == []
     end
 
     test "one byte over the limit holds every remaining frame" do
       channels = channels(a: [<<1>>, <<2>>])
-      {rest, usage, sent} = Mux.drain(channels, Mux.usage_limit() + 1)
+      {rest, usage, sent, _} = drain(channels, Mux.usage_limit() + 1)
       assert sent == []
-      assert length(rest.a) == 2
+      assert length(Mux.to_list(rest.a)) == 2
       assert usage == Mux.usage_limit() + 1
+    end
+
+    test "acking the window continues the rotation" do
+      channels = channels(a: repeated(4, 40_000), b: repeated(4, 40_000))
+      {rest, usage, first, cursor} = drain(channels, 0, 160_000)
+      assert sent_ids({rest, usage, first, cursor}) == [:a, :b, :a, :b]
+      assert cursor == :b
+      {_rest, _usage, second, _} = drain(rest, 0, 10_000_000, cursor)
+      assert sent_ids({nil, 0, second, nil}) == [:b, :a, :b, :a]
     end
   end
 
@@ -100,7 +111,7 @@ defmodule DiodeClient.MuxTest do
     test "empty backlogs and an empty map send nothing" do
       assert Mux.pick(%{}) == nil
       assert Mux.pick(%{a: []}) == nil
-      assert Mux.drain(%{a: []}, 0) == {%{a: []}, 0, []}
+      assert match?({_, 0, [], nil}, drain(%{a: []}, 0))
     end
 
     test "append keeps per-channel order under a deep queue" do
@@ -109,49 +120,61 @@ defmodule DiodeClient.MuxTest do
           Mux.append(acc, [<<n::16>>, <<n>>])
         end)
 
-      assert length(backlog) == 500
-      assert hd(backlog) == [<<1::16>>, <<1>>]
-      assert List.last(backlog) == [<<500::16>>, <<500>>]
+      listed = Mux.to_list(backlog)
+      assert length(listed) == 500
+      assert hd(listed) == [<<1::16>>, <<1>>]
+      assert List.last(listed) == [<<500::16>>, <<500>>]
     end
 
     test "backlog bytes count every queued payload" do
-      assert Mux.backlog_bytes([frame(<<0::size(1000 * 8)>>), frame(<<0::size(1000 * 8)>>)]) ==
-               2 * (1 + 1000)
-    end
+      backlog =
+        []
+        |> Mux.append(frame(<<0::size(1000 * 8)>>))
+        |> Mux.append(frame(<<0::size(1000 * 8)>>))
 
-    test "acking the window still finishes one channel before the other" do
-      channels = channels(a: repeated(6, 30_000), b: repeated(6, 30_000))
-      {sent, _} = slide(channels, 0, [])
-      assert one_then_the_other?(sent_ids({nil, 0, sent}), 6, 6)
+      assert Mux.backlog_bytes(backlog) == 2 * (1 + 1000)
     end
   end
 
-  defp one_then_the_other?(ids, first_n, second_n) do
-    case Enum.uniq(ids) do
-      [first, second] ->
-        ids == List.duplicate(first, first_n) ++ List.duplicate(second, second_n)
+  describe "performance" do
+    test "enqueue and drain of 20k frames stays linear" do
+      small = time_drain(2_000)
+      large = time_drain(8_000)
+      assert large < small * 10
+      assert large < 1_000_000
+    end
 
-      [only] when second_n == 0 ->
-        ids == List.duplicate(only, first_n)
+    test "fifty channels each send once without a slow scan" do
+      channels =
+        Map.new(1..50, fn n ->
+          {n, [frame(<<n>>)]}
+        end)
 
-      _ ->
-        false
+      {micro, ids} =
+        :timer.tc(fn ->
+          sent_ids(drain(channels, 0, 10_000_000))
+        end)
+
+      assert ids == Enum.to_list(1..50)
+      assert micro < 100_000
     end
   end
 
-  defp slide(channels, usage, acc) do
-    {rest, usage, sent} = Mux.drain(channels, usage)
+  defp burst_bytes(ids, frame_size) do
+    ids
+    |> Enum.chunk_by(& &1)
+    |> Enum.map(&(length(&1) * frame_size))
+    |> Enum.max()
+  end
 
-    cond do
-      sent != [] ->
-        slide(rest, usage, acc ++ sent)
+  defp time_drain(n) do
+    {micro, _} =
+      :timer.tc(fn ->
+        channels = channels(a: repeated(n, 64), b: repeated(n, 64))
+        drain(channels, 0, 100_000_000)
+      end)
 
-      Enum.any?(rest, fn {_id, backlog} -> backlog != [] end) ->
-        slide(rest, 0, acc)
-
-      true ->
-        {acc, rest}
-    end
+    micro
   end
 
   defp repeated(n, size), do: for(_ <- 1..n, do: <<0::size(size * 8)>>)
