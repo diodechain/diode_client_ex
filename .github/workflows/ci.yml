@@ -19,4 +19,5 @@ jobs:
         mix local.rebar --force
         mix deps.get
         mix lint
+        mix test test/mux_test.exs
         # mix test
