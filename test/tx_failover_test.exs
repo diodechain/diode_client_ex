@@ -6,7 +6,7 @@ defmodule DiodeClient.TxFailoverTest do
   alias DiodeClient.Shell.Common
   alias DiodeClient.Rlpx
 
-  @shells [DiodeClient.Shell.Moonbeam, DiodeClient.Shell]
+  @shells [DiodeClient.Shell.Base, DiodeClient.Shell]
   @eu1_url "eu1.prenet.diode.io"
   @us1_url "us1.prenet.diode.io"
   @as1_url "as1.prenet.diode.io"
@@ -135,7 +135,7 @@ defmodule DiodeClient.TxFailoverTest do
           best: [eu1, us1, as1]
         )
 
-      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Moonbeam)
+      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Base)
 
       assert candidates == [eu1, us1, as1]
     end
@@ -153,7 +153,7 @@ defmodule DiodeClient.TxFailoverTest do
         base_manager_state(conns, best: [eu1, us1])
         |> Map.put(:rpc_failed_at, %{eu1 => System.monotonic_time(:millisecond)})
 
-      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Moonbeam)
+      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Base)
 
       assert candidates == [us1]
       refute eu1 in candidates
@@ -193,7 +193,7 @@ defmodule DiodeClient.TxFailoverTest do
       assert is_integer(state.sticky_unhealthy_since)
       assert Map.has_key?(state.rpc_failed_at, eu1)
 
-      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Moonbeam)
+      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Base)
       assert candidates == [us1]
       refute eu1 in candidates
     end
@@ -215,7 +215,7 @@ defmodule DiodeClient.TxFailoverTest do
         |> Map.put(:sticky_unhealthy_since, old_failure)
         |> Map.put(:rpc_failed_at, %{eu1 => old_failure})
 
-      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Moonbeam)
+      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Base)
       assert candidates == [us1]
       refute eu1 in candidates
     end
@@ -263,7 +263,7 @@ defmodule DiodeClient.TxFailoverTest do
       assert state.sticky == @eu1_url
       assert Process.whereis(Manager.Sticky) == eu1
 
-      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Moonbeam)
+      candidates = Manager.__test_tx_relay_candidates__(state, DiodeClient.Shell.Base)
       assert candidates == [eu1, us1]
     end
 
@@ -293,11 +293,11 @@ defmodule DiodeClient.TxFailoverTest do
       {:ok, hang_pid} = MockRelay.start_link(mode: :hang)
       {:ok, ok_pid} = MockRelay.start_link(response: ["0xabc"])
 
-      cmd = ["glmr:sendtransaction", <<>>]
+      cmd = ["base:sendtransaction", <<>>]
 
       assert ["0xabc"] =
                Common.__test_rpc_with_tx_failover__(
-                 DiodeClient.Shell.Moonbeam,
+                 DiodeClient.Shell.Base,
                  cmd,
                  [
                    hang_pid,

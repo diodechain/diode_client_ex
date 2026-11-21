@@ -46,8 +46,8 @@ defmodule DiodeClientManagerTest do
 
     @tag :anvil
     test "receives peak when Diode network produces new block" do
-      # Manager tracks Moonbeam/Shell from Diode P2P; subscribe and wait for a block
-      shell = DiodeClient.Shell.Moonbeam
+      # Manager tracks Base/Shell from Diode P2P; subscribe and wait for a block
+      shell = DiodeClient.Shell.Base
       assert :ok = Manager.subscribe_peak(shell)
 
       received =
@@ -59,7 +59,7 @@ defmodule DiodeClientManagerTest do
         end
 
       assert :ok = Manager.unsubscribe_peak(shell)
-      assert received != nil, "expected peak message (Moonbeam ~12s block time)"
+      assert received != nil, "expected peak message (Base ~2s block time)"
     end
 
     @tag :anvil
@@ -88,7 +88,7 @@ defmodule DiodeClientManagerTest do
   describe "update and connected optimizations" do
     @tag :anvil
     test "get_peak is supported by majority chain consensus" do
-      shell = DiodeClient.Shell.Moonbeam
+      shell = DiodeClient.Shell.Base
       peak = Manager.get_peak(shell)
       assert is_map(peak) or peak == nil
 

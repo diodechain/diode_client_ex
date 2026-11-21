@@ -57,7 +57,7 @@ defmodule DiodeClient.Shell.Common do
             do: Common.get_account_values(__MODULE__, address, keys, peak)
       end
 
-      if __MODULE__ in [DiodeClient.Shell.Moonbeam, DiodeClient.Shell.Base] do
+      if __MODULE__ == DiodeClient.Shell.Base do
         def call(address, method, types, args, opts \\ []) do
           Common.call(__MODULE__, address, method, types, args, opts)
         end
@@ -463,7 +463,7 @@ defmodule DiodeClient.Shell.Common do
 
       [values] ->
         # Diode L1 can differentiate between unset (empty) values and all zero
-        # values -- this is not the case for moonbeam. So to make signup name checks
+        # values -- this is not the case for EVM chains (e.g. Base). So to make signup name checks
         # succeed here we're checking that the value is not all zero.
 
         Enum.map(values, fn value ->

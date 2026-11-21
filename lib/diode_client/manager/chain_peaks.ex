@@ -3,7 +3,7 @@ defmodule DiodeClient.Manager.ChainPeaks do
   alias DiodeClient.{Base16, Manager.Info, Rlpx}
 
   @default_stale_threshold 64
-  @moonbeam_stale_threshold 128
+  @base_stale_threshold 256
   @diode_stale_threshold 64
 
   @doc """
@@ -201,7 +201,7 @@ defmodule DiodeClient.Manager.ChainPeaks do
     end
   end
 
-  def stale_threshold(DiodeClient.Shell.Moonbeam), do: @moonbeam_stale_threshold
+  def stale_threshold(DiodeClient.Shell.Base), do: @base_stale_threshold
   def stale_threshold(DiodeClient.Shell), do: @diode_stale_threshold
   def stale_threshold(_shell), do: @default_stale_threshold
 

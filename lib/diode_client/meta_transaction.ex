@@ -2,8 +2,7 @@ defmodule DiodeClient.MetaTransaction do
   @moduledoc """
   Meta transaction to submit pre-signed transactions to the blockchain.
   """
-  alias DiodeClient.Contracts.CallPermit
-  alias DiodeClient.{Hash, MetaTransaction, Secp256k1, Shell, Wallet}
+  alias DiodeClient.{Hash, MetaTransaction, Secp256k1, Wallet}
   defstruct [:from, :to, :value, :call, :gaslimit, :deadline, :nonce, :signature, :chain_id]
 
   @type t :: %MetaTransaction{
@@ -18,8 +17,6 @@ defmodule DiodeClient.MetaTransaction do
           chain_id: integer() | nil
         }
 
-  @moonbeam [Shell.Moonbeam.chain_id()]
-
   def sign(mtx = %MetaTransaction{}, wallet) do
     [v, r, s] =
       Wallet.privkey!(wallet)
@@ -27,20 +24,6 @@ defmodule DiodeClient.MetaTransaction do
       |> Secp256k1.bitcoin_to_rlp()
 
     %MetaTransaction{mtx | signature: {v, r, s}}
-  end
-
-  def digest(%MetaTransaction{
-        from: from,
-        to: to,
-        value: value,
-        call: data,
-        gaslimit: gaslimit,
-        deadline: deadline,
-        nonce: nonce,
-        chain_id: chain_id
-      })
-      when chain_id in @moonbeam do
-    CallPermit.call_permit(chain_id, from, to, value, data, gaslimit, deadline, nonce)
   end
 
   def digest(
@@ -79,21 +62,6 @@ defmodule DiodeClient.MetaTransaction do
   defp hash_encode(list) do
     Enum.map_join(list, &Hash.to_bytes32/1)
     |> Hash.keccak_256()
-  end
-
-  def to_rlp(%MetaTransaction{
-        from: from,
-        to: to,
-        value: value,
-        call: data,
-        gaslimit: gaslimit,
-        deadline: deadline,
-        # nonce: nonce,
-        signature: {v, r, s},
-        chain_id: chain_id
-      })
-      when chain_id in @moonbeam do
-    [from, to, value, data, gaslimit, deadline, v, r, s]
   end
 
   def to_rlp(%MetaTransaction{

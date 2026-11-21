@@ -37,7 +37,7 @@ defmodule Mix.Tasks.Diode.Nodes do
     unique = Enum.uniq(full)
     IO.puts("Found #{length(unique)} unique nodes")
 
-    current_block = DiodeClient.Shell.Moonbeam.peak_number()
+    current_block = DiodeClient.Shell.Base.peak_number()
 
     for srv = server(host: host, version: version, extra: extra) <- unique do
       block = Enum.map(extra, fn [k, v] -> {k, v} end) |> Map.new() |> Map.get("block")
@@ -55,7 +55,7 @@ defmodule Mix.Tasks.Diode.Nodes do
   end
 
   def process(["get", "0x" <> _ = value]) do
-    current_block = DiodeClient.Shell.Moonbeam.peak_number()
+    current_block = DiodeClient.Shell.Base.peak_number()
     addr = Base16.decode(value)
     IO.puts("Getting nodes for #{Base16.encode(addr)} => #{key_hash(addr)}")
     IO.puts("")

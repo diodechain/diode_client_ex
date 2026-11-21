@@ -11,7 +11,7 @@ defmodule DiodeClient.Manager.ChainRoutingTest do
 
   @base DiodeClient.Shell.Base
   @diode DiodeClient.Shell
-  @moonbeam DiodeClient.Shell.Moonbeam
+  @sapphire DiodeClient.Shell.OasisSapphire
 
   defp block(n) do
     %{
@@ -40,11 +40,11 @@ defmodule DiodeClient.Manager.ChainRoutingTest do
 
     %Manager{
       conns: conns,
-      shells: MapSet.new([@base, @diode, @moonbeam]),
+      shells: MapSet.new([@base, @diode, @sapphire]),
       chain_peaks: %{
         @base => block(height),
         @diode => block(height),
-        @moonbeam => block(height)
+        @sapphire => block(height)
       },
       traffic_best: Keyword.get(opts, :best, []),
       traffic_best_timestamp: System.os_time(:second),
@@ -118,11 +118,11 @@ defmodule DiodeClient.Manager.ChainRoutingTest do
           info(
             "as1.prenet.diode.io",
             base_ok,
-            %{@base => block(100), @moonbeam => block(100), @diode => block(100)},
+            %{@base => block(100), @sapphire => block(100), @diode => block(100)},
             100
           ),
         no_base =>
-          info("100.42.185.191", no_base, %{@diode => block(100), @moonbeam => block(100)}, 50)
+          info("100.42.185.191", no_base, %{@diode => block(100), @sapphire => block(100)}, 50)
       }
 
       state = base_manager_state(conns, best: [no_base, base_ok], height: 100)
@@ -136,7 +136,7 @@ defmodule DiodeClient.Manager.ChainRoutingTest do
       eu1 = spawn_conn_holder()
       us1 = spawn_conn_holder()
 
-      peaks = %{@base => block(100), @moonbeam => block(100), @diode => block(100)}
+      peaks = %{@base => block(100), @sapphire => block(100), @diode => block(100)}
 
       conns = %{
         eu1 => info("eu1.prenet.diode.io", eu1, peaks, 100),
