@@ -5,7 +5,7 @@ defmodule DiodeClient.Manager.ChainPeaksTest do
   alias DiodeClient.Manager.Info
   alias DiodeClient.Rlpx
 
-  @shell DiodeClient.Shell.Moonbeam
+  @shell DiodeClient.Shell.Base
   @base DiodeClient.Shell.Base
   @opts [min_connections: 3]
 

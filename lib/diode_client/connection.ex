@@ -107,7 +107,7 @@ defmodule DiodeClient.Connection do
       conns: conns,
       events: :queue.new(),
       fleet: DiodeClient.fleet_address(),
-      ticket_shell: DiodeClient.Shell.Moonbeam,
+      ticket_shell: DiodeClient.Manager.ticket_shell(),
       shells: MapSet.new(DiodeClient.Manager.default_shells()),
       server: server,
       server_ports: ports,

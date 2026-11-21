@@ -14,7 +14,7 @@ defmodule DiodeClient.ManagerBestChangeTest do
   alias DiodeClient.Manager.Info
   alias DiodeClient.Rlpx
 
-  @shells [DiodeClient.Shell.Moonbeam, DiodeClient.Shell]
+  @shells [DiodeClient.Shell.Base, DiodeClient.Shell]
   @eu1_url "eu1.prenet.diode.io"
   @us1_url "us1.prenet.diode.io"
   @as1_url "as1.prenet.diode.io"
@@ -150,7 +150,7 @@ defmodule DiodeClient.ManagerBestChangeTest do
       {_drop_state, drop_diag} = Manager.__test_simulate_update__(drop_state)
 
       assert drop_diag.connected_count == 0,
-             "stale eu1 on moonbeam leaves only 2 qualifying nodes for that shell (need 3)"
+             "stale eu1 on base leaves only 2 qualifying nodes for that shell (need 3)"
 
       assert drop_diag.new_best == [us1],
              "viable us1 should stay traffic best when eu1 is behind on diode shell"

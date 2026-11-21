@@ -6,7 +6,7 @@ Context and conventions for AI agents and contributors working on this repositor
 
 **What it is**: DiodeClient is an Elixir library for secure P2P connections via the Diode network, using Ethereum-style addresses (e.g. `0x...`) and TLS + secp256k1 authentication.
 
-**Key capabilities**: Port listen/connect, wallet/identity, blockchain shells (Moonbeam, Oasis Sapphire), smart-contract interaction (ABI, EIP-712, BNS, etc.).
+**Key capabilities**: Port listen/connect, wallet/identity, blockchain shells (Base, Oasis Sapphire), smart-contract interaction (ABI, EIP-712, BNS, etc.).
 
 ## Coding guidelines
 

@@ -239,7 +239,14 @@ defmodule DiodeClient.Transaction do
   def shell(%Transaction{chain_id: chain_id}), do: DiodeClient.shell_for_chain_id(chain_id)
   def shell(%MetaTransaction{chain_id: chain_id}), do: DiodeClient.shell_for_chain_id(chain_id)
 
+  defp shell!(tx) do
+    case shell(tx) do
+      nil -> raise ArgumentError, "unsupported chain_id: #{inspect(tx.chain_id)}"
+      mod -> mod
+    end
+  end
+
   @spec user_nonce(t() | MetaTransaction.t()) :: integer()
-  def user_nonce(tx = %Transaction{}), do: shell(tx).get_account(from(tx)).nonce
-  def user_nonce(tx = %MetaTransaction{}), do: shell(tx).get_meta_nonce(from(tx))
+  def user_nonce(tx = %Transaction{}), do: shell!(tx).get_account(from(tx)).nonce
+  def user_nonce(tx = %MetaTransaction{}), do: shell!(tx).get_meta_nonce(from(tx))
 end

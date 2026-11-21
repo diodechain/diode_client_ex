@@ -13,7 +13,9 @@ defmodule DiodeClient.Manager do
   use GenServer
   require Logger
 
-  @ticket_shell DiodeClient.Shell.Moonbeam
+  @ticket_shell DiodeClient.Shell.Base
+
+  def ticket_shell(), do: @ticket_shell
 
   defstruct [
     :conns,
@@ -92,7 +94,7 @@ defmodule DiodeClient.Manager do
   end
 
   def default_shells() do
-    [DiodeClient.Shell.Moonbeam, DiodeClient.Shell]
+    [DiodeClient.Shell.Base, DiodeClient.Shell]
   end
 
   def await() do
@@ -266,7 +268,7 @@ defmodule DiodeClient.Manager do
   @doc """
   Returns a relay that can serve RPCs for `shell`, preferring low latency.
 
-  Prefixed shells (`base:`, `glmr:`, …) only use relays that have reported a
+  Prefixed shells (`base:`, `sapphire:`, …) only use relays that have reported a
   peak for that chain. Waits until such a relay exists rather than falling
   back to traffic-best (which may not support the chain).
 
