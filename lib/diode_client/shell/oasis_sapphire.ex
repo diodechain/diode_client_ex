@@ -106,15 +106,43 @@ defmodule DiodeClient.Shell.OasisSapphire do
     end
   end
 
+  @doc false
+  def unexpected_base_block_error?(msg) when is_binary(msg) do
+    String.contains?(msg, "unexpected base block")
+  end
+
+  def unexpected_base_block_error?(_), do: false
+
+  @doc false
+  def canonical_anchor_hash(anchor_header, next_header) do
+    case next_header do
+      %{"previous_block" => <<_::256>> = prev_hash} ->
+        prev_hash
+
+      _ ->
+        case anchor_header do
+          %{"block_hash" => hash} -> hash
+          _ -> nil
+        end
+    end
+  end
+
   defp prepare_signed_call(transaction, opts) do
     # For some reason calls to blocks with higher numbers are getting this error:
     #  roothash: block not found: client: failed to fetch annotated block from history: roothash: block not found
     # So we stay back by two blocks to avoid this issue.
-    head_block = peak_number()
-    block = get_block_header(signed_call_block_index(opts, head_block))
+    head_block = Keyword.get(opts, :head_block) || peak_number()
+    anchor_index = signed_call_block_index(opts, head_block)
 
-    block_number = Block.number(block) + 1
-    block_hash = block["block_hash"]
+    {block_number, block_hash} =
+      case Keyword.get(opts, :block_hash_override) do
+        <<_::256>> = hash ->
+          {anchor_index + 1, hash}
+
+        _ ->
+          block = get_block_header(anchor_index)
+          {Block.number(block) + 1, block["block_hash"]}
+      end
 
     sig_opts = [
       gas: transaction.gasLimit,
@@ -133,11 +161,15 @@ defmodule DiodeClient.Shell.OasisSapphire do
         sig_opts
       )
 
-    %{call: call, block_number: block_number}
+    %{call: call, block_number: block_number, anchor_index: anchor_index}
   end
 
   def oasis_call(transaction, opts \\ []) do
-    %{call: call} = prepare_signed_call(transaction, opts)
+    do_oasis_call(transaction, opts, true)
+  end
+
+  defp do_oasis_call(transaction, opts, retry?) do
+    %{call: call, anchor_index: anchor_index} = prepare_signed_call(transaction, opts)
 
     params =
       [
@@ -153,7 +185,9 @@ defmodule DiodeClient.Shell.OasisSapphire do
       ]
       |> Jason.encode!()
 
-    with [json] <- cached_rpc([prefix() <> "rpc", "eth_call", params]),
+    cmd = [prefix() <> "rpc", "eth_call", params]
+
+    with [json] <- cached_rpc(cmd),
          {:ok, %{"result" => result}} <- Jason.decode(json),
          cbor <-
            DiodeClient.OasisSapphire.decrypt_data_pack_response(call, Base16.decode(result)),
@@ -164,9 +198,51 @@ defmodule DiodeClient.Shell.OasisSapphire do
         {:error, reason}
 
       {:ok, %{"error" => error}} ->
-        {:error, error}
+        uncache_rpc(cmd)
+        maybe_retry_unexpected_base_block(error, transaction, opts, anchor_index, retry?)
     end
   end
+
+  defp maybe_retry_unexpected_base_block(error, transaction, opts, anchor_index, true) do
+    if unexpected_base_block_error?(error["message"]) do
+      uncache_rpc([prefix() <> "getblockheader", anchor_index])
+      canonical_hash = resolve_canonical_anchor_hash(anchor_index)
+
+      retry_opts =
+        opts
+        |> Keyword.put(:block, anchor_index)
+        |> maybe_put_block_hash_override(canonical_hash)
+
+      do_oasis_call(transaction, retry_opts, false)
+    else
+      {:error, error}
+    end
+  end
+
+  defp maybe_retry_unexpected_base_block(error, _transaction, _opts, _anchor_index, false) do
+    {:error, error}
+  end
+
+  defp resolve_canonical_anchor_hash(anchor_index) do
+    case canonical_anchor_hash(nil, safe_get_block_header(anchor_index + 1)) do
+      <<_::256>> = hash -> hash
+      _ -> canonical_anchor_hash(safe_get_block_header(anchor_index), nil)
+    end
+  end
+
+  defp safe_get_block_header(block_index) do
+    case cached_rpc([prefix() <> "getblockheader", block_index]) do
+      [block] when is_map(block) -> block
+      [block] when is_list(block) -> DiodeClient.Rlpx.list2map(block)
+      _ -> nil
+    end
+  end
+
+  defp maybe_put_block_hash_override(opts, hash = <<_::256>>) do
+    Keyword.put(opts, :block_hash_override, hash)
+  end
+
+  defp maybe_put_block_hash_override(opts, _), do: opts
 
   def encrypt_transaction(tx) do
     %{tx | data: DiodeClient.OasisSapphire.encrypt_data(DiodeClient.Transaction.payload(tx))}
