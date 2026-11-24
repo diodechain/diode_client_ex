@@ -96,6 +96,70 @@ defmodule DiodeClient.ConnectionRpcTest do
       assert {:stop, :normal, %Connection{pending_tickets: %{}}} =
                Connection.handle_ticket(state, ticket, [req, ["error", "signature mismatch"]])
     end
+
+    test "handles ssl_closed immediately while waiting for ticket reply instead of timing out" do
+      req = <<2>>
+      call_req = <<3>>
+      socket = make_ref()
+      caller = self()
+      from = {caller, make_ref()}
+
+      state = %Connection{
+        events: :queue.new(),
+        fleet: <<0::160>>,
+        server: "relay.example",
+        server_ports: [],
+        socket: socket,
+        pending_tickets: %{req => ticketv2()},
+        recv_id: %{call_req => %Connection.Cmd{cmd: "getobject", reply: from}}
+      }
+
+      send(self(), {:ssl_closed, socket})
+
+      assert {:noreply, reset_state, {:continue, :init}} =
+               Connection.wait_for_ticket(req, state, 50)
+
+      assert %Connection{socket: nil, pending_tickets: %{}, reset_count: 1} = reset_state
+      from_ref = elem(from, 1)
+      assert_receive {^from_ref, [^call_req, ["error", "remote_closed"]]}, 500
+    end
+
+    test "handles ssl_error immediately while waiting for ticket reply" do
+      req = <<4>>
+      socket = make_ref()
+
+      state = %Connection{
+        events: :queue.new(),
+        fleet: <<0::160>>,
+        server: "relay.example",
+        server_ports: [],
+        socket: socket,
+        pending_tickets: %{req => ticketv2()}
+      }
+
+      send(self(), {:ssl_error, socket, :closed})
+
+      assert {:noreply, %Connection{socket: nil, pending_tickets: %{}}, {:continue, :init}} =
+               Connection.wait_for_ticket(req, state, 50)
+    end
+
+    test "stops cleanly on :stop while waiting for ticket reply" do
+      req = <<5>>
+      socket = make_ref()
+
+      state = %Connection{
+        events: :queue.new(),
+        fleet: <<0::160>>,
+        server: "relay.example",
+        server_ports: [],
+        socket: socket,
+        pending_tickets: %{req => ticketv2()}
+      }
+
+      send(self(), :stop)
+
+      assert {:stop, :normal, ^state} = Connection.wait_for_ticket(req, state, 50)
+    end
   end
 
   describe "Shell.rpc_retriable" do

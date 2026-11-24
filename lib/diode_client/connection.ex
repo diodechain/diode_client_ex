@@ -535,22 +535,36 @@ defmodule DiodeClient.Connection do
     Rlp.encode!(list) |> :zlib.zip()
   end
 
-  defp wait_for_ticket(:error, state) do
+  @doc false
+  def wait_for_ticket(req, state, timeout \\ 15_000)
+
+  def wait_for_ticket(:error, state, _timeout) do
     state
   end
 
-  defp wait_for_ticket(
-         req,
-         state = %Connection{
-           events: events,
-           pending_tickets: pending_tickets,
-           socket: socket,
-           server: server
-         }
-       ) do
+  def wait_for_ticket(
+        req,
+        state = %Connection{
+          events: events,
+          pending_tickets: pending_tickets,
+          socket: socket,
+          server: server
+        },
+        timeout
+      ) do
     receive do
       :stop ->
         {:stop, :normal, state}
+
+      {:ssl_closed, ^socket} ->
+        debug("ssl_closed() while waiting for ticket reply")
+        NodeScorer.report_failure(server)
+        {:noreply, reset(state), {:continue, :init}}
+
+      {:ssl_error, ^socket, reason} ->
+        warning("ssl_error while waiting for ticket reply: #{inspect(reason)}")
+        NodeScorer.report_failure(server)
+        {:noreply, reset(state), {:continue, :init}}
 
       {:ssl, ^socket, msg} ->
         case decode!(msg) do
@@ -560,10 +574,10 @@ defmodule DiodeClient.Connection do
             handle_ticket(state, tck, [req, reply])
 
           _other ->
-            wait_for_ticket(req, %{state | events: :queue.in(msg, events)})
+            wait_for_ticket(req, %{state | events: :queue.in(msg, events)}, timeout)
         end
     after
-      15_000 ->
+      timeout ->
         raise "DiodeClient missing ticket reply"
     end
   end
@@ -582,7 +596,7 @@ defmodule DiodeClient.Connection do
       ["response", "too_low", _peak, rlp_conns, rlp_bytes, _address, _signature] ->
         new_bytes = to_num(rlp_bytes)
         new_conns = to_num(rlp_conns)
-        %{state | paid_bytes: new_bytes, conns: new_conns}
+        state = %{state | paid_bytes: new_bytes, conns: new_conns}
         create_update_ticket(state)
 
       ["error", reason] ->
@@ -623,11 +637,10 @@ defmodule DiodeClient.Connection do
 
   @impl true
   def handle_info({:peak, shell, peak}, state = %Connection{}) do
-    state =
-      consume_block(state, shell, peak)
-      |> update_info()
-
-    {:noreply, state}
+    case consume_block(state, shell, peak) do
+      %Connection{} = state -> {:noreply, update_info(state)}
+      other -> other
+    end
   end
 
   @impl true
@@ -1039,14 +1052,14 @@ defmodule DiodeClient.Connection do
         state
       end
 
-    state =
-      if last_ticket == :pending do
-        create_update_ticket(state)
-      else
-        state
+    if last_ticket == :pending do
+      case create_update_ticket(state) do
+        %Connection{} = state -> update_info(state)
+        other -> other
       end
-
-    update_info(state)
+    else
+      update_info(state)
+    end
   end
 
   def rpc(pid, data = [cmd | _rest], opts \\ []) do
