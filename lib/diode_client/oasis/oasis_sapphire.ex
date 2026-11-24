@@ -148,15 +148,15 @@ defmodule DiodeClient.OasisSapphire do
   end
 
   def oasis_call_data_public_key() do
-    epoch =
-      TestValues.get(:oasis_epoch) ||
-        DiodeClient.Shell.OasisSapphire.oasis_call_data_public_key()["epoch"]
+    epoch = TestValues.get(:oasis_epoch)
+    key = TestValues.get(:oasis_peer_pubkey)
 
-    key =
-      TestValues.get(:oasis_peer_pubkey) ||
-        DiodeClient.Shell.OasisSapphire.oasis_call_data_public_key()["key"]
-
-    {key, epoch}
+    if epoch != nil and key != nil do
+      {key, epoch}
+    else
+      fetched = DiodeClient.Shell.OasisSapphire.oasis_call_data_public_key()
+      {key || fetched["key"], epoch || fetched["epoch"]}
+    end
   end
 
   defp encrypt_calldata(cipher, calldata) do
